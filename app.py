@@ -279,7 +279,7 @@ def fetch_gallus():
     return jsonify({'ok': True, 'players': result_players, 'frontBack': front_back})
 
 
-
+if __name__ == '__main__':
     print(f'HughsGolf server v{VERSION} starting on port {PORT}')
     print(f'DB path: {DB_PATH}')
     app.run(host='0.0.0.0', port=PORT, debug=False)
