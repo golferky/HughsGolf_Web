@@ -451,7 +451,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260613.2</div>
+  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260613.3</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑</button>
@@ -490,7 +490,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260613.2</div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260613.3</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1113,7 +1113,8 @@
       <div id="gallusError" style="color:#c62828;font-size:12px;margin-bottom:8px;display:none"></div>
       <div id="gallusPreview" style="display:none;margin-bottom:12px;font-size:12px;max-height:200px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:8px"></div>
       <div style="display:flex;gap:8px">
-        <button onclick="doGallusImport()" style="flex:2;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Import Scores</button>
+        <button id="gallusFetchBtn" onclick="doGallusFetch()" style="flex:2;padding:10px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">🔍 Fetch Scorecard</button>
+        <button id="gallusConfirmBtn" onclick="doGallusConfirm()" style="flex:2;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;display:none">✓ Import Scores</button>
         <button onclick="document.getElementById('gallusModal').style.display='none'" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
       </div>
     </div>
@@ -3486,21 +3487,31 @@ async function saveDBToServer(successLabel, btnId) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Gallus Golf Import ────────────────────────────────────────────────────────
+let _gallusData = null; // stored between fetch and confirm
+
 function showGallusImport() {
   document.getElementById('gallusModal').style.display = 'flex';
   document.getElementById('gallusUrl').value = '';
   document.getElementById('gallusError').style.display = 'none';
   document.getElementById('gallusPreview').style.display = 'none';
+  document.getElementById('gallusFetchBtn').style.display = '';
+  document.getElementById('gallusConfirmBtn').style.display = 'none';
+  _gallusData = null;
 }
 
-async function doGallusImport() {
-  const url    = document.getElementById('gallusUrl').value.trim();
-  const errEl  = document.getElementById('gallusError');
+async function doGallusFetch() {
+  const url   = document.getElementById('gallusUrl').value.trim();
+  const errEl = document.getElementById('gallusError');
   const prevEl = document.getElementById('gallusPreview');
   errEl.style.display = 'none';
   prevEl.style.display = 'none';
+  document.getElementById('gallusConfirmBtn').style.display = 'none';
+  _gallusData = null;
 
   if (!url) { errEl.textContent = 'Please paste a Gallus Golf URL.'; errEl.style.display = 'block'; return; }
+
+  document.getElementById('gallusFetchBtn').textContent = '⏳ Fetching...';
+  document.getElementById('gallusFetchBtn').disabled = true;
 
   try {
     const resp = await fetch('/fetch-gallus', {
@@ -3509,8 +3520,12 @@ async function doGallusImport() {
       body: JSON.stringify({ url })
     });
     const json = await resp.json();
+    document.getElementById('gallusFetchBtn').textContent = '🔍 Fetch Scorecard';
+    document.getElementById('gallusFetchBtn').disabled = false;
+
     if (!json.ok) { errEl.textContent = json.error; errEl.style.display = 'block'; return; }
 
+    _gallusData = json;
     const { players, frontBack } = json;
 
     // Show preview
@@ -3518,51 +3533,57 @@ async function doGallusImport() {
     let matched = 0;
     players.forEach(p => {
       const inSystem = query(`SELECT 1 FROM Players WHERE Player=?`, [p.name]).length > 0;
-      const scores = p.scores.map(s => s ?? '—').join(', ');
-      previewHtml += `<div style="padding:3px 0;border-bottom:1px solid #f0f0f0">
+      const scores = p.scores.map(s => s ?? '—').join('  ');
+      previewHtml += `<div style="padding:4px 0;border-bottom:1px solid #f0f0f0">
         <span style="font-weight:600;color:${inSystem?'#2e7d32':'#c62828'}">${p.name}</span>
         ${inSystem ? '' : ' <span style="font-size:10px;color:#c62828">(not in system)</span>'}
-        <span style="font-family:\'DM Mono\',monospace;font-size:11px;color:#666;margin-left:8px">${scores}</span>
+        <div style="font-family:\'DM Mono\',monospace;font-size:11px;color:#666;margin-top:2px">${scores}</div>
       </div>`;
       if (inSystem) matched++;
     });
-    previewHtml += `<div style="margin-top:8px;font-size:11px;color:#666">${matched} of ${players.length} players matched. Click Import to populate scores.</div>`;
+    previewHtml += `<div style="margin-top:8px;font-size:11px;color:#555;font-weight:600">${matched} of ${players.length} players matched.</div>`;
     prevEl.innerHTML = previewHtml;
     prevEl.style.display = 'block';
-
-    // Auto-set Front/Back if needed
-    const fb = document.getElementById('entry9').value;
-    if (fb !== frontBack) {
-      if (confirm(`Gallus scorecard is ${frontBack} 9 but entry is set to ${fb}. Switch to ${frontBack}?`)) {
-        document.getElementById('entry9').value = frontBack;
-        await buildEntryGrid();
-      }
-    }
-
-    // Populate scores into entryState
-    let imported = 0;
-    players.forEach(p => {
-      // Find matching slot
-      const slot = Object.values(entryState).find(s =>
-        s.active === p.name || s.regular === p.name || s.sub === p.name
-      );
-      if (!slot) return;
-      p.scores.forEach((score, i) => {
-        if (score !== null && score > 0) {
-          slot.holes[i] = String(score);
-        }
-      });
-      imported++;
-    });
-
-    document.getElementById('gallusModal').style.display = 'none';
-    reRenderEntry();
-    alert(`✓ Imported scores for ${imported} players from Gallus Golf.`);
+    document.getElementById('gallusConfirmBtn').style.display = '';
 
   } catch(e) {
+    document.getElementById('gallusFetchBtn').textContent = '🔍 Fetch Scorecard';
+    document.getElementById('gallusFetchBtn').disabled = false;
     errEl.textContent = 'Server error: ' + e.message;
     errEl.style.display = 'block';
   }
+}
+
+async function doGallusConfirm() {
+  if (!_gallusData) return;
+  const { players, frontBack } = _gallusData;
+
+  // Switch Front/Back if needed
+  const fb = document.getElementById('entry9').value;
+  if (fb !== frontBack) {
+    if (confirm(`Gallus scorecard is ${frontBack} 9 but entry is set to ${fb}. Switch to ${frontBack}?`)) {
+      document.getElementById('entry9').value = frontBack;
+      await buildEntryGrid();
+    }
+  }
+
+  // Populate scores into entryState
+  let imported = 0;
+  players.forEach(p => {
+    const slot = Object.values(entryState).find(s =>
+      s.active === p.name || s.regular === p.name || s.sub === p.name
+    );
+    if (!slot) return;
+    p.scores.forEach((score, i) => {
+      if (score !== null && score > 0) slot.holes[i] = String(score);
+    });
+    imported++;
+  });
+
+  document.getElementById('gallusModal').style.display = 'none';
+  _gallusData = null;
+  reRenderEntry();
+  alert(`✓ Imported scores for ${imported} players from Gallus Golf.`);
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
