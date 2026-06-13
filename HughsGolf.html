@@ -451,7 +451,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260613.1</div>
+  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260613.2</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑</button>
@@ -490,7 +490,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260613.1</div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260613.2</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -699,6 +699,7 @@
       <div style="display:flex;gap:8px">
         <button id="entryClear" style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px">Clear</button>
         <button id="entrySave" style="padding:8px 20px;background:var(--green);color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">💾 Save DB</button>
+        <button id="gallusImportBtn" onclick="showGallusImport()" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">📥 Import Gallus</button>
       </div>
     </div>
 
@@ -1102,6 +1103,22 @@
   </div>
 
   <!-- Sub Modal -->
+  <!-- Gallus Import Modal -->
+  <div id="gallusModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:12px;padding:28px;width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+      <div style="font-size:16px;font-weight:700;margin-bottom:16px;color:var(--green)">📥 Import from Gallus Golf</div>
+      <div style="font-size:12px;color:#666;margin-bottom:12px">Paste the Gallus Golf share URL from the scorecard app</div>
+      <input type="text" id="gallusUrl" placeholder="https://gallusgolf.com/Share/Round/..." 
+        style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;box-sizing:border-box;font-family:'DM Mono',monospace;margin-bottom:12px">
+      <div id="gallusError" style="color:#c62828;font-size:12px;margin-bottom:8px;display:none"></div>
+      <div id="gallusPreview" style="display:none;margin-bottom:12px;font-size:12px;max-height:200px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:8px"></div>
+      <div style="display:flex;gap:8px">
+        <button onclick="doGallusImport()" style="flex:2;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Import Scores</button>
+        <button onclick="document.getElementById('gallusModal').style.display='none'" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <div id="subModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;align-items:center;justify-content:center">
     <div style="background:white;border-radius:12px;padding:24px;min-width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
       <div style="font-family:'Bebas Neue',cursive;font-size:22px;color:var(--green);margin-bottom:16px">Add Sub</div>
@@ -3468,7 +3485,88 @@ async function saveDBToServer(successLabel, btnId) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Forgot Password Flow ──────────────────────────────────────────────────────
+// ── Gallus Golf Import ────────────────────────────────────────────────────────
+function showGallusImport() {
+  document.getElementById('gallusModal').style.display = 'flex';
+  document.getElementById('gallusUrl').value = '';
+  document.getElementById('gallusError').style.display = 'none';
+  document.getElementById('gallusPreview').style.display = 'none';
+}
+
+async function doGallusImport() {
+  const url    = document.getElementById('gallusUrl').value.trim();
+  const errEl  = document.getElementById('gallusError');
+  const prevEl = document.getElementById('gallusPreview');
+  errEl.style.display = 'none';
+  prevEl.style.display = 'none';
+
+  if (!url) { errEl.textContent = 'Please paste a Gallus Golf URL.'; errEl.style.display = 'block'; return; }
+
+  try {
+    const resp = await fetch('/fetch-gallus', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const json = await resp.json();
+    if (!json.ok) { errEl.textContent = json.error; errEl.style.display = 'block'; return; }
+
+    const { players, frontBack } = json;
+
+    // Show preview
+    let previewHtml = `<div style="font-weight:600;margin-bottom:6px;color:var(--green)">${frontBack} 9 — ${players.length} players found:</div>`;
+    let matched = 0;
+    players.forEach(p => {
+      const inSystem = query(`SELECT 1 FROM Players WHERE Player=?`, [p.name]).length > 0;
+      const scores = p.scores.map(s => s ?? '—').join(', ');
+      previewHtml += `<div style="padding:3px 0;border-bottom:1px solid #f0f0f0">
+        <span style="font-weight:600;color:${inSystem?'#2e7d32':'#c62828'}">${p.name}</span>
+        ${inSystem ? '' : ' <span style="font-size:10px;color:#c62828">(not in system)</span>'}
+        <span style="font-family:\'DM Mono\',monospace;font-size:11px;color:#666;margin-left:8px">${scores}</span>
+      </div>`;
+      if (inSystem) matched++;
+    });
+    previewHtml += `<div style="margin-top:8px;font-size:11px;color:#666">${matched} of ${players.length} players matched. Click Import to populate scores.</div>`;
+    prevEl.innerHTML = previewHtml;
+    prevEl.style.display = 'block';
+
+    // Auto-set Front/Back if needed
+    const fb = document.getElementById('entry9').value;
+    if (fb !== frontBack) {
+      if (confirm(`Gallus scorecard is ${frontBack} 9 but entry is set to ${fb}. Switch to ${frontBack}?`)) {
+        document.getElementById('entry9').value = frontBack;
+        await buildEntryGrid();
+      }
+    }
+
+    // Populate scores into entryState
+    let imported = 0;
+    players.forEach(p => {
+      // Find matching slot
+      const slot = Object.values(entryState).find(s =>
+        s.active === p.name || s.regular === p.name || s.sub === p.name
+      );
+      if (!slot) return;
+      p.scores.forEach((score, i) => {
+        if (score !== null && score > 0) {
+          slot.holes[i] = String(score);
+        }
+      });
+      imported++;
+    });
+
+    document.getElementById('gallusModal').style.display = 'none';
+    reRenderEntry();
+    alert(`✓ Imported scores for ${imported} players from Gallus Golf.`);
+
+  } catch(e) {
+    errEl.textContent = 'Server error: ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 function showLoginForm() {
   document.getElementById('loginForm').style.display = 'block';
   document.getElementById('setPasswordForm').style.display = 'none';
@@ -3583,6 +3681,14 @@ function showLoginScreen() {
   const sel = document.getElementById('loginName');
   sel.innerHTML = '<option value="">-- Select your name --</option>' +
     players.map(r => `<option value="${r.Player}">${r.Player}</option>`).join('');
+
+  // Pre-select last logged in player
+  const lastPlayer = localStorage.getItem('hg_last_player');
+  if (lastPlayer) {
+    sel.value = lastPlayer;
+    sel.dispatchEvent(new Event('change'));
+  }
+
   sel.onchange = function() {
     const name = sel.value;
     if (!name) return;
@@ -3685,6 +3791,9 @@ function loginSuccess(player) {
     saveDBToServer();
   } catch(e) { console.warn('Login log failed:', e); }
 
+  // Remember last player
+  localStorage.setItem('hg_last_player', player.Player);
+
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('loggedInUser').textContent = `👤 ${currentUser.name}`;
   document.getElementById('loggedInUser').style.display = '';
@@ -3732,6 +3841,8 @@ function applyRoleAccess() {
   if (entrySaveBtn)  entrySaveBtn.style.display  = isOfficer ? '' : 'none';
   if (entryClearBtn) entryClearBtn.style.display = isOfficer ? '' : 'none';
   if (entryPostSeason) entryPostSeason.style.display = isOfficer ? '' : 'none';
+  const gallusBtn = document.getElementById('gallusImportBtn');
+  if (gallusBtn) gallusBtn.style.display = isOfficer ? '' : 'none';
 }
 
 function showChangePw() {
