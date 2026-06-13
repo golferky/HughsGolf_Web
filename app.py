@@ -23,6 +23,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
+VERSION    = '20260612.8'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -178,7 +179,107 @@ def verify_reset():
     return jsonify({'ok': True})
 
 
-if __name__ == '__main__':
-    print(f'HughsGolf server starting on port {PORT}')
+@app.route('/fetch-gallus', methods=['POST'])
+def fetch_gallus():
+    """Fetch and parse a Gallus Golf scorecard URL."""
+    import urllib.request
+    from html.parser import HTMLParser
+
+    body = request.get_json()
+    url  = body.get('url', '').strip()
+    if not url or 'gallusgolf.com' not in url:
+        return jsonify({'ok': False, 'error': 'Invalid Gallus Golf URL'}), 400
+
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode('utf-8', errors='ignore')
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Failed to fetch URL: {e}'}), 500
+
+    # Parse the HTML table
+    class TableParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.in_table = False
+            self.in_td = False
+            self.rows = []
+            self.current_row = []
+            self.current_cell = ''
+
+        def handle_starttag(self, tag, attrs):
+            if tag == 'table': self.in_table = True
+            if tag == 'tr' and self.in_table: self.current_row = []
+            if tag in ('td', 'th') and self.in_table: self.in_td = True; self.current_cell = ''
+
+        def handle_endtag(self, tag):
+            if tag in ('td', 'th') and self.in_td:
+                self.current_row.append(self.current_cell.strip())
+                self.in_td = False
+            if tag == 'tr' and self.current_row:
+                self.rows.append(self.current_row)
+                self.current_row = []
+            if tag == 'table': self.in_table = False
+
+        def handle_data(self, data):
+            if self.in_td: self.current_cell += data
+
+    parser = TableParser()
+    parser.feed(html)
+
+    if not parser.rows:
+        return jsonify({'ok': False, 'error': 'No table found on page'}), 400
+
+    # Find header row with hole numbers
+    hole_row = None
+    par_row  = None
+    players  = []
+
+    for row in parser.rows:
+        if len(row) < 5: continue
+        if row[0].lower() in ('hole', 'holes'):
+            hole_row = row
+        elif row[0].lower().startswith('par'):
+            par_row = row
+        elif hole_row and row[0] and not row[0].lower().startswith(('hcp','hdcp','handicap')):
+            # Player score row
+            name = row[0].strip()
+            if name and name not in ('', 'Hole', 'Par m/w', 'Hcp m/w'):
+                scores = []
+                for i in range(1, len(row)):
+                    val = row[i].strip()
+                    if val.isdigit() and int(val) < 15:
+                        scores.append(int(val))
+                    elif val == '' or not val.isdigit():
+                        scores.append(None)
+                players.append({'name': name, 'scores': scores})
+
+    # Determine front or back based on which holes have scores
+    front_back = 'Front'
+    if players:
+        # Check if scores start at position 10 (back 9)
+        first = players[0]['scores']
+        if len(first) >= 18 and all(s is None for s in first[:9]) and any(s for s in first[9:18]):
+            front_back = 'Back'
+
+    # Trim to 9 holes
+    result_players = []
+    for p in players:
+        scores = p['scores']
+        if front_back == 'Back':
+            nine = scores[9:18] if len(scores) >= 18 else scores[:9]
+        else:
+            nine = scores[:9]
+        # Pad to 9
+        while len(nine) < 9: nine.append(None)
+        nine = nine[:9]
+        result_players.append({'name': p['name'], 'scores': nine})
+
+    print(f'[{datetime.datetime.now():%H:%M:%S}] Gallus import: {len(result_players)} players, {front_back}')
+    return jsonify({'ok': True, 'players': result_players, 'frontBack': front_back})
+
+
+
+    print(f'HughsGolf server v{VERSION} starting on port {PORT}')
     print(f'DB path: {DB_PATH}')
     app.run(host='0.0.0.0', port=PORT, debug=False)
