@@ -451,7 +451,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260613.3</div>
+  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260613.4</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑</button>
@@ -490,7 +490,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260613.3</div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260613.4</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -700,6 +700,7 @@
         <button id="entryClear" style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px">Clear</button>
         <button id="entrySave" style="padding:8px 20px;background:var(--green);color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">💾 Save DB</button>
         <button id="gallusImportBtn" onclick="showGallusImport()" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">📥 Import Gallus</button>
+        <button id="gallusSubmitBtn" onclick="showGallusSubmit()" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">📤 Submit Round</button>
       </div>
     </div>
 
@@ -874,6 +875,7 @@
       <button onclick="showAdminSection('teams')" id="adminBtnTeams" class="admin-btn">⛳ Teams</button>
       <button onclick="showAdminSection('subs')" id="adminBtnSubs" class="admin-btn">🔄 Subs</button>
       <button onclick="showAdminSection('sql')" id="adminBtnSql" class="admin-btn">🔍 SQL</button>
+      <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
       <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
       <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
     </div>
@@ -999,6 +1001,14 @@
         </div>
       </div>
     </div>
+    <div id="adminGallus" style="display:none">
+      <div class="card">
+        <div class="card-header">📥 Gallus Round Submissions</div>
+        <div style="padding:16px">
+          <div id="gallusQueueContent">Loading...</div>
+        </div>
+      </div>
+    </div>
     <div id="adminSql" style="display:none">
       <div class="card">
         <div class="card-header">SQL Explorer</div>
@@ -1103,6 +1113,23 @@
   </div>
 
   <!-- Sub Modal -->
+  <!-- Gallus Submit Modal -->
+  <div id="gallusSubmitModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:12px;padding:28px;width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px;color:#6a1b9a">📤 Submit My Round</div>
+      <div style="font-size:12px;color:#666;margin-bottom:16px">Share your Gallus Golf scorecard URL so the officer can import your scores.</div>
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Your Gallus Share URL</div>
+      <input type="text" id="gallusSubmitUrl" placeholder="https://gallusgolf.com/Share/Round/..." 
+        style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;box-sizing:border-box;font-family:'DM Mono',monospace;margin-bottom:12px">
+      <div id="gallusSubmitError" style="color:#c62828;font-size:12px;margin-bottom:8px;display:none"></div>
+      <div id="gallusSubmitSuccess" style="color:#2e7d32;font-size:12px;margin-bottom:8px;display:none"></div>
+      <div style="display:flex;gap:8px">
+        <button onclick="doGallusSubmit()" style="flex:2;padding:10px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Submit Round</button>
+        <button onclick="document.getElementById('gallusSubmitModal').style.display='none'" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Gallus Import Modal -->
   <div id="gallusModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;align-items:center;justify-content:center">
     <div style="background:white;border-radius:12px;padding:28px;width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
@@ -1358,6 +1385,16 @@ function tbody(tableId) {
 
 // ── On DB Loaded ──
 function onDbLoaded() {
+  // Create GallusSubmissions table if not exists
+  db.run(`CREATE TABLE IF NOT EXISTS GallusSubmissions (
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    Player TEXT,
+    GallusUrl TEXT,
+    DateSubmitted TEXT,
+    Status TEXT DEFAULT 'pending',
+    ImportedBy TEXT,
+    ImportedAt TEXT
+  )`);
   // globalSaveBtn visibility is controlled by applyRoleAccess after login
   populateSeasonDropdowns();
   snapshotDB();
@@ -3370,7 +3407,7 @@ function loadSchedule() {
 
 // ── ADMIN TAB ──
 function showAdminSection(section) {
-  ['players','teams','subs','sql','rainout','sync'].forEach(s => {
+  ['players','teams','subs','sql','rainout','sync','gallus'].forEach(s => {
     document.getElementById(`admin${s.charAt(0).toUpperCase()+s.slice(1)}`).style.display = s===section?'block':'none';
     document.getElementById(`adminBtn${s.charAt(0).toUpperCase()+s.slice(1)}`).className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
@@ -3380,6 +3417,7 @@ function showAdminSection(section) {
   if (section==='sql')     buildTableList();
   if (section==='rainout') loadScheduleBuilder();
   if (section==='sync')    initSync();
+  if (section==='gallus')  loadGallusQueue();
 }
 
 function loadAdminTab() {
@@ -3486,7 +3524,107 @@ async function saveDBToServer(successLabel, btnId) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Gallus Golf Import ────────────────────────────────────────────────────────
+// ── Gallus Submit (players) ───────────────────────────────────────────────────
+function showGallusSubmit() {
+  document.getElementById('gallusSubmitModal').style.display = 'flex';
+  document.getElementById('gallusSubmitUrl').value = '';
+  document.getElementById('gallusSubmitError').style.display = 'none';
+  document.getElementById('gallusSubmitSuccess').style.display = 'none';
+}
+
+function doGallusSubmit() {
+  const url    = document.getElementById('gallusSubmitUrl').value.trim();
+  const errEl  = document.getElementById('gallusSubmitError');
+  const okEl   = document.getElementById('gallusSubmitSuccess');
+  errEl.style.display = 'none';
+  okEl.style.display  = 'none';
+
+  if (!url || !url.includes('gallusgolf.com')) {
+    errEl.textContent = 'Please paste a valid Gallus Golf URL.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const now = new Date().toISOString().replace('T',' ').substring(0,19);
+  try {
+    db.run(`INSERT INTO GallusSubmissions (Player, GallusUrl, DateSubmitted, Status) VALUES (?,?,?,?)`,
+      [currentUser.name, url, now, 'pending']);
+    saveDBToServer();
+    okEl.textContent = '✓ Round submitted! Your officer will import your scores shortly.';
+    okEl.style.display = 'block';
+    document.getElementById('gallusSubmitUrl').value = '';
+    setTimeout(() => { document.getElementById('gallusSubmitModal').style.display = 'none'; }, 2500);
+  } catch(e) {
+    errEl.textContent = 'Failed to submit: ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+// ── Gallus Queue (officers) ───────────────────────────────────────────────────
+function loadGallusQueue() {
+  if (!db) return;
+  const rows = query(`SELECT * FROM GallusSubmissions ORDER BY DateSubmitted DESC LIMIT 50`);
+  const el = document.getElementById('gallusQueueContent');
+
+  if (!rows.length) {
+    el.innerHTML = '<div style="color:#999;font-size:13px;padding:8px">No submissions yet.</div>';
+    return;
+  }
+
+  const thS = 'background:var(--green);color:var(--gold);padding:7px 10px;text-align:left;font-size:11px;border:1px solid #2d6a4f';
+  const td  = 'padding:6px 10px;border:1px solid #e8e0d0;font-size:12px';
+
+  let html = `<table style="border-collapse:collapse;width:100%">
+    <thead><tr>
+      <th style="${thS}">Player</th>
+      <th style="${thS}">Submitted</th>
+      <th style="${thS}">Status</th>
+      <th style="${thS}">URL</th>
+      <th style="${thS}">Action</th>
+    </tr></thead><tbody>`;
+
+  rows.forEach((r, i) => {
+    const bg = r.Status === 'imported' ? '#e8f5e9' : r.Status === 'pending' ? '#fff9c4' : '#ffffff';
+    const shortUrl = r.GallusUrl ? r.GallusUrl.substring(0, 40) + '...' : '';
+    html += `<tr style="background:${bg}">
+      <td style="${td};font-weight:600">${r.Player}</td>
+      <td style="${td}">${r.DateSubmitted||''}</td>
+      <td style="${td}">${r.Status === 'imported' ? '✓ Imported' : '⏳ Pending'}</td>
+      <td style="${td};font-family:'DM Mono',monospace;font-size:10px" title="${r.GallusUrl}">${shortUrl}</td>
+      <td style="${td}">
+        ${r.Status === 'pending' 
+          ? `<button onclick="importGallusSubmission(${r.ID},'${r.GallusUrl?.replace(/'/g,"\\'")}')" 
+              style="padding:4px 10px;background:#1565c0;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px">📥 Import</button>` 
+          : `<span style="color:#888;font-size:11px">by ${r.ImportedBy||''}</span>`}
+      </td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+async function importGallusSubmission(id, url) {
+  // Pre-fill the Import Gallus modal with this URL
+  showAdminSection('players'); // switch away briefly
+  document.getElementById('gallusSubmitModal') && (document.getElementById('gallusSubmitModal').style.display = 'none');
+
+  // Switch to Scorecard tab and open import modal
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelector('[data-tab="entry"]')?.classList.add('active');
+  document.getElementById('tab-entry')?.classList.add('active');
+  if (!courseData) await initEntry(); else reRenderEntry();
+
+  showGallusImport();
+  document.getElementById('gallusUrl').value = url;
+
+  // Store submission ID so we can mark it imported after confirm
+  window._gallusSubmissionId = id;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 let _gallusData = null; // stored between fetch and confirm
 
 function showGallusImport() {
@@ -3582,6 +3720,15 @@ async function doGallusConfirm() {
 
   document.getElementById('gallusModal').style.display = 'none';
   _gallusData = null;
+
+  // Mark submission as imported if came from queue
+  if (window._gallusSubmissionId) {
+    const now = new Date().toISOString().replace('T',' ').substring(0,19);
+    db.run(`UPDATE GallusSubmissions SET Status='imported', ImportedBy=?, ImportedAt=? WHERE ID=?`,
+      [currentUser.name, now, window._gallusSubmissionId]);
+    window._gallusSubmissionId = null;
+  }
+
   reRenderEntry();
   alert(`✓ Imported scores for ${imported} players from Gallus Golf.`);
 }
@@ -3864,6 +4011,8 @@ function applyRoleAccess() {
   if (entryPostSeason) entryPostSeason.style.display = isOfficer ? '' : 'none';
   const gallusBtn = document.getElementById('gallusImportBtn');
   if (gallusBtn) gallusBtn.style.display = isOfficer ? '' : 'none';
+  const gallusSubmitBtn = document.getElementById('gallusSubmitBtn');
+  if (gallusSubmitBtn) gallusSubmitBtn.style.display = isOfficer ? 'none' : '';
 }
 
 function showChangePw() {
