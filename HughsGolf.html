@@ -451,7 +451,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260613.10</div>
+  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260613.11</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -490,7 +490,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260613.10</div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260613.11</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -832,7 +832,6 @@
         </label>
       </div>
       <button onclick="openPayFromTab()" style="padding:8px 20px;background:#1565c0;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">💳 Pay Player</button>
-      <button id="paymentsKittyBtn" onclick="showKittyPay()" style="display:none;padding:8px 20px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">💰 Pay from Kitty</button>
     </div>
     <div id="paymentsContent" style="margin-top:16px;overflow-x:auto"></div>
   </div>
@@ -1532,6 +1531,7 @@ function loadPrizeMoney() {
         <div style="font-size:11px;color:#1b5e20;font-weight:600;margin-bottom:4px">TOTAL KITTY</div>
         <div style="font-size:22px;font-weight:700;color:#1b5e20;font-family:'DM Mono',monospace">$${totalKitty.toFixed(2)}</div>
       </div>
+      ${totalKitty > 0.01 ? `<button onclick="showKittyPay()" style="align-self:center;padding:10px 20px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px">💰 Pay from Kitty</button>` : ''}
     </div>
     <div id="skinKittyDetail" style="display:none;margin-bottom:12px;max-width:700px">
       <table style="border-collapse:collapse;width:100%">
@@ -1585,6 +1585,7 @@ function loadPrizeMoney() {
       <th style="${thR}">Earned</th>
       <th style="${thS}">DatePaid</th>
       <th style="${thS}">Comment</th>
+      <th style="${thS}">Notified</th>
     </tr></thead><tbody>`;
 
   let skinTotal = 0, ctpTotal = 0, skinCount = 0, ctpCount = 0;
@@ -1595,18 +1596,25 @@ function loadPrizeMoney() {
     if (r.Desc === 'Skin') { skinTotal += earned; skinCount++; }
     if (r.Desc === 'CTP')  { ctpTotal  += earned; ctpCount++;  }
     const datePaid = r.DatePaid ? new Date(r.DatePaid).toLocaleString() : '';
+    const isKittyPayout = r.Detail === 'Kitty Payout';
+    const notifiedBadge = isKittyPayout
+      ? (r.Comment?.includes('[notified:')
+          ? `<span style="color:#2e7d32;font-weight:600">✓ ${r.Comment.match(/\[notified:([^\]]*)\]/)?.[1] || ''}</span>`
+          : `<span style="color:#c62828">✗ Not sent</span>`)
+      : '';
     html += `<tr style="background:${bg}">
       <td style="${td};font-weight:600">${r.Player}</td>
       <td style="${td}">${r.Desc}</td>
       <td style="${td}">${r.Detail}</td>
       <td style="${tdR}">$${earned.toFixed(2)}</td>
       <td style="${td}">${datePaid}</td>
-      <td style="${td}">${r.Comment||''}</td>
+      <td style="${td}">${(r.Comment||'').replace(/\s*\[notified:[^\]]*\]/, '')}</td>
+      <td style="${td}">${notifiedBadge}</td>
     </tr>`;
   });
 
   if (rows.length === 0) {
-    html += `<tr><td colspan="6" style="${td};text-align:center;color:#999">No winners recorded for this date</td></tr>`;
+    html += `<tr><td colspan="7" style="${td};text-align:center;color:#999">No winners recorded for this date</td></tr>`;
   }
 
   // Totals
@@ -1618,6 +1626,7 @@ function loadPrizeMoney() {
       <td style="${tdR};color:#b8860b">$${skinTotal.toFixed(2)}</td>
       <td style="${td}"></td>
       <td style="${td};color:#b8860b">${skinCount} winner(s)</td>
+      <td style="${td}"></td>
     </tr>`;
   }
   if (ctpCount > 0) {
@@ -1628,6 +1637,7 @@ function loadPrizeMoney() {
       <td style="${tdR};color:#1565c0">$${ctpTotal.toFixed(2)}</td>
       <td style="${td}"></td>
       <td style="${td};color:#1565c0">${ctpCount} winner(s)</td>
+      <td style="${td}"></td>
     </tr>`;
   }
   if (rows.length > 0) {
@@ -1639,6 +1649,7 @@ function loadPrizeMoney() {
       <td style="${tdR};color:#1b5e20">$${grandTotal.toFixed(2)}</td>
       <td style="${td}"></td>
       <td style="${td};color:#1b5e20">${rows.length} payment(s)</td>
+      <td style="${td}"></td>
     </tr>`;
   }
 
@@ -3095,13 +3106,6 @@ function ctpNoWinner(hole, date, amount, fb) {
 function loadPaymentsTab() {
   if (!db) return;
 
-  // Compute kitty balances for Pay from Kitty button
-  loadAdminKitty(); // populates window._kittyBalances
-  const b = window._kittyBalances || {skin:0, ctpFront:0, ctpBack:0};
-  const totalKitty = b.skin + b.ctpFront + b.ctpBack;
-  const kittyBtnEl = document.getElementById('paymentsKittyBtn');
-  if (kittyBtnEl) kittyBtnEl.style.display = totalKitty > 0.01 ? '' : 'none';
-
   // Populate season dropdown once
   const sSel = document.getElementById('paymentsSeason');
   if (!sSel.options.length) {
@@ -3614,17 +3618,11 @@ async function doKittyPayout() {
   else { desc = 'CTP'; sourceLabel = 'CTP Back Kitty'; }
 
   // Record the payout
-  db.run(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,?,?,?,?,?)`,
-    [league, player, todayInt, desc, 'Kitty Payout', amount, now, `${sourceLabel}: ${comment}`]);
+  const commentBase = `${sourceLabel}: ${comment}`;
+  let finalComment = commentBase;
 
-  // Write to LogTable
-  const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
-  db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
-    [logTime, 'INFO', 'kittyPayout', 'HughsGolf', `Kitty payout to ${player}`, `source=${sourceLabel} amount=$${amount.toFixed(2)} by=${currentUser.name} comment=${comment}`, logTime]);
-
-  await saveDBToServer();
-
-  // Send notification
+  // Send notification first so we can tag the result
+  let notifyTag = '';
   if (notify) {
     try {
       const resp = await fetch('/notify-payout', {
@@ -3634,13 +3632,26 @@ async function doKittyPayout() {
       });
       const json = await resp.json();
       if (json.ok) {
-        okEl.textContent = `✓ Paid $${amount.toFixed(2)} to ${player} from ${sourceLabel}. Notified via ${json.sent_to.join(' and ')}.`;
-      } else {
-        okEl.textContent = `✓ Paid $${amount.toFixed(2)} to ${player} from ${sourceLabel}. (Notification failed: ${json.error})`;
+        notifyTag = ` [notified:${json.sent_to.join('+')}]`;
       }
-    } catch(e) {
-      okEl.textContent = `✓ Paid $${amount.toFixed(2)} to ${player} from ${sourceLabel}. (Notification error)`;
-    }
+    } catch(e) { /* leave untagged */ }
+  }
+  finalComment = commentBase + notifyTag;
+
+  db.run(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,?,?,?,?,?)`,
+    [league, player, todayInt, desc, 'Kitty Payout', amount, now, finalComment]);
+
+  // Write to LogTable
+  const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
+  db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+    [logTime, 'INFO', 'kittyPayout', 'HughsGolf', `Kitty payout to ${player}`, `source=${sourceLabel} amount=$${amount.toFixed(2)} by=${currentUser.name} comment=${comment} notified=${notifyTag||'none'}`, logTime]);
+
+  await saveDBToServer();
+
+  if (notifyTag) {
+    okEl.textContent = `✓ Paid $${amount.toFixed(2)} to ${player} from ${sourceLabel}. Notified via ${notifyTag.replace(/[\[\]]/g,'').replace('notified:','').replace('+',' and ')}.`;
+  } else if (notify) {
+    okEl.textContent = `✓ Paid $${amount.toFixed(2)} to ${player} from ${sourceLabel}. (Notification failed)`;
   } else {
     okEl.textContent = `✓ Paid $${amount.toFixed(2)} to ${player} from ${sourceLabel}.`;
   }
@@ -3648,7 +3659,7 @@ async function doKittyPayout() {
 
   setTimeout(() => {
     document.getElementById('kittyPayModal').style.display = 'none';
-    loadAdminKitty();
+    loadPrizeMoney();
   }, 2000);
 }
 // ─────────────────────────────────────────────────────────────────────────────
