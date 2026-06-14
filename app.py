@@ -23,7 +23,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260614.3'
+VERSION    = '20260614.4'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -223,12 +223,14 @@ def notify_payout():
     if not gmail_user or not gmail_pw:
         return jsonify({'ok': False, 'error': 'Email not configured'}), 500
 
-    subject = "Hugh's Golf League — Kitty Payout"
+    subject = "Hugh's Golf League — Payout"
     body_text = f"""Hi {player},
 
 You've received a payout of ${amount:.2f} from the {source}.
 
 {comment}
+
+A quick reply with "Confirmed" lets us know you received this, though it's not required.
 
 — Hugh's Golf League
 """
@@ -260,9 +262,11 @@ You've received a payout of ${amount:.2f} from the {source}.
             if len(phone_digits) == 10:
                 sms_address = f'{phone_digits}@{gateway}'
                 try:
-                    msg = MIMEText(f"Hugh's Golf: ${amount:.2f} payout from {source}. {comment}")
-                    msg['From'] = gmail_user
-                    msg['To']   = sms_address
+                    sms_body = f"Hugh's Golf League: ${amount:.2f} payout from {source}. {comment} Reply CONFIRMED if received."
+                    msg = MIMEText(sms_body)
+                    msg['From']    = gmail_user
+                    msg['To']      = sms_address
+                    msg['Subject'] = "Hugh's Golf League"
                     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
                         server.login(gmail_user, gmail_pw)
                         server.send_message(msg)
