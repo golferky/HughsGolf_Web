@@ -451,7 +451,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260613.11</div>
+  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260614.2</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -490,7 +490,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260613.11</div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260614.2</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1479,6 +1479,14 @@ function loadPrizeMoney() {
   const skinKitty     = Math.round((skinCollected - skinPaidOut) * 100) / 100;
   const totalKitty    = skinKitty + ctpKitty;
 
+  // ── Held balance — unpaid winner amounts season-to-date ───────────────────
+  const heldRows = query(`
+    SELECT COALESCE(SUM(Earned),0) as t FROM Payments 
+    WHERE League="Hugh's" AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','') 
+    AND Player != 'Kitty' AND (DatePaid IS NULL OR DatePaid='') AND Date >= ${season}0101
+  `);
+  const heldBalance = parseFloat(heldRows[0]?.t || 0);
+
   // ── Skin kitty detail ledger — weekly collected vs paid out ──────────────
   const skinDates = query(`SELECT DISTINCT Date FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Date >= ${season}0101 ORDER BY Date ASC`);
   let skinRunning = 0;
@@ -1531,6 +1539,10 @@ function loadPrizeMoney() {
         <div style="font-size:11px;color:#1b5e20;font-weight:600;margin-bottom:4px">TOTAL KITTY</div>
         <div style="font-size:22px;font-weight:700;color:#1b5e20;font-family:'DM Mono',monospace">$${totalKitty.toFixed(2)}</div>
       </div>
+      <div style="background:#ffebee;border:1px solid #c62828;border-radius:8px;padding:12px 20px;min-width:140px">
+        <div style="font-size:11px;color:#c62828;font-weight:600;margin-bottom:4px">HELD (UNPAID)</div>
+        <div style="font-size:22px;font-weight:700;color:#c62828;font-family:'DM Mono',monospace">$${heldBalance.toFixed(2)}</div>
+      </div>
       ${totalKitty > 0.01 ? `<button onclick="showKittyPay()" style="align-self:center;padding:10px 20px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px">💰 Pay from Kitty</button>` : ''}
     </div>
     <div id="skinKittyDetail" style="display:none;margin-bottom:12px;max-width:700px">
@@ -1563,7 +1575,7 @@ function loadPrizeMoney() {
 
   // Get all winner records for this date (not payments, not kitty)
   const rows = query(`
-    SELECT Player, Desc, Detail, Earned, DatePaid, Comment
+    SELECT Date, Player, Desc, Detail, Earned, DatePaid, Comment
     FROM Payments
     WHERE Date=${date} AND League="Hugh's"
       AND Detail NOT IN ('Payment','')
@@ -1597,17 +1609,32 @@ function loadPrizeMoney() {
     if (r.Desc === 'CTP')  { ctpTotal  += earned; ctpCount++;  }
     const datePaid = r.DatePaid ? new Date(r.DatePaid).toLocaleString() : '';
     const isKittyPayout = r.Detail === 'Kitty Payout';
-    const notifiedBadge = isKittyPayout
-      ? (r.Comment?.includes('[notified:')
+    let datePaidCell, notifiedBadge;
+
+    if (isKittyPayout) {
+      datePaidCell = datePaid;
+      notifiedBadge = r.Comment?.includes('[notified:')
           ? `<span style="color:#2e7d32;font-weight:600">✓ ${r.Comment.match(/\[notified:([^\]]*)\]/)?.[1] || ''}</span>`
-          : `<span style="color:#c62828">✗ Not sent</span>`)
-      : '';
+          : `<span style="color:#c62828">✗ Not sent</span>`;
+    } else if (!r.DatePaid) {
+      // Unpaid regular winner — show Pay button
+      const safePlayer = r.Player.replace(/'/g, "\\'");
+      const safeDetail = r.Detail.replace(/'/g, "\\'");
+      datePaidCell = `<button onclick="doMarkPaid('${safePlayer}',${r.Date},'${r.Desc}','${safeDetail}',${earned})" style="padding:4px 12px;background:#1565c0;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600">💵 Pay</button>`;
+      notifiedBadge = '';
+    } else {
+      datePaidCell = datePaid;
+      notifiedBadge = r.Comment?.includes('[notified:')
+          ? `<span style="color:#2e7d32;font-weight:600">✓ ${r.Comment.match(/\[notified:([^\]]*)\]/)?.[1] || ''}</span>`
+          : `<span style="color:#888">—</span>`;
+    }
+
     html += `<tr style="background:${bg}">
       <td style="${td};font-weight:600">${r.Player}</td>
       <td style="${td}">${r.Desc}</td>
       <td style="${td}">${r.Detail}</td>
       <td style="${tdR}">$${earned.toFixed(2)}</td>
-      <td style="${td}">${datePaid}</td>
+      <td style="${td}">${datePaidCell}</td>
       <td style="${td}">${(r.Comment||'').replace(/\s*\[notified:[^\]]*\]/, '')}</td>
       <td style="${td}">${notifiedBadge}</td>
     </tr>`;
@@ -3571,7 +3598,43 @@ async function saveDBToServer(successLabel, btnId) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Pay from Kitty ─────────────────────────────────────────────────────────────
+// ── Mark Winner as Paid ───────────────────────────────────────────────────────
+async function doMarkPaid(player, date, desc, detail, amount) {
+  if (!confirm(`Mark $${amount.toFixed(2)} ${desc} ${detail} as paid to ${player}?\n\nThis will send an email/text notification.`)) return;
+
+  const now = new Date().toLocaleDateString();
+
+  // Try to send notification
+  let notifyTag = '';
+  try {
+    const resp = await fetch('/notify-payout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ player, amount, source: `${desc} ${detail}`, comment: 'Winnings payout' })
+    });
+    const json = await resp.json();
+    if (json.ok) notifyTag = ` [notified:${json.sent_to.join('+')}]`;
+  } catch(e) { /* leave untagged */ }
+
+  // Get existing comment and append notify tag
+  const existing = query(`SELECT Comment FROM Payments WHERE League="Hugh's" AND Player=? AND Date=? AND Desc=? AND Detail=?`, [player, date, desc, detail])[0];
+  const baseComment = (existing?.Comment || '').replace(/\s*\[notified:[^\]]*\]/, '');
+  const newComment = baseComment + notifyTag;
+
+  db.run(`UPDATE Payments SET DatePaid=?, Comment=? WHERE League="Hugh's" AND Player=? AND Date=? AND Desc=? AND Detail=?`,
+    [now, newComment, player, date, desc, detail]);
+
+  // Log it
+  const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
+  db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+    [logTime, 'INFO', 'markPaid', 'HughsGolf', `Marked ${desc} ${detail} paid to ${player}`, `amount=$${amount.toFixed(2)} by=${currentUser.name} notified=${notifyTag||'none'}`, logTime]);
+
+  await saveDBToServer();
+  loadPrizeMoney();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 function showKittyPay() {
   document.getElementById('kittyPayModal').style.display = 'flex';
   document.getElementById('kittyPayAmount').value = '';
@@ -4581,6 +4644,13 @@ function loadAdminKitty() {
 
   window._kittyBalances = { skin: skinKitty, ctpFront, ctpBack };
 
+  const heldRows = query(`
+    SELECT COALESCE(SUM(Earned),0) as t FROM Payments 
+    WHERE League="Hugh's" AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','') 
+    AND Player != 'Kitty' AND (DatePaid IS NULL OR DatePaid='') AND Date >= ${season}0101
+  `);
+  const heldBalance = parseFloat(heldRows[0]?.t || 0);
+
   if (!el) return;
   el.innerHTML = `
     <div style="background:#fff9c4;border:1px solid #f9a825;border-radius:8px;padding:10px 16px;min-width:120px">
@@ -4598,6 +4668,10 @@ function loadAdminKitty() {
     <div style="background:#e8f5e9;border:1px solid #2e7d32;border-radius:8px;padding:10px 16px;min-width:120px">
       <div style="font-size:10px;color:#1b5e20;font-weight:600">TOTAL KITTY</div>
       <div style="font-size:20px;font-weight:700;color:#1b5e20;font-family:'DM Mono',monospace">$${total.toFixed(2)}</div>
+    </div>
+    <div style="background:#ffebee;border:1px solid #c62828;border-radius:8px;padding:10px 16px;min-width:120px">
+      <div style="font-size:10px;color:#c62828;font-weight:600">HELD (UNPAID)</div>
+      <div style="font-size:20px;font-weight:700;color:#c62828;font-family:'DM Mono',monospace">$${heldBalance.toFixed(2)}</div>
     </div>`;
 }
 
