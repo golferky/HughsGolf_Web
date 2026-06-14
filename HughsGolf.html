@@ -451,7 +451,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260614.5</div>
+  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260614.7</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -490,7 +490,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260614.5</div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260614.7</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1700,7 +1700,30 @@ function refreshTab(tab) {
   if (tab === 'admin') loadAdminTab();
   if (tab === 'schedule') loadSchedule();
   if (tab === 'entry') { if (!courseData) initEntry(); else reRenderEntry(); }
+  setTimeout(highlightCurrentPlayer, 50);
 }
+
+// ── Highlight current player's rows across tabs ──────────────────────────────
+function highlightCurrentPlayer() {
+  if (!currentUser?.name) return;
+  const name = currentUser.name;
+  const activeSection = document.querySelector('.section.active');
+  if (!activeSection) return;
+
+  // Find table cells whose text exactly matches the player's name
+  activeSection.querySelectorAll('td, span, div').forEach(el => {
+    // Only check leaf-ish elements with direct text matching the name (avoid matching huge containers)
+    const text = el.textContent?.trim();
+    if (text === name && el.children.length === 0) {
+      el.style.fontWeight = '700';
+      el.style.color = '#1565c0';
+      // Highlight the parent row too
+      const row = el.closest('tr');
+      if (row) row.style.outline = '2px solid #90caf9';
+    }
+  });
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function populateSeasonDropdowns() {
   const seasons = query("SELECT DISTINCT Season FROM LeagueParms ORDER BY Season DESC");
@@ -3432,9 +3455,17 @@ function loadSchedule() {
 
   // Team legend — render at top before table
   const sortedTeams = Object.keys(teamPlayers).map(Number).sort((a,b)=>a-b);
+  // Find current player's team number
+  let myTeam = null;
+  if (currentUser?.name) {
+    const myTeamRow = query(`SELECT Team FROM Teams WHERE Year=${year} AND Player=?`, [currentUser.name])[0];
+    if (myTeamRow) myTeam = myTeamRow.Team;
+  }
+
   const legendHtml = sortedTeams.map(t => {
     const a = firstName(teamPlayers[t]?.A), b = firstName(teamPlayers[t]?.B);
-    return `<span style="display:inline-block;margin:3px 6px;font-size:12px"><strong style="color:var(--green)">${t}</strong> <span style="color:var(--gray)">${a}/${b}</span></span>`;
+    const isMine = t === myTeam;
+    return `<span style="display:inline-block;margin:3px 6px;font-size:12px;${isMine?'background:#fff3cd;border:1px solid #f9a825;border-radius:4px;padding:2px 6px':''}"><strong style="color:var(--green)">${t}</strong> <span style="color:var(--gray)${isMine?';font-weight:700':''}">${a}/${b}</span></span>`;
   }).join('');
   const oldLegend = document.getElementById('schedLegend');
   if (oldLegend) oldLegend.remove();
@@ -3461,6 +3492,11 @@ function loadSchedule() {
     const roundNum = Math.floor(idx / roundLen);
     const isRoundStart = idx % roundLen === 0;
     const rowBg = roundNum % 2 === 0 ? '#ffffff' : '#f0f4f8';
+    const matchupsHtml = matchups.map(m => {
+      const [a, b] = m.split('v').map(Number);
+      const isMine = myTeam !== null && (a === myTeam || b === myTeam);
+      return isMine ? `<span style="background:#fff3cd;border-radius:3px;padding:1px 4px;font-weight:700">${m}</span>` : m;
+    }).join('  ·  ');
     const tr = document.createElement('tr');
     tr.style.background = rowBg;
     tr.innerHTML = `
@@ -3468,7 +3504,7 @@ function loadSchedule() {
         <strong>${fmtDate(r.sDate)}</strong>
         ${isRoundStart ? `<span style="margin-left:6px;font-size:10px;background:var(--green);color:var(--gold);padding:1px 5px;border-radius:3px;font-weight:600">Rnd ${roundNum+1}</span>` : ''}
       </td>
-      <td style="font-size:12px;font-family:'DM Mono',monospace;background:${rowBg}">${matchups.join('  ·  ')}</td>
+      <td style="font-size:12px;font-family:'DM Mono',monospace;background:${rowBg}">${matchupsHtml}</td>
       <td class="ctr" style="background:${rowBg}">
         ${r.Status ? `<span class="badge" style="background:#fff3e0;color:#e65100">${r.Status}</span>` :
           played ? '<span class="badge badge-win">✓ Played</span>' :
