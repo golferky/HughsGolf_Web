@@ -23,7 +23,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260614.4'
+VERSION    = '20260614.8'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -187,6 +187,7 @@ def notify_payout():
     amount  = body.get('amount', 0)
     source  = body.get('source', '')   # e.g. "Skin Kitty"
     comment = body.get('comment', '')
+    recorded_by = body.get('recordedBy', '').strip()
 
     if not player:
         return jsonify({'ok': False, 'error': 'No player name'}), 400
@@ -223,6 +224,7 @@ def notify_payout():
     if not gmail_user or not gmail_pw:
         return jsonify({'ok': False, 'error': 'Email not configured'}), 500
 
+    recorded_line = f"Recorded by: {recorded_by}\n\n" if recorded_by else ""
     subject = "Hugh's Golf League — Payout"
     body_text = f"""Hi {player},
 
@@ -230,7 +232,7 @@ You've received a payout of ${amount:.2f} from the {source}.
 
 {comment}
 
-A quick reply with "Confirmed" lets us know you received this, though it's not required.
+{recorded_line}A quick reply with "Confirmed" lets us know you received this, though it's not required.
 
 — Hugh's Golf League
 """
@@ -262,7 +264,8 @@ A quick reply with "Confirmed" lets us know you received this, though it's not r
             if len(phone_digits) == 10:
                 sms_address = f'{phone_digits}@{gateway}'
                 try:
-                    sms_body = f"Hugh's Golf League: ${amount:.2f} payout from {source}. {comment} Reply CONFIRMED if received."
+                    by_text = f" (by {recorded_by})" if recorded_by else ""
+                    sms_body = f"Hugh's Golf League: ${amount:.2f} payout from {source}{by_text}. {comment} Reply CONFIRMED if received."
                     msg = MIMEText(sms_body)
                     msg['From']    = gmail_user
                     msg['To']      = sms_address
