@@ -23,7 +23,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260612.8'
+VERSION    = '20260614.3'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -256,7 +256,7 @@ You've received a payout of ${amount:.2f} from the {source}.
         carrier_key = row['CellCarrier'].strip().lower()
         gateway = CARRIER_GATEWAYS.get(carrier_key)
         if gateway:
-            phone_digits = ''.join(c for c in row['Phone'] if c.isdigit())
+            phone_digits = ''.join(c for c in str(row['Phone']) if c.isdigit())
             if len(phone_digits) == 10:
                 sms_address = f'{phone_digits}@{gateway}'
                 try:
