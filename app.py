@@ -179,7 +179,109 @@ def verify_reset():
     return jsonify({'ok': True})
 
 
-@app.route('/fetch-gallus', methods=['POST'])
+@app.route('/notify-payout', methods=['POST'])
+def notify_payout():
+    """Send email + SMS (via carrier gateway) notification of a kitty payout."""
+    body = request.get_json()
+    player  = body.get('player', '').strip()
+    amount  = body.get('amount', 0)
+    source  = body.get('source', '')   # e.g. "Skin Kitty"
+    comment = body.get('comment', '')
+
+    if not player:
+        return jsonify({'ok': False, 'error': 'No player name'}), 400
+
+    # Carrier email-to-SMS gateways
+    CARRIER_GATEWAYS = {
+        'verizon':   'vtext.com',
+        'att':       'txt.att.net',
+        'at&t':      'txt.att.net',
+        't-mobile':  'tmomail.net',
+        'tmobile':   'tmomail.net',
+        'sprint':    'messaging.sprintpcs.com',
+        'cricket':   'sms.cricketwireless.net',
+        'boost':     'sms.myboostmobile.com',
+        'metro':     'mymetropcs.com',
+        'us cellular': 'email.uscc.net',
+        'uscellular': 'email.uscc.net',
+    }
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT Email, Phone, CellCarrier FROM Players WHERE Player=?", (player,))
+        row = cur.fetchone()
+        conn.close()
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+    if not row:
+        return jsonify({'ok': False, 'error': 'Player not found'}), 404
+
+    gmail_user, gmail_pw = get_gmail_creds()
+    if not gmail_user or not gmail_pw:
+        return jsonify({'ok': False, 'error': 'Email not configured'}), 500
+
+    subject = "Hugh's Golf League — Kitty Payout"
+    body_text = f"""Hi {player},
+
+You've received a payout of ${amount:.2f} from the {source}.
+
+{comment}
+
+— Hugh's Golf League
+"""
+
+    sent_to = []
+    errors = []
+
+    # Send to email
+    if row['Email']:
+        try:
+            msg = MIMEMultipart()
+            msg['From']    = gmail_user
+            msg['To']      = row['Email']
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body_text, 'plain'))
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                server.login(gmail_user, gmail_pw)
+                server.send_message(msg)
+            sent_to.append('email')
+        except Exception as e:
+            errors.append(f'Email failed: {e}')
+
+    # Send to SMS via carrier gateway
+    if row['Phone'] and row['CellCarrier']:
+        carrier_key = row['CellCarrier'].strip().lower()
+        gateway = CARRIER_GATEWAYS.get(carrier_key)
+        if gateway:
+            phone_digits = ''.join(c for c in row['Phone'] if c.isdigit())
+            if len(phone_digits) == 10:
+                sms_address = f'{phone_digits}@{gateway}'
+                try:
+                    msg = MIMEText(f"Hugh's Golf: ${amount:.2f} payout from {source}. {comment}")
+                    msg['From'] = gmail_user
+                    msg['To']   = sms_address
+                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                        server.login(gmail_user, gmail_pw)
+                        server.send_message(msg)
+                    sent_to.append('sms')
+                except Exception as e:
+                    errors.append(f'SMS failed: {e}')
+            else:
+                errors.append('Invalid phone number format')
+        else:
+            errors.append(f'Unknown carrier: {row["CellCarrier"]}')
+
+    if not sent_to:
+        return jsonify({'ok': False, 'error': '; '.join(errors) or 'No email or phone on file'}), 404
+
+    print(f'[{datetime.datetime.now():%H:%M:%S}] Payout notification sent to {player} via {", ".join(sent_to)}')
+    return jsonify({'ok': True, 'sent_to': sent_to, 'errors': errors})
+
+
+
 def fetch_gallus():
     """Fetch and parse a Gallus Golf scorecard URL."""
     import urllib.request

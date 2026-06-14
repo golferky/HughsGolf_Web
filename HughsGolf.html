@@ -451,7 +451,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260613.8</div>
+  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260613.9</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -490,7 +490,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260613.8</div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260613.9</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1113,6 +1113,41 @@
   </div>
 
   <!-- Sub Modal -->
+  <!-- Pay from Kitty Modal -->
+  <div id="kittyPayModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:12px;padding:28px;width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+      <div style="font-size:16px;font-weight:700;margin-bottom:16px;color:var(--green)">💰 Pay from Kitty</div>
+
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Source</div>
+      <select id="kittyPaySource" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px">
+        <option value="Skin">Skin Kitty</option>
+        <option value="CTP-Front">CTP Front Kitty</option>
+        <option value="CTP-Back">CTP Back Kitty</option>
+      </select>
+
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Recipient</div>
+      <select id="kittyPayPlayer" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px"></select>
+
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Amount ($)</div>
+      <input type="number" id="kittyPayAmount" step="0.01" min="0" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px;box-sizing:border-box">
+
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Reason / Comment</div>
+      <input type="text" id="kittyPayComment" placeholder="e.g. End of season bonus" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px;box-sizing:border-box">
+
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:12px;cursor:pointer">
+        <input type="checkbox" id="kittyPayNotify" checked> Notify player by email/text
+      </label>
+
+      <div id="kittyPayError" style="color:#c62828;font-size:12px;margin-bottom:8px;display:none"></div>
+      <div id="kittyPaySuccess" style="color:#2e7d32;font-size:12px;margin-bottom:8px;display:none"></div>
+
+      <div style="display:flex;gap:8px">
+        <button onclick="doKittyPayout()" style="flex:2;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Pay & Notify</button>
+        <button onclick="document.getElementById('kittyPayModal').style.display='none'" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Gallus Submit Modal -->
   <div id="gallusSubmitModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;align-items:center;justify-content:center">
     <div style="background:white;border-radius:12px;padding:28px;width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
@@ -3524,7 +3559,93 @@ async function saveDBToServer(successLabel, btnId) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Gallus Submit (players) ───────────────────────────────────────────────────
+// ── Pay from Kitty ─────────────────────────────────────────────────────────────
+function showKittyPay() {
+  document.getElementById('kittyPayModal').style.display = 'flex';
+  document.getElementById('kittyPayAmount').value = '';
+  document.getElementById('kittyPayComment').value = '';
+  document.getElementById('kittyPayError').style.display = 'none';
+  document.getElementById('kittyPaySuccess').style.display = 'none';
+  document.getElementById('kittyPayNotify').checked = true;
+
+  // Populate player dropdown
+  const players = query(`SELECT Player FROM Players ORDER BY Player`);
+  document.getElementById('kittyPayPlayer').innerHTML = players.map(r => `<option value="${r.Player}">${r.Player}</option>`).join('');
+
+  // Update source dropdown labels with current balances
+  const b = window._kittyBalances || {skin:0, ctpFront:0, ctpBack:0};
+  const sel = document.getElementById('kittyPaySource');
+  sel.innerHTML = `
+    <option value="Skin">Skin Kitty ($${b.skin.toFixed(2)} available)</option>
+    <option value="CTP-Front">CTP Front Kitty ($${b.ctpFront.toFixed(2)} available)</option>
+    <option value="CTP-Back">CTP Back Kitty ($${b.ctpBack.toFixed(2)} available)</option>`;
+}
+
+async function doKittyPayout() {
+  const source  = document.getElementById('kittyPaySource').value;
+  const player  = document.getElementById('kittyPayPlayer').value;
+  const amount  = parseFloat(document.getElementById('kittyPayAmount').value);
+  const comment = document.getElementById('kittyPayComment').value.trim();
+  const notify  = document.getElementById('kittyPayNotify').checked;
+  const errEl   = document.getElementById('kittyPayError');
+  const okEl    = document.getElementById('kittyPaySuccess');
+  errEl.style.display = 'none';
+  okEl.style.display = 'none';
+
+  if (!player) { errEl.textContent = 'Please select a recipient.'; errEl.style.display = 'block'; return; }
+  if (!amount || amount <= 0) { errEl.textContent = 'Please enter a valid amount.'; errEl.style.display = 'block'; return; }
+
+  const league = "Hugh's";
+  const now = new Date().toLocaleDateString();
+  const todayInt = (() => { const d = new Date(); return d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate(); })();
+
+  // Determine Desc and source label
+  let desc, sourceLabel;
+  if (source === 'Skin') { desc = 'Skin'; sourceLabel = 'Skin Kitty'; }
+  else if (source === 'CTP-Front') { desc = 'CTP'; sourceLabel = 'CTP Front Kitty'; }
+  else { desc = 'CTP'; sourceLabel = 'CTP Back Kitty'; }
+
+  // Record the payout
+  db.run(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,?,?,?,?,?)`,
+    [league, player, todayInt, desc, 'Kitty Payout', amount, now, `${sourceLabel}: ${comment}`]);
+
+  // Write to LogTable
+  const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
+  db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+    [logTime, 'INFO', 'kittyPayout', 'HughsGolf', `Kitty payout to ${player}`, `source=${sourceLabel} amount=$${amount.toFixed(2)} by=${currentUser.name} comment=${comment}`, logTime]);
+
+  await saveDBToServer();
+
+  // Send notification
+  if (notify) {
+    try {
+      const resp = await fetch('/notify-payout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player, amount, source: sourceLabel, comment })
+      });
+      const json = await resp.json();
+      if (json.ok) {
+        okEl.textContent = `✓ Paid $${amount.toFixed(2)} to ${player} from ${sourceLabel}. Notified via ${json.sent_to.join(' and ')}.`;
+      } else {
+        okEl.textContent = `✓ Paid $${amount.toFixed(2)} to ${player} from ${sourceLabel}. (Notification failed: ${json.error})`;
+      }
+    } catch(e) {
+      okEl.textContent = `✓ Paid $${amount.toFixed(2)} to ${player} from ${sourceLabel}. (Notification error)`;
+    }
+  } else {
+    okEl.textContent = `✓ Paid $${amount.toFixed(2)} to ${player} from ${sourceLabel}.`;
+  }
+  okEl.style.display = 'block';
+
+  setTimeout(() => {
+    document.getElementById('kittyPayModal').style.display = 'none';
+    loadAdminKitty();
+  }, 2000);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 function showGallusSubmit() {
   document.getElementById('gallusSubmitModal').style.display = 'flex';
   document.getElementById('gallusSubmitUrl').value = '';
@@ -4439,6 +4560,8 @@ function loadAdminKitty() {
   const ctpBack   = Object.entries(ctpKittyMap).filter(([h]) => ctpKittyRows.find(r => r.Detail?.includes(`Carryover${h}-Back`))).reduce((a,[,v]) => a+v, 0);
   const total     = skinKitty + ctpFront + ctpBack;
 
+  window._kittyBalances = { skin: skinKitty, ctpFront, ctpBack };
+
   el.innerHTML = `
     <div style="background:#fff9c4;border:1px solid #f9a825;border-radius:8px;padding:10px 16px;min-width:120px">
       <div style="font-size:10px;color:#b8860b;font-weight:600">SKIN KITTY</div>
@@ -4455,7 +4578,8 @@ function loadAdminKitty() {
     <div style="background:#e8f5e9;border:1px solid #2e7d32;border-radius:8px;padding:10px 16px;min-width:120px">
       <div style="font-size:10px;color:#1b5e20;font-weight:600">TOTAL KITTY</div>
       <div style="font-size:20px;font-weight:700;color:#1b5e20;font-family:'DM Mono',monospace">$${total.toFixed(2)}</div>
-    </div>`;
+    </div>
+    <button onclick="showKittyPay()" style="align-self:center;padding:10px 16px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px">💰 Pay from Kitty</button>`;
 }
 
 function loadAdminPlayers() {
