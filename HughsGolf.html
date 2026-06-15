@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260615.3</div>
+  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260615.4</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260615.3</div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260615.4</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -6527,6 +6527,49 @@ async function saveEntryToDB() {
   });
 
   await saveDBToServer(`✓ Saved ${saved} scores`, 'entrySave');
+
+  // ── Auto-mark Skin/CTP payments for players with perfect payment history ──
+  const lp2 = query(`SELECT Skins, Closest FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
+  const skinAmt2 = parseFloat(lp2?.Skins || 2);
+  const ctpAmt2  = parseFloat(lp2?.Closest || 1);
+  const payDate  = new Date().toLocaleString();
+  let autoPaid = 0;
+
+  Object.values(entryState).forEach(st => {
+    const gross = calcGross(st.holes);
+    if (!gross) return; // only players who have a score today
+    const playerName = st.active;
+
+    [['Skin', skinAmt2], ['CTP', ctpAmt2]].forEach(([desc, amt]) => {
+      // Already has a payment for today?
+      const already = query(`SELECT 1 FROM Payments WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc=? AND Detail='Payment' LIMIT 1`,
+        [league, playerName, date, desc]).length > 0;
+      if (already) return;
+
+      // All prior dates this season where player had a score
+      const priorDates = query(`SELECT DISTINCT Date FROM Scores WHERE League=? AND Player=? AND Date >= ${season}0101 AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)`,
+        [league, playerName, date]).map(r => r.Date);
+      if (!priorDates.length) return; // no history — don't auto-enroll new players
+
+      // Did they pay this Desc on EVERY prior date they played?
+      const paidDates = query(`SELECT DISTINCT Date FROM Payments WHERE League=? AND Player=? AND Desc=? AND Detail='Payment' AND Date >= ${season}0101 AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)`,
+        [league, playerName, desc, date]).map(r => r.Date);
+      const paidSet = new Set(paidDates);
+      const perfectHistory = priorDates.every(d => paidSet.has(d));
+      if (!perfectHistory) return;
+
+      // Auto-insert payment
+      db.run(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid) VALUES (?,?,?,?,?,?,?)`,
+        [league, playerName, date, desc, 'Payment', amt, payDate]);
+      autoPaid++;
+    });
+  });
+
+  if (autoPaid > 0) {
+    await saveDBToServer();
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Auto-recalculate matches for this date
   const entryDate = document.getElementById('entryDate').value;
   if (entryDate) calcMatchesForDate(entryDate);
