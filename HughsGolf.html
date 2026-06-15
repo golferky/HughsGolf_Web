@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260615.14</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260615.16</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260615.14</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260615.16</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -581,6 +581,9 @@
       <p>Drag &amp; drop your <strong>HughsGolf.db</strong> here, or click <strong>Load DB</strong> above</p>
     </div>
     <div id="homeStats" style="display:none">
+      <div style="margin-bottom:16px">
+        <button onclick="showNeedSub()" style="padding:10px 20px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">🔄 Need a Sub</button>
+      </div>
       <div class="grid-3" id="statBoxes"></div>
       <div class="grid-2" style="margin-top:20px">
         <div class="card">
@@ -1173,6 +1176,41 @@
   </div>
 
   <!-- Sub Modal -->
+  <!-- Need a Sub Modal -->
+  <div id="needSubModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:12px;padding:28px;width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px;color:#6a1b9a">🔄 Need a Sub</div>
+      <div style="font-size:12px;color:#666;margin-bottom:12px">Let eligible subs know you need a replacement for an upcoming round.</div>
+
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Requesting sub for</div>
+      <select id="needSubFor" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px"></select>
+
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Date</div>
+      <select id="needSubDate" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px"></select>
+
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Send to</div>
+      <div style="margin-bottom:8px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+          <input type="checkbox" id="needSubSelectAll" onchange="toggleAllSubs()"> Select all eligible subs
+        </label>
+      </div>
+      <div id="needSubList" style="max-height:160px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:8px;margin-bottom:12px;font-size:12px"></div>
+
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Message</div>
+      <textarea id="needSubMessage" rows="4" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;box-sizing:border-box;font-family:'DM Sans',sans-serif"></textarea>
+
+      <div style="font-size:11px;color:#888;margin:6px 0 12px">A copy will also be sent to the League Secretary.</div>
+
+      <div id="needSubError" style="color:#c62828;font-size:12px;margin-bottom:8px;display:none"></div>
+      <div id="needSubSuccess" style="color:#2e7d32;font-size:12px;margin-bottom:8px;display:none"></div>
+
+      <div style="display:flex;gap:8px">
+        <button onclick="doNeedSub()" style="flex:2;padding:10px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Send Request</button>
+        <button onclick="document.getElementById('needSubModal').style.display='none'" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Pay from Kitty Modal -->
   <div id="kittyPayModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;align-items:center;justify-content:center">
     <div style="background:white;border-radius:12px;padding:28px;width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
@@ -3749,6 +3787,124 @@ async function doMarkPaid(player, date, desc, detail, amount) {
 
   await saveDBToServer();
   loadPrizeMoney();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Need a Sub ─────────────────────────────────────────────────────────────────
+function showNeedSub() {
+  document.getElementById('needSubModal').style.display = 'flex';
+  document.getElementById('needSubError').style.display = 'none';
+  document.getElementById('needSubSuccess').style.display = 'none';
+  document.getElementById('needSubSelectAll').checked = false;
+
+  const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
+  const isOfficer = currentUser.role === 'officer' || currentUser.role === 'developer';
+
+  // "Requesting sub for" dropdown
+  const forSel = document.getElementById('needSubFor');
+  if (isOfficer) {
+    const allPlayers = query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season} ORDER BY Player`).map(r => r.Player);
+    forSel.innerHTML = allPlayers.map(p => `<option value="${p}" ${p===currentUser.name?'selected':''}>${p}</option>`).join('');
+  } else {
+    // Find current player's team/grade, then both A and B players on that team
+    const myTeam = query(`SELECT Team FROM Teams WHERE League="Hugh's" AND Year=${season} AND Player=?`, [currentUser.name])[0];
+    let teammates = [currentUser.name];
+    if (myTeam) {
+      teammates = query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season} AND Team=?`, [myTeam.Team]).map(r => r.Player);
+    }
+    forSel.innerHTML = teammates.map(p => `<option value="${p}" ${p===currentUser.name?'selected':''}>${p}</option>`).join('');
+  }
+  const today = new Date();
+  const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
+
+  // Upcoming dates from schedule
+  const dates = query(`SELECT DISTINCT Date as sDate FROM Schedule WHERE League="Hugh's" AND CAST(Date AS INTEGER) >= ${todayInt} AND Date >= ${season}0101 ORDER BY Date LIMIT 8`);
+  const dateSel = document.getElementById('needSubDate');
+  dateSel.innerHTML = dates.map(d => `<option value="${d.sDate}">${fmtDate(d.sDate)}</option>`).join('');
+
+  // Eligible subs = players NOT on Teams for current season
+  const subs = query(`
+    SELECT Player, Email, Phone, CellCarrier FROM Players 
+    WHERE Player NOT IN (SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season})
+    ORDER BY Player
+  `);
+  const listEl = document.getElementById('needSubList');
+  if (!subs.length) {
+    listEl.innerHTML = '<div style="color:#999">No eligible subs found.</div>';
+  } else {
+    listEl.innerHTML = subs.map(p => `
+      <label style="display:flex;align-items:center;gap:6px;padding:2px 0;cursor:pointer">
+        <input type="checkbox" class="needSubCheck" value="${p.Player}">
+        ${p.Player}
+      </label>`).join('');
+  }
+
+  // Pre-fill message
+  const dateLabel = dates.length ? fmtDate(dates[0].sDate) : '[date]';
+  const forPlayer = forSel.value;
+  document.getElementById('needSubMessage').value =
+    `Hi! ${forPlayer} needs a sub for the round on ${dateLabel} at Boone Links. Can you play? Let us know if you're interested!`;
+
+  // Update message when date or "for" player changes
+  const updateMsg = () => {
+    const sel = dateSel.options[dateSel.selectedIndex];
+    const fp = forSel.value;
+    const dl = sel ? sel.textContent : '[date]';
+    document.getElementById('needSubMessage').value =
+      `Hi! ${fp} needs a sub for the round on ${dl} at Boone Links. Can you play? Let us know if you're interested!`;
+  };
+  dateSel.onchange = updateMsg;
+  forSel.onchange = updateMsg;
+}
+
+function toggleAllSubs() {
+  const checked = document.getElementById('needSubSelectAll').checked;
+  document.querySelectorAll('.needSubCheck').forEach(cb => cb.checked = checked);
+}
+
+async function doNeedSub() {
+  const date = document.getElementById('needSubDate').value;
+  const message = document.getElementById('needSubMessage').value.trim();
+  const errEl = document.getElementById('needSubError');
+  const okEl = document.getElementById('needSubSuccess');
+  errEl.style.display = 'none';
+  okEl.style.display = 'none';
+
+  if (!date) { errEl.textContent = 'Please select a date.'; errEl.style.display = 'block'; return; }
+  if (!message) { errEl.textContent = 'Please enter a message.'; errEl.style.display = 'block'; return; }
+
+  const selected = [...document.querySelectorAll('.needSubCheck:checked')].map(cb => cb.value);
+  if (!selected.length) { errEl.textContent = 'Please select at least one sub to notify.'; errEl.style.display = 'block'; return; }
+
+  const forPlayer = document.getElementById('needSubFor').value;
+  if (!confirm(`Send sub request for ${forPlayer} to ${selected.length} player(s) for ${fmtDate(date)}?\n\nA copy will be sent to the League Secretary.`)) return;
+
+  try {
+    const resp = await fetch('/need-sub', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ player: forPlayer, date, message, recipients: selected })
+    });
+    const json = await resp.json();
+    if (json.ok) {
+      okEl.textContent = `✓ Sent to ${json.sent_count} player(s)${json.failed?.length ? ` (${json.failed.length} failed)` : ''}.`;
+      okEl.style.display = 'block';
+
+      // Log it
+      const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
+      db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+        [logTime, 'INFO', 'needSub', 'HughsGolf', `${currentUser.name} requested a sub for ${forPlayer} on ${date}`, `recipients=${selected.join(',')} sent=${json.sent_count}`, logTime]);
+      await saveDBToServer();
+
+      setTimeout(() => { document.getElementById('needSubModal').style.display = 'none'; }, 2500);
+    } else {
+      errEl.textContent = json.error || 'Failed to send request.';
+      errEl.style.display = 'block';
+    }
+  } catch(e) {
+    errEl.textContent = 'Server error: ' + e.message;
+    errEl.style.display = 'block';
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
