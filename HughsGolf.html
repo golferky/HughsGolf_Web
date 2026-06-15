@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260615.4</div>
+  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260615.5</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260615.4</div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260615.5</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -4810,6 +4810,7 @@ function loadAdminPlayers() {
 }
 
 function openPlayerModal(name) {
+  window._playerModalOriginal = null; // new player, no diff needed
   document.getElementById('playerModalId').value = name || '';
   document.getElementById('playerModalTitle').textContent = name ? 'Edit Player' : 'Add Player';
   document.getElementById('pmFirstName').value = '';
@@ -4829,6 +4830,7 @@ function openPlayerModal(name) {
 function editPlayer(name) {
   const r = query(`SELECT * FROM Players WHERE Player=?`, [name])[0];
   if (!r) return;
+  window._playerModalOriginal = r; // for diff-confirm on save
   document.getElementById('playerModalId').value = name;
   document.getElementById('playerModalTitle').textContent = 'Edit Player';
   document.getElementById('pmFirstName').value = r.FirstName||'';
@@ -4859,7 +4861,26 @@ function resetPlayerPassword() {
   saveDBToServer();
 }
 
-async function savePlayer() {
+// ── Diff & Confirm Helper ─────────────────────────────────────────────────────
+// oldValues/newValues: { fieldLabel: value, ... }
+// Returns true if user confirms (or if nothing changed)
+function confirmChanges(title, oldValues, newValues) {
+  const changes = [];
+  Object.keys(newValues).forEach(key => {
+    const oldVal = oldValues[key] ?? '';
+    const newVal = newValues[key] ?? '';
+    if (String(oldVal) !== String(newVal)) {
+      const oldDisplay = oldVal === '' ? '(empty)' : oldVal;
+      const newDisplay = newVal === '' ? '(empty)' : newVal;
+      changes.push(`  ${key}: "${oldDisplay}" → "${newDisplay}"`);
+    }
+  });
+  if (!changes.length) return true; // nothing changed, proceed silently
+  return confirm(`${title}\n\n${changes.join('\n')}\n\nSave these changes?`);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+
   const originalName = document.getElementById('playerModalId').value;
   const firstName = document.getElementById('pmFirstName').value.trim();
   const lastName  = document.getElementById('pmLastName').value.trim();
@@ -4877,6 +4898,31 @@ async function savePlayer() {
   if (pw1 || pw2) {
     if (pw1 !== pw2) { alert('Passwords do not match'); return; }
     if (pw1.length < 4) { alert('Password must be at least 4 characters'); return; }
+  }
+
+  // Diff-confirm for existing players
+  if (originalName && window._playerModalOriginal) {
+    const o = window._playerModalOriginal;
+    const proceed = confirmChanges(`Update player "${originalName}"?`, {
+      'First Name': o.FirstName,
+      'Last Name': o.LastName,
+      'Full Name': o.Player,
+      'Email': o.Email,
+      'Phone': o.Phone,
+      'Cell Carrier': o.CellCarrier,
+      'Email Stats': o.EmailStats,
+      'Text Stats': o.TextStats,
+    }, {
+      'First Name': firstName,
+      'Last Name': lastName,
+      'Full Name': fullName,
+      'Email': email,
+      'Phone': phone,
+      'Cell Carrier': carrier,
+      'Email Stats': emailStats,
+      'Text Stats': textStats,
+    });
+    if (!proceed) return;
   }
 
   if (originalName) {
