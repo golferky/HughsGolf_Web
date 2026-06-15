@@ -11,6 +11,9 @@ import random
 import string
 import smtplib
 import sqlite3
+import threading
+import time
+import urllib.request
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask import Flask, send_from_directory, request, jsonify
@@ -23,7 +26,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260614.10'
+VERSION    = '20260615.14'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -405,7 +408,35 @@ def fetch_gallus():
     return jsonify({'ok': True, 'players': result_players, 'frontBack': front_back})
 
 
+def update_duckdns():
+    """Periodically update DuckDNS with current public IP."""
+    while True:
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute("SELECT DuckDNSToken, DuckDNSDomain FROM LeagueParms WHERE Name=\"Hugh's\" AND Season=(SELECT MAX(Season) FROM LeagueParms WHERE Name=\"Hugh's\")")
+            row = cur.fetchone()
+            conn.close()
+
+            token  = row['DuckDNSToken']  if row else None
+            domain = row['DuckDNSDomain'] if row else None
+
+            if token and domain:
+                url = f'https://www.duckdns.org/update?domains={domain}&token={token}&ip='
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    result = resp.read().decode().strip()
+                    print(f'[{datetime.datetime.now():%H:%M:%S}] DuckDNS update ({domain}.duckdns.org): {result}')
+            else:
+                print(f'[{datetime.datetime.now():%H:%M:%S}] DuckDNS not configured (no token/domain in LeagueParms)')
+        except Exception as e:
+            print(f'[{datetime.datetime.now():%H:%M:%S}] DuckDNS update error: {e}')
+
+        time.sleep(300)  # every 5 minutes
+
+
 if __name__ == '__main__':
     print(f'HughsGolf server v{VERSION} starting on port {PORT}')
     print(f'DB path: {DB_PATH}')
+    threading.Thread(target=update_duckdns, daemon=True).start()
     app.run(host='0.0.0.0', port=PORT, debug=False)
