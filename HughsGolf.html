@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260615.6</div>
+  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260615.8</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260615.6</div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260615.8</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -879,6 +879,7 @@
       <button onclick="showAdminSection('sql')" id="adminBtnSql" class="admin-btn">🔍 SQL</button>
       <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
       <button onclick="showAdminSection('serverlog')" id="adminBtnServerlog" class="admin-btn">📋 Server Log</button>
+      <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-btn">⚙ League Settings</button>
       <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
       <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
     </div>
@@ -1028,6 +1029,42 @@
             <span id="serverLogInfo" style="font-size:11px;color:#888"></span>
           </div>
           <pre id="serverLogContent" style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:8px;font-size:11px;line-height:1.5;max-height:500px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-family:'DM Mono',monospace">Loading...</pre>
+        </div>
+      </div>
+    </div>
+    <div id="adminLeaguesettings" style="display:none">
+      <div class="card">
+        <div class="card-header">⚙ League Settings</div>
+        <div style="padding:16px">
+          <div style="margin-bottom:14px">
+            <label style="font-size:12px;font-weight:600;color:#333">Season</label><br>
+            <select id="lsSeason" onchange="loadLeagueSettings()" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:4px"></select>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+            <div>
+              <div style="font-weight:700;color:var(--green);margin-bottom:8px;font-size:13px">General</div>
+              <div id="lsGeneral"></div>
+            </div>
+            <div>
+              <div style="font-weight:700;color:var(--green);margin-bottom:8px;font-size:13px">Money</div>
+              <div id="lsMoney"></div>
+            </div>
+            <div>
+              <div style="font-weight:700;color:var(--green);margin-bottom:8px;font-size:13px">Schedule</div>
+              <div id="lsSchedule"></div>
+            </div>
+            <div>
+              <div style="font-weight:700;color:var(--green);margin-bottom:8px;font-size:13px">Handicaps</div>
+              <div id="lsHandicaps"></div>
+            </div>
+            <div style="grid-column:1/-1">
+              <div style="font-weight:700;color:var(--green);margin-bottom:8px;font-size:13px">Email (sensitive)</div>
+              <div id="lsEmail"></div>
+            </div>
+          </div>
+
+          <button onclick="saveLeagueSettings()" style="margin-top:16px;padding:10px 24px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Save Settings</button>
         </div>
       </div>
     </div>
@@ -3539,7 +3576,7 @@ function loadSchedule() {
 
 // ── ADMIN TAB ──
 function showAdminSection(section) {
-  ['players','teams','subs','sql','rainout','sync','gallus','serverlog'].forEach(s => {
+  ['players','teams','subs','sql','rainout','sync','gallus','serverlog','leaguesettings'].forEach(s => {
     document.getElementById(`admin${s.charAt(0).toUpperCase()+s.slice(1)}`).style.display = s===section?'block':'none';
     document.getElementById(`adminBtn${s.charAt(0).toUpperCase()+s.slice(1)}`).className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
@@ -3551,6 +3588,7 @@ function showAdminSection(section) {
   if (section==='sync')    initSync();
   if (section==='gallus')  loadGallusQueue();
   if (section==='serverlog') loadServerLog();
+  if (section==='leaguesettings') loadLeagueSettings();
 }
 
 function loadAdminTab() {
@@ -4279,6 +4317,10 @@ function applyRoleAccess() {
   if (!currentUser) return;
   const role = currentUser.role;
 
+  // League Settings — developer only (sensitive credentials)
+  const lsBtn = document.getElementById('adminBtnLeaguesettings');
+  if (lsBtn) lsBtn.style.display = role === 'developer' ? '' : 'none';
+
   // Tab visibility
   const tabRules = {
     'admin':      ['developer', 'officer'],
@@ -4861,7 +4903,79 @@ function resetPlayerPassword() {
   saveDBToServer();
 }
 
-// ── Diff & Confirm Helper ─────────────────────────────────────────────────────
+// ── League Settings ────────────────────────────────────────────────────────────
+const LS_FIELDS = {
+  general:   [['Name','Name'],['Secretary','Secretary'],['Format','Format'],['DayOfWeek','Day of Week'],['Course','Course'],['Holes','Holes'],['Start9','Start 9'],['Method','Method']],
+  money:     [['Cost','Weekly Cost'],['Skins','Skins Amount'],['Closest','CTP Amount'],['EOY Skins','EOY Skins'],['SkinsPS','Skins (Post Season)'],['ClosestPS','CTP (Post Season)'],['PayPlaces','Pay Places'],['Carryover','Carryover']],
+  schedule:  [['StartDate','Start Date'],['EndDate','End Date'],['PostSeasonDt','Post Season Date'],['Teams','# Teams'],['Rainouts','Rainouts'],['SplitSeason','Split Season'],['Byes','Byes']],
+  handicaps: [['HdcpScores','Hdcp Scores'],['HdcpFormat','Hdcp Format'],['CarryLastYears','Carry Last Years'],['MaxHdcp','Max Hdcp'],['Par3Max','Par 3 Max'],['Par4Max','Par 4 Max'],['Par5Max','Par 5 Max'],['SkinFmt','Skin Format']],
+  email:     [['Email','League Email'],['EmailPassword','Email App Password'],['WebsitePassword','Website Password']],
+};
+
+function loadLeagueSettings() {
+  const sel = document.getElementById('lsSeason');
+  if (!sel.options.length) {
+    const seasons = query(`SELECT DISTINCT Season FROM LeagueParms ORDER BY Season DESC`);
+    sel.innerHTML = seasons.map(r => `<option value="${r.Season}">${r.Season}</option>`).join('');
+  }
+  const season = sel.value;
+  const lp = query(`SELECT * FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
+  if (!lp) return;
+
+  window._lsOriginal = lp;
+
+  const renderGroup = (containerId, fields) => {
+    const el = document.getElementById(containerId);
+    el.innerHTML = fields.map(([col, label]) => {
+      const val = lp[col] ?? '';
+      const isPw = col.includes('Password');
+      return `<div style="margin-bottom:8px">
+        <label style="font-size:11px;color:#666;display:block;margin-bottom:2px">${label}</label>
+        <input type="${isPw?'password':'text'}" data-lscol="${col}" value="${String(val).replace(/"/g,'&quot;')}" 
+          style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:4px;font-size:12px;box-sizing:border-box;font-family:'DM Mono',monospace">
+      </div>`;
+    }).join('');
+  };
+
+  renderGroup('lsGeneral', LS_FIELDS.general);
+  renderGroup('lsMoney', LS_FIELDS.money);
+  renderGroup('lsSchedule', LS_FIELDS.schedule);
+  renderGroup('lsHandicaps', LS_FIELDS.handicaps);
+  renderGroup('lsEmail', LS_FIELDS.email);
+}
+
+function saveLeagueSettings() {
+  const season = document.getElementById('lsSeason').value;
+  const orig = window._lsOriginal;
+  if (!orig) return;
+
+  const newValues = {};
+  const labels = {};
+  Object.values(LS_FIELDS).flat().forEach(([col, label]) => {
+    const input = document.querySelector(`[data-lscol="${col}"]`);
+    if (input) { newValues[col] = input.value; labels[col] = label; }
+  });
+
+  // Build old/new for diff (use labels as keys)
+  const oldDiff = {}, newDiff = {};
+  Object.keys(newValues).forEach(col => {
+    oldDiff[labels[col]] = orig[col];
+    newDiff[labels[col]] = newValues[col];
+  });
+
+  if (!confirmChanges(`Update League Settings for season ${season}?`, oldDiff, newDiff)) return;
+
+  // Build UPDATE statement
+  const setCols = Object.keys(newValues).map(col => `"${col}"=?`).join(', ');
+  const setVals = Object.keys(newValues).map(col => newValues[col]);
+  db.run(`UPDATE LeagueParms SET ${setCols} WHERE Name="Hugh's" AND Season=${season}`, setVals);
+
+  saveDBToServer();
+  loadLeagueSettings();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 // oldValues/newValues: { fieldLabel: value, ... }
 // Returns true if user confirms (or if nothing changed)
 function confirmChanges(title, oldValues, newValues) {
@@ -5069,6 +5183,15 @@ function saveTeamPlayer() {
   const grade  = document.getElementById('tpmGrade').value;
   const group  = parseInt(document.getElementById('tpmGroup').value);
   if (!player || !team || !group) { alert('Please fill all fields'); return; }
+
+  // Check for existing assignment to show in confirmation
+  const existing = query(`SELECT Team, Grade, "Group" FROM Teams WHERE League="Hugh's" AND Year=? AND Player=?`, [season, player])[0];
+  let confirmMsg = `Assign ${player} to Team ${team}${grade}, Group ${group} for ${season}?`;
+  if (existing) {
+    confirmMsg = `${player} is currently on Team ${existing.Team}${existing.Grade}, Group ${existing.Group} for ${season}.\n\nMove to Team ${team}${grade}, Group ${group}?`;
+  }
+  if (!confirm(confirmMsg)) return;
+
   // Remove existing entry for this player/season
   db.run(`DELETE FROM Teams WHERE League="Hugh's" AND Year=? AND Player=?`, [season, player]);
   db.run(`INSERT INTO Teams (League,Year,Player,Team,Grade,"Group",CTP,EOY) VALUES ("Hugh's",?,?,?,?,?,'Y','Y')`,
