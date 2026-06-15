@@ -451,7 +451,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260614.9</div>
+  <div style="font-size:10px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260614.10</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -490,7 +490,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260614.9</div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260614.10</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -875,6 +875,7 @@
       <button onclick="showAdminSection('subs')" id="adminBtnSubs" class="admin-btn">🔄 Subs</button>
       <button onclick="showAdminSection('sql')" id="adminBtnSql" class="admin-btn">🔍 SQL</button>
       <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
+      <button onclick="showAdminSection('serverlog')" id="adminBtnServerlog" class="admin-btn">📋 Server Log</button>
       <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
       <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
     </div>
@@ -1006,6 +1007,24 @@
         <div class="card-header">📥 Gallus Round Submissions</div>
         <div style="padding:16px">
           <div id="gallusQueueContent">Loading...</div>
+        </div>
+      </div>
+    </div>
+    <div id="adminServerlog" style="display:none">
+      <div class="card">
+        <div class="card-header">📋 Flask Server Log</div>
+        <div style="padding:16px">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+            <button onclick="loadServerLog()" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">🔄 Refresh</button>
+            <select id="serverLogLines" onchange="loadServerLog()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+              <option value="50">Last 50 lines</option>
+              <option value="100" selected>Last 100 lines</option>
+              <option value="300">Last 300 lines</option>
+              <option value="1000">Last 1000 lines</option>
+            </select>
+            <span id="serverLogInfo" style="font-size:11px;color:#888"></span>
+          </div>
+          <pre id="serverLogContent" style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:8px;font-size:11px;line-height:1.5;max-height:500px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-family:'DM Mono',monospace">Loading...</pre>
         </div>
       </div>
     </div>
@@ -3517,7 +3536,7 @@ function loadSchedule() {
 
 // ── ADMIN TAB ──
 function showAdminSection(section) {
-  ['players','teams','subs','sql','rainout','sync','gallus'].forEach(s => {
+  ['players','teams','subs','sql','rainout','sync','gallus','serverlog'].forEach(s => {
     document.getElementById(`admin${s.charAt(0).toUpperCase()+s.slice(1)}`).style.display = s===section?'block':'none';
     document.getElementById(`adminBtn${s.charAt(0).toUpperCase()+s.slice(1)}`).className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
@@ -3528,6 +3547,7 @@ function showAdminSection(section) {
   if (section==='rainout') loadScheduleBuilder();
   if (section==='sync')    initSync();
   if (section==='gallus')  loadGallusQueue();
+  if (section==='serverlog') loadServerLog();
 }
 
 function loadAdminTab() {
@@ -3780,6 +3800,28 @@ async function doKittyPayout() {
     document.getElementById('kittyPayModal').style.display = 'none';
     loadPrizeMoney();
   }, 2000);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Server Log Viewer ─────────────────────────────────────────────────────────
+async function loadServerLog() {
+  const el = document.getElementById('serverLogContent');
+  const infoEl = document.getElementById('serverLogInfo');
+  const lines = document.getElementById('serverLogLines').value;
+  el.textContent = 'Loading...';
+  try {
+    const resp = await fetch(`/flask-log?lines=${lines}`);
+    const json = await resp.json();
+    if (!json.ok) {
+      el.textContent = `Error: ${json.error}`;
+      return;
+    }
+    el.textContent = json.lines.join('');
+    infoEl.textContent = `Showing last ${json.lines.length} of ${json.total_lines} lines`;
+    el.scrollTop = el.scrollHeight;
+  } catch(e) {
+    el.textContent = `Failed to load log: ${e.message}`;
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 

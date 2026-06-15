@@ -23,7 +23,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260614.8'
+VERSION    = '20260614.10'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -179,6 +179,23 @@ def verify_reset():
     return jsonify({'ok': True})
 
 
+@app.route('/flask-log')
+def flask_log():
+    """Return the last N lines of the Flask log."""
+    n = request.args.get('lines', 100, type=int)
+    n = min(max(n, 10), 1000)
+    log_path = os.path.join(BASE_DIR, 'flask.log')
+    if not os.path.exists(log_path):
+        return jsonify({'ok': False, 'error': 'Log file not found', 'lines': []})
+    try:
+        with open(log_path, 'r', errors='ignore') as f:
+            all_lines = f.readlines()
+        tail = all_lines[-n:]
+        return jsonify({'ok': True, 'lines': tail, 'total_lines': len(all_lines)})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e), 'lines': []})
+
+
 @app.route('/notify-payout', methods=['POST'])
 def notify_payout():
     """Send email + SMS (via carrier gateway) notification of a kitty payout."""
@@ -288,7 +305,7 @@ You've received a payout of ${amount:.2f} from the {source}.
     return jsonify({'ok': True, 'sent_to': sent_to, 'errors': errors})
 
 
-
+@app.route('/fetch-gallus', methods=['POST'])
 def fetch_gallus():
     """Fetch and parse a Gallus Golf scorecard URL."""
     import urllib.request
