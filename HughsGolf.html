@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.14</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.15</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.14</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.15</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -4309,6 +4309,7 @@ async function doGallusConfirm() {
 
   // Populate scores into entryState
   let imported = 0;
+  const importedKeys = [];
   players.forEach(p => {
     const slot = Object.values(entryState).find(s =>
       s.active === p.name || s.regular === p.name || s.sub === p.name
@@ -4318,6 +4319,9 @@ async function doGallusConfirm() {
       if (score !== null && score > 0) slot.holes[i] = String(score);
     });
     imported++;
+    // Find this slot's key for save-triggering
+    const key = Object.keys(entryState).find(k => entryState[k] === slot);
+    if (key) importedKeys.push(key);
   });
 
   document.getElementById('gallusModal').style.display = 'none';
@@ -4332,6 +4336,20 @@ async function doGallusConfirm() {
   }
 
   reRenderEntry();
+
+  // Save + auto-pay for each imported player whose score is now complete
+  const nine = document.getElementById('entryPostSeason')?.checked
+    ? (window.psBackFirst ? courseData.all18back : courseData.all18)
+    : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front);
+  for (const key of importedKeys) {
+    const st = entryState[key];
+    const gross = calcGross(st.holes);
+    if (gross) {
+      const net = calcNet(st.holes, nine.pars, nine.hcps, st.phdcp);
+      await savePlayerScoreNow(key, gross, net);
+    }
+  }
+
   alert(`✓ Imported scores for ${imported} players from Gallus Golf.`);
 }
 // ─────────────────────────────────────────────────────────────────────────────
