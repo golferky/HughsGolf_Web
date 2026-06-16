@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.15</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.16</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.15</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.16</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -2818,6 +2818,20 @@ function loadStableford() {
 
 function loadSkins() {
   if (!db) return;
+
+  // Refresh date options in case new Skin payments were added (e.g. auto-pay)
+  const skSel = document.getElementById('skinsDate');
+  const currentVal = skSel.value;
+  const skinDates = query("SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='Skin' ORDER BY Date DESC LIMIT 80");
+  const newOptionsHtml = skinDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
+  if (skSel.innerHTML !== newOptionsHtml) {
+    skSel.innerHTML = newOptionsHtml;
+    // Restore selection if still valid, else default to most recent (first option)
+    if (currentVal && skinDates.some(r => String(r.sDate) === currentVal)) {
+      skSel.value = currentVal;
+    }
+  }
+
   const date = document.getElementById('skinsDate').value;
   if (!date) {
     document.getElementById('skinWinners').innerHTML = '<div class="empty">No skins data available</div>';
