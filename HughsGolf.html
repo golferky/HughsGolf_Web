@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.10</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.11</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.10</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.11</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -6168,9 +6168,41 @@ function buildEntryGrid() {
   });
 }
 
+// ── Toggle Paid status inline on Scorecard ─────────────────────────────────
+async function toggleEntryPaid(player, date, markPaid) {
+  const league = "Hugh's";
+  const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="${league}"`)[0]?.s;
+  const lp = query(`SELECT Skins, Closest FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
+  const skinAmt = parseFloat(lp?.Skins || 2);
+  const ctpAmt  = parseFloat(lp?.Closest || 1);
+
+  if (markPaid) {
+    if (!confirm(`Mark ${player} as paid for ${fmtDate(date)}?\n\nThis records Skin ($${skinAmt.toFixed(2)}) and CTP ($${ctpAmt.toFixed(2)}) payments.`)) return;
+    const now = new Date().toLocaleString();
+    ['Skin','CTP'].forEach(desc => {
+      const amt = desc === 'Skin' ? skinAmt : ctpAmt;
+      const exists = query(`SELECT 1 FROM Payments WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc"=? AND Detail='Payment'`, [league, player, date, desc]).length > 0;
+      if (!exists) {
+        db.run(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,DatePaid) VALUES (?,?,?,?,?,?,?)`,
+          [league, player, date, desc, 'Payment', amt, now]);
+      }
+    });
+  } else {
+    if (!confirm(`Unmark ${player} as paid for ${fmtDate(date)}?\n\nThis removes their Skin/CTP payment records for this date.`)) return;
+    db.run(`DELETE FROM Payments WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment'`, [league, player, date]);
+  }
+
+  await saveDBToServer();
+  reRenderEntry();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
   const head = document.getElementById('entryHead');
   const body = document.getElementById('entryBody');
+  const gridDate = document.getElementById('entryDate').value;
+  const paidPlayers = new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League="Hugh's" AND CAST(Date AS INTEGER)=CAST(${gridDate||0} AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment'`).map(r=>r.Player));
 
   // For post season, sort: 18-hole first (by net), then 9-hole, then no scores
   if (isPostSeason) {
@@ -6294,6 +6326,12 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       body.appendChild(sep);
     }
     const isSub = !!slot.sub;
+    const activePlayerName = isSub ? slot.sub : slot.regular;
+    const isPaid = paidPlayers.has(activePlayerName);
+    const paidBadge = !isFuture && gridDate ? (isPaid
+      ? `<button onclick="toggleEntryPaid('${activePlayerName.replace(/'/g,"\\'")}','${gridDate}',false)" style="font-size:9px;padding:1px 6px;border:1px solid #2e7d32;border-radius:3px;background:#e8f5e9;color:#2e7d32;cursor:pointer;${currentUser?.role==='player'?'pointer-events:none':''}" title="Click to unmark paid">✓ Paid</button>`
+      : `<button onclick="toggleEntryPaid('${activePlayerName.replace(/'/g,"\\'")}','${gridDate}',true)" style="font-size:9px;padding:1px 6px;border:1px solid #ccc;border-radius:3px;background:#fafafa;color:#888;cursor:pointer;${currentUser?.role==='player'?'display:none':''}" title="Click to mark paid">Pay</button>`
+    ) : '';
     const isEoyNoShow = isPostSeason && (window.eoyNoShows || new Set()).has(slot.active || slot.regular);
     const isNoShow = !isPostSeason && holesEntered === 0 && !isFuture && !isSub;
     const rowClass = isEoyNoShow ? 'eg-row-eoy-noshow' : isNoShow ? 'eg-row-noshow' : (st.inSkins && isSub) ? 'eg-row-skins eg-row-sub' : st.inSkins ? 'eg-row-skins' : isSub ? 'eg-row-sub' : '';
@@ -6318,6 +6356,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
           <span style="font-weight:600;${!slot.inSkins?'text-decoration:line-through;color:#999':''}">${slot.sub}</span>
           <span style="font-size:10px;background:#b3e5fc;color:#01579b;padding:1px 5px;border-radius:3px">SUB</span>
           <span style="font-size:10px;color:#888">for ${slot.regular}</span>
+          ${paidBadge}
           <button onclick="clearSub('${key}')" style="margin-left:auto;font-size:10px;padding:1px 6px;border:1px solid #ccc;border-radius:3px;background:white;cursor:pointer;color:#c00${currentUser?.role==='player'?';display:none':''}" title="Remove sub">✕</button>
         </div>`;
     } else {
@@ -6326,6 +6365,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
         <div style="display:flex;align-items:center;gap:4px">
           ${teamLabel}
           <span style="font-weight:600;${!slot.inSkins?'text-decoration:line-through;color:#999':''}">${slot.regular}</span>
+          ${paidBadge}
           <button onclick="openSubPicker('${key}')" style="margin-left:auto;font-size:10px;padding:1px 8px;border:1px solid #90caf9;border-radius:3px;background:#e3f2fd;cursor:pointer;color:#1565c0;${isPostSeason||currentUser?.role==='player'?'display:none':''}">Sub</button>
         </div>`;
     }
@@ -6919,7 +6959,6 @@ function distributeScores(key, nineDigits, firstInp) {
     }
   }
   applyCellClasses(nine);
-  if (gross) openPaymentModal(key);
 }
 
 // Save DB with updated scores
