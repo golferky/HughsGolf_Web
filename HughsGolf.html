@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.5</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.6</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.5</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.6</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -846,6 +846,10 @@
   <div class="section" id="tab-prizemoney">
     <div class="controls" style="justify-content:space-between;align-items:flex-end">
       <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="filter-group">
+          <label>Season</label>
+          <select id="prizemoneySeason" onchange="populatePrizeMoneyDates(); loadPrizeMoney();"></select>
+        </div>
         <div class="filter-group">
           <label>Date</label>
           <select id="prizemoneyDate"></select>
@@ -1544,14 +1548,28 @@ function onDbLoaded() {
   initEntry();
 }
 
+function populatePrizeMoneySeasons() {
+  const sel = document.getElementById('prizemoneySeason');
+  const seasons = query(`SELECT DISTINCT Season FROM LeagueParms ORDER BY Season DESC`);
+  sel.innerHTML = seasons.map(r => `<option value="${r.Season}">${r.Season}</option>`).join('');
+}
+
+function populatePrizeMoneyDates() {
+  const season = document.getElementById('prizemoneySeason').value;
+  const pmDates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','') AND Player != 'Kitty' AND Date >= ${season}0101 AND Date < ${parseInt(season)+1}0101 ORDER BY Date DESC LIMIT 80`);
+  const pmSel = document.getElementById('prizemoneyDate');
+  pmSel.innerHTML = `<option value="">-- Season totals --</option>` +
+    pmDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
+}
+
 function loadPrizeMoney() {
   if (!db) return;
   const date   = document.getElementById('prizemoneyDate').value;
-  const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
+  const season = document.getElementById('prizemoneySeason').value || query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
 
   const today    = new Date();
   const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
-  const effectiveDate = date || todayInt;
+  const effectiveDate = date || `${parseInt(season)+1}0101`;
 
   // ── CTP kitty: active carryovers as of selected date ─────────────────────
   const ctpKittyRows = query(`
@@ -1887,11 +1905,10 @@ function populateSeasonDropdowns() {
   skSel.innerHTML = skinDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
   skSel.addEventListener('change', loadSkins);
 
-  // PrizeMoney dates — any date with skin or CTP winners
-  const pmDates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','') AND Player != 'Kitty' ORDER BY Date DESC LIMIT 80`);
-  const pmSel = document.getElementById('prizemoneyDate');
-  pmSel.innerHTML = pmDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
-  pmSel.addEventListener('change', loadPrizeMoney);
+  // PrizeMoney season + dates
+  populatePrizeMoneySeasons();
+  populatePrizeMoneyDates();
+  document.getElementById('prizemoneyDate').addEventListener('change', loadPrizeMoney);
 
   document.getElementById('standSeason').addEventListener('change', () => { populateStandAsOf(); loadStandings(); });
   document.getElementById('standView').addEventListener('change', loadStandings);
