@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.12</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.14</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.12</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.14</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -6851,7 +6851,58 @@ function onScoreInput(e) {
       db.run(`INSERT OR REPLACE INTO Handicaps (League, Player, Date, PHdcp, Hdcp)
               VALUES ("Hugh's", ?, ?, ?, ?)`, [st.active, updatedDate, st.phdcp, newHdcp]);
     }
+
+    // ── Instant per-player Score save + auto-pay ─────────────────────────
+    savePlayerScoreNow(key, gross, net);
   }
+}
+
+async function savePlayerScoreNow(key, gross, net) {
+  const st = entryState[key];
+  const playerName = st.active;
+  const date = document.getElementById('entryDate').value;
+  const fb = document.getElementById('entry9').value;
+  const league = "Hugh's";
+
+  // Save the score (delete+insert, same pattern as batch Save)
+  db.run(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack=? AND League=?`, [playerName, date, fb, league]);
+  db.run(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [league, playerName, date, fb,
+     st.holes[0]||null, st.holes[1]||null, st.holes[2]||null, st.holes[3]||null, st.holes[4]||null,
+     st.holes[5]||null, st.holes[6]||null, st.holes[7]||null, st.holes[8]||null, gross, net]);
+
+  // Auto-pay check for this player (Skin + CTP independently)
+  const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="${league}"`)[0]?.s;
+  const lp = query(`SELECT Skins, Closest FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
+  const skinAmt = parseFloat(lp?.Skins || 2);
+  const ctpAmt  = parseFloat(lp?.Closest || 1);
+  const payDate = new Date().toLocaleString();
+
+  [['Skin', skinAmt], ['CTP', ctpAmt]].forEach(([desc, amt]) => {
+    const already = query(`SELECT 1 FROM Payments WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc"=? AND Detail='Payment' LIMIT 1`,
+      [league, playerName, date, desc]).length > 0;
+    if (already) return;
+
+    const priorDates = query(`SELECT DISTINCT Date FROM Scores WHERE League=? AND Player=? AND Date >= ${season}0101 AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)`,
+      [league, playerName, date]).map(r => r.Date);
+    if (!priorDates.length) return;
+
+    const paidDates = query(`SELECT DISTINCT Date FROM Payments WHERE League=? AND Player=? AND "Desc"=? AND Detail='Payment' AND Date >= ${season}0101 AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)`,
+      [league, playerName, desc, date]).map(r => r.Date);
+    const paidSet = new Set(paidDates);
+    const perfectHistory = priorDates.every(d => paidSet.has(d));
+    if (!perfectHistory) return;
+
+    db.run(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,DatePaid) VALUES (?,?,?,?,?,?,?)`,
+      [league, playerName, date, desc, 'Payment', amt, payDate]);
+  });
+
+  await saveDBToServer();
+  // Recalculate matches for this date now that a score changed
+  if (date) calcMatchesForDate(date);
+  // Refresh just this player's Paid badge without a full re-render
+  reRenderEntry();
 }
 
 function onScoreKeydown(e) {
