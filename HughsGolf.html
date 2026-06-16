@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.4</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.5</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.4</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.5</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1598,6 +1598,7 @@ function loadPrizeMoney() {
   const champP2 = parseFloat(champLp.ChampPlace2 ?? 50);
   const champP3 = parseFloat(champLp.ChampPlace3 ?? 25);
   const duesCollected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101`)[0]?.t || 0);
+  const duesPaymentCount = query(`SELECT COUNT(*) as c FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101`)[0]?.c || 0;
 
   let champ1, champ2, champ3;
   if (champMode === 'Percent') {
@@ -1676,6 +1677,11 @@ function loadPrizeMoney() {
           1st: <strong>$${champ1.toFixed(2)}</strong> &nbsp; 2nd: <strong>$${champ2.toFixed(2)}</strong> &nbsp; 3rd: <strong>$${champ3.toFixed(2)}</strong>
         </div>
         <div style="font-size:9px;color:#888;margin-top:2px">${champMode==='Percent' ? `% of dues collected ($${duesCollected.toFixed(2)})` : 'flat amounts'} — total $${champTotal.toFixed(2)}</div>
+      </div>
+      <div style="background:#e0f2f1;border:1px solid #00695c;border-radius:8px;padding:12px 20px;min-width:140px">
+        <div style="font-size:11px;color:#00695c;font-weight:600;margin-bottom:4px">LEAGUE DUES COLLECTED</div>
+        <div style="font-size:22px;font-weight:700;color:#00695c;font-family:'DM Mono',monospace">$${duesCollected.toFixed(2)}</div>
+        <div style="font-size:9px;color:#888;margin-top:2px">${duesPaymentCount} payment(s) this season</div>
       </div>
       ${totalKitty > 0.01 ? `<button onclick="showKittyPay()" style="align-self:center;padding:10px 20px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px">💰 Pay from Kitty</button>` : ''}
     </div>
