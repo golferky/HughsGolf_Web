@@ -26,7 +26,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260617.30'
+VERSION    = '20260617.31'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -195,11 +195,8 @@ def notify_login():
         return jsonify({'ok': False, 'error': 'Email not configured'}), 500
 
     dev_email = 'garyrscudder@gmail.com'
-    subject = f"HughsGolf Login: {player}"
-    body_text = f"""{player} ({role}) just logged in.
-
-Version: {version}
-Time: {datetime.datetime.now():%Y-%m-%d %H:%M:%S}
+    subject = f"HughsGolf activity log"
+    body_text = f"""{player} ({role}) logged in — v{version}, {datetime.datetime.now():%Y-%m-%d %H:%M:%S}
 """
     try:
         msg = MIMEText(body_text)

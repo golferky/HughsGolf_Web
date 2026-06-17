@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.30</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.31</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.30</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.31</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -887,6 +887,7 @@
       <button onclick="showAdminSection('sql')" id="adminBtnSql" class="admin-btn">🔍 SQL</button>
       <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
       <button onclick="showAdminSection('serverlog')" id="adminBtnServerlog" class="admin-btn">📋 Server Log</button>
+      <button onclick="showAdminSection('loginactivity')" id="adminBtnLoginactivity" class="admin-btn">🔑 Login Activity</button>
       <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-btn">⚙ League Settings</button>
       <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
       <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
@@ -1040,6 +1041,32 @@
             <span id="serverLogInfo" style="font-size:11px;color:#888"></span>
           </div>
           <pre id="serverLogContent" style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:8px;font-size:11px;line-height:1.5;max-height:500px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-family:'DM Mono',monospace">Loading...</pre>
+        </div>
+      </div>
+    </div>
+    <div id="adminLoginactivity" style="display:none">
+      <div class="card">
+        <div class="card-header">🔑 Login Activity</div>
+        <div style="padding:16px">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+            <button onclick="loadLoginActivity()" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">🔄 Refresh</button>
+            <select id="loginActivityLimit" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+              <option value="50">Last 50</option>
+              <option value="100" selected>Last 100</option>
+              <option value="300">Last 300</option>
+            </select>
+          </div>
+          <div style="overflow-x:auto">
+            <table id="loginActivityTable" style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead><tr>
+                <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Player</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Role</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Version</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Time</th>
+              </tr></thead>
+              <tbody id="loginActivityBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -3829,7 +3856,7 @@ function loadSchedule() {
 
 // ── ADMIN TAB ──
 function showAdminSection(section) {
-  ['players','teams','subs','sql','rainout','sync','gallus','serverlog','leaguesettings'].forEach(s => {
+  ['players','teams','subs','sql','rainout','sync','gallus','serverlog','leaguesettings','loginactivity'].forEach(s => {
     document.getElementById(`admin${s.charAt(0).toUpperCase()+s.slice(1)}`).style.display = s===section?'block':'none';
     document.getElementById(`adminBtn${s.charAt(0).toUpperCase()+s.slice(1)}`).className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
@@ -3842,6 +3869,7 @@ function showAdminSection(section) {
   if (section==='gallus')  loadGallusQueue();
   if (section==='serverlog') loadServerLog();
   if (section==='leaguesettings') loadLeagueSettings();
+  if (section==='loginactivity') loadLoginActivity();
 }
 
 function loadAdminTab() {
@@ -4238,6 +4266,26 @@ async function doKittyPayout() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Server Log Viewer ─────────────────────────────────────────────────────────
+function loadLoginActivity() {
+  if (!db) return;
+  const limit = document.getElementById('loginActivityLimit').value;
+  const rows = query(`SELECT log_time, text, details FROM LogTable WHERE method='login' ORDER BY log_time DESC LIMIT ${limit}`);
+  const tbody = document.getElementById('loginActivityBody');
+  tbody.innerHTML = rows.map((r,i) => {
+    const playerMatch = r.text?.match(/^(.+) logged in$/);
+    const player = playerMatch ? playerMatch[1] : r.text;
+    const roleMatch = r.details?.match(/role=(\w+)/);
+    const versionMatch = r.details?.match(/version=([\w.]+)/);
+    const localTime = new Date(r.log_time.replace(' ','T')+'Z').toLocaleString();
+    return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
+      <td style="padding:6px 12px;font-weight:600">${player}</td>
+      <td style="padding:6px 12px;font-size:12px;color:#666">${roleMatch ? roleMatch[1] : ''}</td>
+      <td style="padding:6px 12px;font-size:12px;font-family:'DM Mono',monospace;color:#888">${versionMatch ? versionMatch[1] : '—'}</td>
+      <td style="padding:6px 12px;font-size:12px">${localTime}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="4" style="padding:12px;color:#999;text-align:center">No login activity recorded</td></tr>';
+}
+
 async function loadServerLog() {
   const el = document.getElementById('serverLogContent');
   const infoEl = document.getElementById('serverLogInfo');
@@ -4850,6 +4898,8 @@ function applyRoleAccess() {
   // League Settings — developer only (sensitive credentials)
   const lsBtn = document.getElementById('adminBtnLeaguesettings');
   if (lsBtn) lsBtn.style.display = role === 'developer' ? '' : 'none';
+  const laBtn = document.getElementById('adminBtnLoginactivity');
+  if (laBtn) laBtn.style.display = role === 'developer' ? '' : 'none';
 
   // Need a Sub — only for this year's regulars (on Teams table) or officers
   const needSubBtn = document.getElementById('needSubBtn');
