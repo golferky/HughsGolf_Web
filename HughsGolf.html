@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.38</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.39</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.38</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.39</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1045,6 +1045,18 @@
       </div>
     </div>
     <div id="adminLoginactivity" style="display:none">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">🟢 Currently Logged In</div>
+        <div style="padding:16px">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr>
+              <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Player</th>
+              <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Status</th>
+            </tr></thead>
+            <tbody id="currentlyLoggedInBody"></tbody>
+          </table>
+        </div>
+      </div>
       <div class="card">
         <div class="card-header">🔑 Login Activity</div>
         <div style="padding:16px">
@@ -4323,6 +4335,29 @@ async function doKittyPayout() {
 // ── Server Log Viewer ─────────────────────────────────────────────────────────
 function loadLoginActivity() {
   if (!db) return;
+
+  // ── Currently Logged In ──────────────────────────────────────────────────
+  const activeSessions = query(`SELECT Player, ActiveSession FROM Players WHERE ActiveSession IS NOT NULL AND ActiveSession != ''`);
+  const activeEl = document.getElementById('currentlyLoggedInBody');
+  if (activeEl) {
+    if (!activeSessions.length) {
+      activeEl.innerHTML = '<tr><td colspan="2" style="padding:8px;color:#999;text-align:center;font-size:12px">No one is currently logged in</td></tr>';
+    } else {
+      activeEl.innerHTML = activeSessions.map((r,i) => {
+        const lastLogin = query(`SELECT log_time FROM LogTable WHERE method='login' AND text=? ORDER BY log_time DESC LIMIT 1`, [`${r.Player} logged in`])[0]?.log_time;
+        const sinceMin = lastLogin ? Math.round((Date.now() - new Date(lastLogin.replace(' ','T')+'Z').getTime()) / 60000) : null;
+        const likelyTimedOut = sinceMin !== null && sinceMin > 30;
+        const statusBadge = likelyTimedOut
+          ? `<span style="color:#e65100;font-size:11px">⚠ likely timed out (${sinceMin}m ago)</span>`
+          : `<span style="color:#2e7d32;font-size:11px">● active${sinceMin!==null?` (${sinceMin}m ago)`:''}</span>`;
+        return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
+          <td style="padding:6px 12px;font-weight:600">${r.Player}</td>
+          <td style="padding:6px 12px">${statusBadge}</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+
   const limit = document.getElementById('loginActivityLimit').value;
   const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed') ORDER BY log_time DESC LIMIT ${limit}`);
   const tbody = document.getElementById('loginActivityBody');
