@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.20</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.21</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -492,22 +492,23 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.20</div>
-    <div id="loginForm">
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.21</div>
+    <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
         <select id="loginName" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:13px"></select>
+        <input type="text" id="loginNameShadow" autocomplete="username" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
       </div>
       <div style="margin-bottom:16px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Password</label>
-        <input type="password" id="loginPassword" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:13px;box-sizing:border-box" placeholder="Enter password" onkeydown="if(event.key==='Enter')doLogin()">
+        <input type="password" id="loginPassword" autocomplete="current-password" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:13px;box-sizing:border-box" placeholder="Enter password" onkeydown="if(event.key==='Enter')doLogin()">
       </div>
       <div id="loginError" style="color:#c62828;font-size:12px;margin-bottom:12px;display:none"></div>
-      <button onclick="doLogin()" style="width:100%;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:14px;cursor:pointer">Login</button>
+      <button type="submit" style="width:100%;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:14px;cursor:pointer">Login</button>
       <div style="text-align:center;margin-top:12px">
         <a href="#" onclick="showForgotPassword();return false;" style="font-size:12px;color:#1565c0;text-decoration:none">Forgot Password?</a>
       </div>
-    </div>
+    </form>
 
     <div id="setPasswordForm" style="display:none">
       <div style="color:#1565c0;font-size:13px;margin-bottom:16px">Welcome! Please set your password.</div>
@@ -4582,7 +4583,9 @@ function showLoginScreen() {
     const hasPassword = player && player.Password;
     document.getElementById('loginForm').style.display = hasPassword ? 'block' : 'none';
     document.getElementById('setPasswordForm').style.display = hasPassword ? 'none' : 'block';
+    document.getElementById('loginNameShadow').value = name; // keep in sync for password manager
   };
+  document.getElementById('loginNameShadow').value = sel.value || '';
   document.getElementById('loginPassword').value = '';
   document.getElementById('loginError').style.display = 'none';
 }
