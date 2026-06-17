@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.33</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.35</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.33</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.35</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -503,7 +503,7 @@
       </div>
       <div style="margin-bottom:16px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Password</label>
-        <input type="password" id="loginPassword" autocomplete="current-password" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:13px;box-sizing:border-box" placeholder="Enter password" onkeydown="if(event.key==='Enter')doLogin()">
+        <input type="password" id="loginPassword" autocomplete="current-password" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:13px;box-sizing:border-box" placeholder="Enter password">
       </div>
       <div id="loginError" style="color:#c62828;font-size:12px;margin-bottom:12px;display:none"></div>
       <button type="submit" style="width:100%;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:14px;cursor:pointer">Login</button>
@@ -1063,6 +1063,7 @@
                 <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Event</th>
                 <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Role</th>
                 <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Version</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">IP</th>
                 <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Time</th>
               </tr></thead>
               <tbody id="loginActivityBody"></tbody>
@@ -4283,26 +4284,32 @@ async function doKittyPayout() {
 function loadLoginActivity() {
   if (!db) return;
   const limit = document.getElementById('loginActivityLimit').value;
-  const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout') ORDER BY log_time DESC LIMIT ${limit}`);
+  const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed') ORDER BY log_time DESC LIMIT ${limit}`);
   const tbody = document.getElementById('loginActivityBody');
   tbody.innerHTML = rows.map((r,i) => {
     const isLogin = r.method === 'login';
-    const playerMatch = isLogin ? r.text?.match(/^(.+) logged in$/) : r.text?.match(/^(.+) (?:logged out|session expired)/);
+    const playerMatch = isLogin ? r.text?.match(/^(.+) logged in$/)
+      : r.method === 'login_failed' ? r.text?.match(/^(.+) failed login/)
+      : r.text?.match(/^(.+) (?:logged out|session expired)/);
     const player = playerMatch ? playerMatch[1] : r.text;
     const roleMatch = r.details?.match(/role=(\w+)/);
     const versionMatch = r.details?.match(/version=([\w.]+)/);
+    const ipMatch = r.details?.match(/ip=([\d.a-fA-F:]+)/);
+    const attemptMatch = r.details?.match(/attempt=(\d+\/\d+)/);
     const localTime = new Date(r.log_time.replace(' ','T')+'Z').toLocaleString();
     const eventLabel = r.method === 'login' ? '<span style="color:#2e7d32">→ Login</span>'
       : r.method === 'session_timeout' ? '<span style="color:#e65100">⏱ Timeout</span>'
+      : r.method === 'login_failed' ? `<span style="color:#c62828">✗ Failed${attemptMatch?` (${attemptMatch[1]})`:''}</span>`
       : '<span style="color:#888">← Logout</span>';
     return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
       <td style="padding:6px 12px;font-weight:600">${player}</td>
       <td style="padding:6px 12px;font-size:12px">${eventLabel}</td>
       <td style="padding:6px 12px;font-size:12px;color:#666">${roleMatch ? roleMatch[1] : ''}</td>
       <td style="padding:6px 12px;font-size:12px;font-family:'DM Mono',monospace;color:#888">${versionMatch ? versionMatch[1] : '—'}</td>
+      <td style="padding:6px 12px;font-size:11px;font-family:'DM Mono',monospace;color:#888">${ipMatch ? ipMatch[1] : '—'}</td>
       <td style="padding:6px 12px;font-size:12px">${localTime}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="5" style="padding:12px;color:#999;text-align:center">No login activity recorded</td></tr>';
+  }).join('') || '<tr><td colspan="6" style="padding:12px;color:#999;text-align:center">No login activity recorded</td></tr>';
 }
 
 async function loadServerLog() {
@@ -4809,6 +4816,14 @@ async function doLogin() {
   const hash = await hashPassword(password);
   if (hash !== player.Password) {
     loginAttempts++;
+    const now = new Date().toISOString().replace('T',' ').substring(0,19);
+    let ip = 'unknown';
+    try { ip = (await (await fetch('/get-ip')).json()).ip || 'unknown'; } catch(e) { /* ignore */ }
+    try {
+      db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+        [now, 'WARN', 'login_failed', 'HughsGolf', `${name} failed login attempt`, `attempt=${loginAttempts}/${MAX_ATTEMPTS} ip=${ip}`, now]);
+      saveDBToServer();
+    } catch(e) { /* ignore */ }
     if (loginAttempts >= MAX_ATTEMPTS) {
       lockoutUntil = Date.now() + LOCKOUT_MS;
       loginAttempts = 0;
@@ -4859,7 +4874,7 @@ async function doSetPassword() {
   loginSuccess(player);
 }
 
-function loginSuccess(player) {
+async function loginSuccess(player) {
   currentUser = {
     name: player.Player,
     officer: player.Officer || '',
@@ -4870,9 +4885,11 @@ function loginSuccess(player) {
   // Log login
   const now = new Date().toISOString().replace('T',' ').substring(0,19);
   const appVersion = document.getElementById('appVersionDisplay')?.textContent?.trim() || 'unknown';
+  let loginIp = 'unknown';
+  try { loginIp = (await (await fetch('/get-ip')).json()).ip || 'unknown'; } catch(e) { /* ignore */ }
   try {
     db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
-      [now, 'INFO', 'login', 'HughsGolf', `${player.Player} logged in`, `role=${currentUser.role} version=${appVersion}`, now]);
+      [now, 'INFO', 'login', 'HughsGolf', `${player.Player} logged in`, `role=${currentUser.role} version=${appVersion} ip=${loginIp}`, now]);
     saveDBToServer();
   } catch(e) { console.warn('Login log failed:', e); }
 
@@ -4880,7 +4897,7 @@ function loginSuccess(player) {
   fetch('/notify-login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ player: player.Player, role: currentUser.role, version: appVersion })
+    body: JSON.stringify({ player: player.Player, role: currentUser.role, version: appVersion, ip: loginIp })
   }).catch(() => {});
 
   // Remember last player

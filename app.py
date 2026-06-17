@@ -26,7 +26,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260617.31'
+VERSION    = '20260617.35'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -49,6 +49,15 @@ def get_gmail_creds():
     except Exception as e:
         print(f'get_gmail_creds error: {e}')
     return None, None
+
+
+@app.route('/get-ip')
+def get_ip():
+    """Return the caller's IP address (for login/audit logging)."""
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if ip and ',' in ip:
+        ip = ip.split(',')[0].strip()
+    return jsonify({'ip': ip})
 
 
 @app.route('/')
@@ -189,6 +198,7 @@ def notify_login():
     player  = body.get('player', 'Unknown')
     role    = body.get('role', 'unknown')
     version = body.get('version', 'unknown')
+    ip      = body.get('ip', 'unknown')
 
     gmail_user, gmail_pw = get_gmail_creds()
     if not gmail_user or not gmail_pw:
@@ -196,7 +206,7 @@ def notify_login():
 
     dev_email = 'garyrscudder@gmail.com'
     subject = f"HughsGolf activity log"
-    body_text = f"""{player} ({role}) logged in — v{version}, {datetime.datetime.now():%Y-%m-%d %H:%M:%S}
+    body_text = f"""{player} ({role}) logged in — v{version}, ip={ip}, {datetime.datetime.now():%Y-%m-%d %H:%M:%S}
 """
     try:
         msg = MIMEText(body_text)
