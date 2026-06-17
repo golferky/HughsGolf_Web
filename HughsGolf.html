@@ -432,6 +432,7 @@
   }
 
   @keyframes flash { 0%,100%{background:white} 50%{background:#c8e6c9} }
+  @keyframes duesPulse { 0%,100%{box-shadow:0 0 0 0 rgba(198,40,40,0.4)} 50%{box-shadow:0 0 0 6px rgba(198,40,40,0)} }
   .save-flash { animation: flash 0.4s; }
 
   /* Hdcp tooltip */
@@ -454,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.24</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.25</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -492,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.24</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.25</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1647,6 +1648,12 @@ function loadPrizeMoney() {
   const champP3 = parseFloat(champLp.ChampPlace3 ?? 25);
   const duesCollected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
   const duesPaymentCount = query(`SELECT COUNT(*) as c FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.c || 0;
+  const duesPaidRows = query(`SELECT Player, Earned, DatePaid FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY Player`);
+  const duesPaidPlayers = new Set(duesPaidRows.map(r => r.Player));
+  const rosterCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Teams WHERE League="Hugh's" AND Year=${season}`)[0]?.c || 0;
+  const rosterPlayers = query(`SELECT DISTINCT Player FROM Teams WHERE League="Hugh's" AND Year=${season}`).map(r => r.Player);
+  const unpaidRosterPlayers = rosterPlayers.filter(p => !duesPaidPlayers.has(p));
+  const allDuesPaid = rosterCount > 0 && unpaidRosterPlayers.length === 0;
 
   // ── Expenses ──────────────────────────────────────────────────────────────
   const expenseRows = query(`SELECT Detail, Earned FROM Payments WHERE League="Hugh's" AND "Desc"='Expense' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY Detail`);
@@ -1735,8 +1742,9 @@ function loadPrizeMoney() {
         </div>
         <div style="font-size:9px;color:#888;margin-top:2px">${champMode==='Percent' ? `% of dues collected ($${duesCollected.toFixed(2)})` : 'flat amounts'} — total $${champTotal.toFixed(2)}</div>
       </div>
-      <div style="background:#e0f2f1;border:1px solid #00695c;border-radius:8px;padding:12px 20px;min-width:160px">
-        <div style="font-size:11px;color:#00695c;font-weight:600;margin-bottom:4px">LEAGUE DUES COLLECTED</div>
+      <div style="background:#e0f2f1;border:1px solid #00695c;border-radius:8px;padding:12px 20px;min-width:160px;cursor:pointer;position:relative${allDuesPaid?'':';animation:duesPulse 1.5s ease-in-out infinite'}" onclick="document.getElementById('duesDetail').style.display=document.getElementById('duesDetail').style.display==='none'?'block':'none'">
+        ${allDuesPaid ? '' : `<span style="position:absolute;top:-8px;right:-8px;background:#c62828;color:white;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px">${unpaidRosterPlayers.length} unpaid</span>`}
+        <div style="font-size:11px;color:#00695c;font-weight:600;margin-bottom:4px">LEAGUE DUES COLLECTED ▾</div>
         <div style="font-size:22px;font-weight:700;color:#00695c;font-family:'DM Mono',monospace">$${duesCollected.toFixed(2)}</div>
         <div style="font-size:9px;color:#888;margin-top:2px">${duesPaymentCount} payment(s) — net after expenses: $${netDues.toFixed(2)}</div>
       </div>
@@ -1812,6 +1820,21 @@ function loadPrizeMoney() {
           <td style="padding:4px 10px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">$${parseFloat(r.Earned).toFixed(2)}</td>
           <td style="padding:4px 10px;font-size:12px">${r.DatePaid || ''}</td>
         </tr>`).join('') : '<tr><td colspan="3" style="padding:8px;color:#999;font-size:12px">Nobody has paid EOY Skins yet</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div id="duesDetail" style="display:none;margin-bottom:12px;max-width:600px">
+      ${unpaidRosterPlayers.length ? `<div style="font-size:12px;color:#c62828;font-weight:600;margin-bottom:6px">⚠ Not yet paid: ${unpaidRosterPlayers.join(', ')}</div>` : `<div style="font-size:12px;color:#2e7d32;font-weight:600;margin-bottom:6px">✓ All ${rosterCount} regulars have paid dues</div>`}
+      <table style="border-collapse:collapse;width:100%">
+        <thead><tr style="background:#00695c;color:white">
+          <th style="padding:5px 10px;text-align:left;font-size:11px">Player</th>
+          <th style="padding:5px 10px;text-align:right;font-size:11px">Paid</th>
+          <th style="padding:5px 10px;text-align:left;font-size:11px">Date Paid</th>
+        </tr></thead>
+        <tbody>${duesPaidRows.length ? duesPaidRows.map((r,i) => `<tr style="background:${i%2===0?'#fff':'#e0f2f1'}">
+          <td style="padding:4px 10px;font-size:12px;font-weight:600">${r.Player}</td>
+          <td style="padding:4px 10px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">$${parseFloat(r.Earned).toFixed(2)}</td>
+          <td style="padding:4px 10px;font-size:12px">${r.DatePaid || ''}</td>
+        </tr>`).join('') : '<tr><td colspan="3" style="padding:8px;color:#999;font-size:12px">Nobody has paid dues yet</td></tr>'}</tbody>
       </table>
     </div>`;
 
