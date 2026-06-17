@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260616.16</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.2</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260616.16</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.2</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -6224,6 +6224,7 @@ async function toggleEntryPaid(player, date, markPaid) {
     db.run(`DELETE FROM Payments WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment'`, [league, player, date]);
   }
 
+  saveSkinWinnersForDate(date);
   await saveDBToServer();
   reRenderEntry();
 }
@@ -6684,6 +6685,109 @@ function closeSubPicker() {
 
 // Compute which holes are tied (multiple players share the lowest gross score)
 // Returns Set of hole indices (0-8) that are tied
+// ── Automatic Skin Winner Calculation ──────────────────────────────────────
+function calcSkinWinnersForDate(date) {
+  if (!db || !date) return;
+  const league = "Hugh's";
+  const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="${league}"`)[0]?.s;
+
+  // Determine front/back for this date from Schedule, or use whatever FrontBack is in Scores
+  const fbRow = query(`SELECT DISTINCT FrontBack FROM Scores WHERE League="${league}" AND Date=${date} LIMIT 1`)[0];
+  const fb = fbRow?.FrontBack || 'F';
+  const isBack = fb === 'Back' || fb === 'B';
+
+  const nine = isBack ? courseData.back : courseData.front;
+  if (!nine) return; // course data not loaded — bail safely
+
+  // Who paid skins this date (eligible to win)
+  const skinPayers = new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League="${league}" AND "Desc"='Skin' AND Detail='Payment' AND Date=${date}`).map(r => r.Player));
+  if (!skinPayers.size) return; // no one paid, nothing to calculate
+
+  // Pull scores + handicaps for this date
+  const scoreRows = query(`SELECT Player, "1","2","3","4","5","6","7","8","9" FROM Scores WHERE League="${league}" AND Date=${date} AND FrontBack=?`, [fb]);
+  const hcpMap = {};
+  scoreRows.forEach(r => {
+    const h = query(`SELECT PHdcp FROM Handicaps WHERE League="${league}" AND Player=? ORDER BY Date DESC LIMIT 1`, [r.Player])[0];
+    hcpMap[r.Player] = h?.PHdcp || 0;
+  });
+
+  const holeCount = 9;
+  const holeMins = Array(holeCount).fill(null);
+  const holeWinner = Array(holeCount).fill(null);
+  const holeTied = Array(holeCount).fill(false);
+
+  const sortedIdx = [...nine.hcps].map((si,i)=>({si,i})).sort((a,b)=>a.si-b.si).map(x=>x.i);
+
+  scoreRows.forEach(r => {
+    if (!skinPayers.has(r.Player)) return; // only paid players eligible
+    const phdcp = hcpMap[r.Player] || 0;
+    for (let hi = 0; hi < holeCount; hi++) {
+      const gross = parseInt(r[String(hi+1)]);
+      if (isNaN(gross)) continue;
+      let strokes = sortedIdx.slice(0, Math.min(phdcp, 9)).includes(hi) ? 1 : 0;
+      if (phdcp > 9) strokes += sortedIdx.slice(0, phdcp - 9).includes(hi) ? 1 : 0;
+      const net = gross - strokes;
+
+      if (holeMins[hi] === null || net < holeMins[hi]) {
+        holeMins[hi] = net; holeWinner[hi] = r.Player; holeTied[hi] = false;
+      } else if (net === holeMins[hi]) {
+        holeTied[hi] = true; holeWinner[hi] = null;
+      }
+    }
+  });
+
+  // Count holes with an outright winner (no tie)
+  const winningHoles = [];
+  for (let hi = 0; hi < holeCount; hi++) {
+    if (holeWinner[hi] && !holeTied[hi]) winningHoles.push(hi);
+  }
+  if (!winningHoles.length) return { winners: [], potPerHole: 0, totalPot: 0 };
+
+  const lp = query(`SELECT Skins FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
+  const skinAmt = parseFloat(lp?.Skins || 2);
+  const totalPot = skinPayers.size * skinAmt;
+  const potPerHole = Math.round((totalPot / winningHoles.length) * 100) / 100;
+
+  const winners = winningHoles.map(hi => ({
+    hole: nine.nums[hi],
+    player: holeWinner[hi],
+    netScore: holeMins[hi],
+    amount: potPerHole
+  }));
+
+  return { winners, potPerHole, totalPot, payerCount: skinPayers.size };
+}
+
+function saveSkinWinnersForDate(date) {
+  const result = calcSkinWinnersForDate(date);
+  if (!result || !result.winners.length) return { ok: false, message: 'No outright skin winners found for this date.' };
+
+  const league = "Hugh's";
+  // Clear any existing winner records for this date first (recalculation-safe)
+  db.run(`DELETE FROM Payments WHERE League=? AND "Desc"='Skin' AND Detail LIKE '#%' AND Date=?`, [league, date]);
+
+  result.winners.forEach(w => {
+    db.run(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,Comment) VALUES (?,?,?,?,?,?,?)`,
+      [league, w.player, date, 'Skin', `#${w.hole}`, w.amount, `Score=${w.netScore}`]);
+  });
+
+  return { ok: true, count: result.winners.length, total: result.winners.reduce((a,w)=>a+w.amount,0) };
+}
+
+async function manualRecalcSkins() {
+  const date = document.getElementById('entryDate').value;
+  if (!date) { alert('Please select a date first.'); return; }
+  const result = saveSkinWinnersForDate(date);
+  if (result.ok) {
+    await saveDBToServer();
+    reRenderEntry();
+    alert(`✓ Calculated ${result.count} skin winner(s), total $${result.total.toFixed(2)} for ${fmtDate(date)}.`);
+  } else {
+    alert(result.message || 'No outright winners found (all holes tied, or no one has paid skins yet).');
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function computeSkinTies(nine, isPostSeason) {
   const holeCount = nine.nums.length; // 9 or 18
   const holeMins   = Array(holeCount).fill(null);
@@ -6933,6 +7037,8 @@ async function savePlayerScoreNow(key, gross, net) {
   await saveDBToServer();
   // Recalculate matches for this date now that a score changed
   if (date) calcMatchesForDate(date);
+  // Recalculate skin winners now that a score changed
+  if (date) saveSkinWinnersForDate(date);
   // Refresh just this player's Paid badge without a full re-render
   reRenderEntry();
 }
@@ -7168,6 +7274,7 @@ async function saveEntryToDB() {
   // Auto-recalculate matches for this date
   const entryDate = document.getElementById('entryDate').value;
   if (entryDate) calcMatchesForDate(entryDate);
+  if (entryDate) saveSkinWinnersForDate(entryDate);
   document.getElementById('entryGrid').classList.add('save-flash');
   setTimeout(()=>document.getElementById('entryGrid').classList.remove('save-flash'),400);
 }
