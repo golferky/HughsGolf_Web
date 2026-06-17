@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.5</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.9</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -493,7 +493,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.5</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.9</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -704,7 +704,6 @@
       </div>
       <div style="display:flex;gap:8px">
         <button id="entryClear" style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px">Clear</button>
-        <button id="entrySave" style="padding:8px 20px;background:var(--green);color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">💾 Save DB</button>
         <button id="gallusSubmitBtn" onclick="showGallusSubmit()" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">📤 Submit Round</button>
       </div>
     </div>
@@ -4555,6 +4554,18 @@ async function doLogin() {
   }
   loginAttempts = 0;
 
+  // ── Check for an existing active session on another device ──────────────
+  const existingSession = query(`SELECT ActiveSession FROM Players WHERE Player=?`, [name])[0]?.ActiveSession;
+  if (existingSession) {
+    const proceed = confirm(`${name} is already logged in on another device or browser.\n\nContinue and log out the other session?`);
+    if (!proceed) return;
+  }
+
+  // Generate a new session token for this login
+  const sessionToken = `${Date.now()}-${Math.random().toString(36).substring(2,10)}`;
+  db.run(`UPDATE Players SET ActiveSession=? WHERE Player=?`, [sessionToken, name]);
+  window._mySessionToken = sessionToken;
+
   loginSuccess(player);
 }
 
@@ -4603,6 +4614,20 @@ function loginSuccess(player) {
   document.getElementById('changePwBtn').style.display = '';
   resetSessionTimer();
   applyRoleAccess();
+
+  // ── Periodic check: has this session been kicked out by another login? ──
+  clearInterval(window._sessionCheckInterval);
+  window._sessionCheckInterval = setInterval(() => {
+    if (!currentUser || !window._mySessionToken) return;
+    try {
+      const current = query(`SELECT ActiveSession FROM Players WHERE Player=?`, [currentUser.name])[0]?.ActiveSession;
+      if (current && current !== window._mySessionToken) {
+        clearInterval(window._sessionCheckInterval);
+        alert(`You've been logged out because ${currentUser.name} signed in on another device.`);
+        logoutUser();
+      }
+    } catch(e) { /* ignore transient errors */ }
+  }, 30000);
 }
 
 function applyRoleAccess() {
@@ -4701,6 +4726,18 @@ async function doChangePw() {
 }
 
 function logoutUser() {
+  // Clear our ActiveSession lock if we still own it (avoid clearing someone else's newer session)
+  if (currentUser && window._mySessionToken) {
+    try {
+      const current = query(`SELECT ActiveSession FROM Players WHERE Player=?`, [currentUser.name])[0]?.ActiveSession;
+      if (current === window._mySessionToken) {
+        db.run(`UPDATE Players SET ActiveSession=NULL WHERE Player=?`, [currentUser.name]);
+        saveDBToServer();
+      }
+    } catch(e) { /* ignore */ }
+  }
+  clearInterval(window._sessionCheckInterval);
+  window._mySessionToken = null;
   currentUser = null;
   window._resetPlayer = null;
   clearTimeout(sessionTimer);
