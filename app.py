@@ -26,7 +26,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260615.14'
+VERSION    = '20260617.30'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -182,6 +182,39 @@ def verify_reset():
     return jsonify({'ok': True})
 
 
+@app.route('/notify-login', methods=['POST'])
+def notify_login():
+    """Email the developer whenever someone logs in, with their version."""
+    body = request.get_json() or {}
+    player  = body.get('player', 'Unknown')
+    role    = body.get('role', 'unknown')
+    version = body.get('version', 'unknown')
+
+    gmail_user, gmail_pw = get_gmail_creds()
+    if not gmail_user or not gmail_pw:
+        return jsonify({'ok': False, 'error': 'Email not configured'}), 500
+
+    dev_email = 'garyrscudder@gmail.com'
+    subject = f"HughsGolf Login: {player}"
+    body_text = f"""{player} ({role}) just logged in.
+
+Version: {version}
+Time: {datetime.datetime.now():%Y-%m-%d %H:%M:%S}
+"""
+    try:
+        msg = MIMEText(body_text)
+        msg['From'] = gmail_user
+        msg['To'] = dev_email
+        msg['Subject'] = subject
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(gmail_user, gmail_pw)
+            server.send_message(msg)
+        return jsonify({'ok': True})
+    except Exception as e:
+        print(f'notify_login error: {e}')
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
 @app.route('/flask-log')
 def flask_log():
     """Return the last N lines of the Flask log."""
@@ -197,6 +230,124 @@ def flask_log():
         return jsonify({'ok': True, 'lines': tail, 'total_lines': len(all_lines)})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e), 'lines': []})
+
+
+@app.route('/need-sub', methods=['POST'])
+def need_sub():
+    """Send a sub request to selected players, CC'ing the secretary."""
+    body = request.get_json()
+    player     = body.get('player', '').strip()
+    date       = body.get('date', '').strip()
+    message    = body.get('message', '').strip()
+    recipients = body.get('recipients', [])
+
+    if not player or not date or not message or not recipients:
+        return jsonify({'ok': False, 'error': 'Missing required fields'}), 400
+
+    CARRIER_GATEWAYS = {
+        'verizon':   'vtext.com',
+        'att':       'txt.att.net',
+        'at&t':      'txt.att.net',
+        't-mobile':  'tmomail.net',
+        'tmobile':   'tmomail.net',
+        'sprint':    'messaging.sprintpcs.com',
+        'cricket':   'sms.cricketwireless.net',
+        'boost':     'sms.myboostmobile.com',
+        'metro':     'mymetropcs.com',
+        'us cellular': 'email.uscc.net',
+        'uscellular': 'email.uscc.net',
+    }
+
+    gmail_user, gmail_pw = get_gmail_creds()
+    if not gmail_user or not gmail_pw:
+        return jsonify({'ok': False, 'error': 'Email not configured'}), 500
+
+    # Get secretary's email for CC
+    secretary_email = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT Secretary FROM LeagueParms WHERE Name=\"Hugh's\" AND Season=(SELECT MAX(Season) FROM LeagueParms WHERE Name=\"Hugh's\")")
+        sec_row = cur.fetchone()
+        secretary_name = sec_row['Secretary'] if sec_row else None
+        if secretary_name:
+            cur.execute("SELECT Email FROM Players WHERE Player=?", (secretary_name,))
+            sec_email_row = cur.fetchone()
+            if sec_email_row:
+                secretary_email = sec_email_row['Email']
+        conn.close()
+    except Exception as e:
+        print(f'need_sub secretary lookup error: {e}')
+
+    subject = f"Hugh's Golf League — Sub Needed for {date}"
+    sent_count = 0
+    failed = []
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        for recipient in recipients:
+            cur.execute("SELECT Email, Phone, CellCarrier FROM Players WHERE Player=?", (recipient,))
+            r = cur.fetchone()
+            if not r:
+                failed.append(recipient)
+                continue
+
+            sent_this_one = False
+
+            # Email
+            if r['Email']:
+                try:
+                    msg = MIMEMultipart()
+                    msg['From']    = gmail_user
+                    msg['To']      = r['Email']
+                    if secretary_email and secretary_email != r['Email']:
+                        msg['Cc'] = secretary_email
+                    msg['Subject'] = subject
+                    msg.attach(MIMEText(message, 'plain'))
+                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                        server.login(gmail_user, gmail_pw)
+                        recipients_list = [r['Email']]
+                        if secretary_email and secretary_email != r['Email']:
+                            recipients_list.append(secretary_email)
+                        server.sendmail(gmail_user, recipients_list, msg.as_string())
+                    sent_this_one = True
+                except Exception as e:
+                    print(f'need_sub email error for {recipient}: {e}')
+
+            # SMS
+            if r['Phone'] and r['CellCarrier']:
+                carrier_key = str(r['CellCarrier']).strip().lower()
+                gateway = CARRIER_GATEWAYS.get(carrier_key)
+                if gateway:
+                    phone_digits = ''.join(c for c in str(r['Phone']) if c.isdigit())
+                    if len(phone_digits) == 10:
+                        try:
+                            sms_msg = MIMEText(message)
+                            sms_msg['From']    = gmail_user
+                            sms_msg['To']      = f'{phone_digits}@{gateway}'
+                            sms_msg['Subject'] = "Hugh's Golf - Sub Needed"
+                            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                                server.login(gmail_user, gmail_pw)
+                                server.send_message(sms_msg)
+                            sent_this_one = True
+                        except Exception as e:
+                            print(f'need_sub sms error for {recipient}: {e}')
+
+            if sent_this_one:
+                sent_count += 1
+            else:
+                failed.append(recipient)
+
+        conn.close()
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+    print(f'[{datetime.datetime.now():%H:%M:%S}] Sub request from {player} for {date}: sent to {sent_count}/{len(recipients)}')
+    return jsonify({'ok': True, 'sent_count': sent_count, 'failed': failed})
 
 
 @app.route('/notify-payout', methods=['POST'])
