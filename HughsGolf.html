@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.35</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.37</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.35</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.37</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1251,6 +1251,27 @@
       <div style="display:flex;gap:8px">
         <button onclick="doNeedSub()" style="flex:2;padding:10px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Send Request</button>
         <button onclick="document.getElementById('needSubModal').style.display='none'" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mark Paid Modal -->
+  <div id="markPaidModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:12px;padding:28px;width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+      <div style="font-size:16px;font-weight:700;margin-bottom:12px;color:var(--green)">💵 Mark as Paid</div>
+      <div id="markPaidSummary" style="font-size:13px;color:#333;margin-bottom:14px"></div>
+
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Paid on</div>
+      <input type="text" id="markPaidDateTime" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;margin-bottom:12px">
+
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer">
+        <input type="checkbox" id="markPaidNotify" checked> Notify player by email/text
+      </label>
+      <div id="markPaidNotifyMsg" style="font-size:11px;color:#666;margin-bottom:14px;padding-left:22px"></div>
+
+      <div style="display:flex;gap:8px">
+        <button onclick="confirmMarkPaid()" style="flex:2;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Mark Paid</button>
+        <button onclick="document.getElementById('markPaidModal').style.display='none'" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
       </div>
     </div>
   </div>
@@ -3951,10 +3972,12 @@ document.addEventListener('keypress', resetSessionTimer);
 // ── Server Save ───────────────────────────────────────────────────────────────
 let _saveInProgress = false;
 
+let _savePending = false;
 async function saveDBToServer(successLabel, btnId) {
   if (!db) return;
-  if (_saveInProgress) return;   // debounce rapid calls
+  if (_saveInProgress) { _savePending = true; return; }   // queue instead of dropping
   _saveInProgress = true;
+  _savePending = false;
 
   const globalBtn = document.getElementById('globalSaveBtn');
   if (globalBtn) { globalBtn.textContent = '⏳ Saving…'; globalBtn.disabled = true; }
@@ -3987,6 +4010,10 @@ async function saveDBToServer(successLabel, btnId) {
     alert('DB save to server failed: ' + e.message + '\n\nCheck that the Flask server is running.');
   } finally {
     _saveInProgress = false;
+    if (_savePending) {
+      _savePending = false;
+      saveDBToServer(successLabel, btnId);
+    }
   }
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3999,33 +4026,37 @@ async function doMarkPaid(player, date, desc, detail, amount) {
   const hasEmail = !!p.Email;
   const hasSms   = !!(p.Phone && p.CellCarrier && CARRIERS.includes(p.CellCarrier.trim().toLowerCase()));
 
-  let notifyMsg;
   const methods = [];
   if (hasEmail) methods.push(`email (${p.Email})`);
   if (hasSms)   methods.push(`text (${p.Phone}, may not always arrive)`);
-  if (methods.length) {
-    notifyMsg = `A message will be sent via: ${methods.join(' and ')}.`;
-    if (!hasEmail) notifyMsg += `\n⚠ No email on file.`;
-    if (!hasSms)   notifyMsg += `\n⚠ No valid cell carrier on file — text message will NOT be sent.`;
-  } else {
-    notifyMsg = `⚠ No email or valid cell carrier on file — no message can be sent.`;
-  }
 
-  if (!confirm(`Mark $${amount.toFixed(2)} ${desc} ${detail} as paid to ${player}?\n\n${notifyMsg}`)) return;
+  document.getElementById('markPaidSummary').textContent = `Mark $${amount.toFixed(2)} ${desc} ${detail} as paid to ${player}.`;
+  document.getElementById('markPaidDateTime').value = new Date().toLocaleString();
+  document.getElementById('markPaidNotify').checked = methods.length > 0;
+  document.getElementById('markPaidNotify').disabled = methods.length === 0;
+  document.getElementById('markPaidNotifyMsg').textContent = methods.length
+    ? `Will send via: ${methods.join(' and ')}.`
+    : `⚠ No email or valid cell carrier on file — nothing to send.`;
 
-  // Allow backdating the paid time (e.g. paid in person last night, recording it now)
-  const defaultNow = new Date().toLocaleString();
-  const enteredTime = prompt(`When was this actually paid?\n\nLeave as-is for "now", or edit to backdate (e.g. "6/16/2026, 9:30:00 PM"):`, defaultNow);
-  if (enteredTime === null) return; // cancelled
-  let now = defaultNow;
-  if (enteredTime.trim()) {
-    const parsed = new Date(enteredTime.trim());
+  window._markPaidContext = { player, date, desc, detail, amount, hasEmail, hasSms };
+  document.getElementById('markPaidModal').style.display = 'flex';
+}
+
+async function confirmMarkPaid() {
+  const { player, date, desc, detail, amount, hasEmail, hasSms } = window._markPaidContext;
+  document.getElementById('markPaidModal').style.display = 'none';
+
+  const enteredTime = document.getElementById('markPaidDateTime').value.trim();
+  const wantsNotify = document.getElementById('markPaidNotify').checked;
+  let now = new Date().toLocaleString();
+  if (enteredTime) {
+    const parsed = new Date(enteredTime);
     if (!isNaN(parsed)) now = parsed.toLocaleString();
   }
 
-  // Try to send notification (skip if no contact methods)
+  // Try to send notification only if requested
   let notifyTag = '';
-  if (hasEmail || hasSms) {
+  if (wantsNotify && (hasEmail || hasSms)) {
     try {
       const resp = await fetch('/notify-payout', {
         method: 'POST',
