@@ -454,7 +454,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.17</div>
+  <div style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.20</div>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -492,7 +492,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.17</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.20</div>
     <div id="loginForm">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1263,8 +1263,8 @@
     <div style="background:white;border-radius:12px;padding:28px;width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
       <div style="font-size:16px;font-weight:700;margin-bottom:8px;color:#6a1b9a">📤 Submit My Round</div>
       <div style="font-size:12px;color:#666;margin-bottom:16px">Share your Gallus Golf scorecard URL so the officer can import your scores.</div>
-      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Your Gallus Share URL</div>
-      <input type="text" id="gallusSubmitUrl" placeholder="https://gallusgolf.com/Share/Round/..." 
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Your Gallus Share URL or Round ID</div>
+      <input type="text" id="gallusSubmitUrl" placeholder="paste full URL, or just the code (e.g. b7eb9f59-9774-42af-8d2a-228d4021ebab)" 
         style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;box-sizing:border-box;font-family:'DM Mono',monospace;margin-bottom:12px">
       <div id="gallusSubmitError" style="color:#c62828;font-size:12px;margin-bottom:8px;display:none"></div>
       <div id="gallusSubmitSuccess" style="color:#2e7d32;font-size:12px;margin-bottom:8px;display:none"></div>
@@ -1287,7 +1287,7 @@
       <div style="display:flex;gap:8px">
         <button id="gallusFetchBtn" onclick="doGallusFetch()" style="flex:2;padding:10px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">🔍 Fetch Scorecard</button>
         <button id="gallusConfirmBtn" onclick="doGallusConfirm()" style="flex:2;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;display:none">✓ Import Scores</button>
-        <button onclick="document.getElementById('gallusModal').style.display='none'" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+        <button onclick="cancelGallusReview()" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
       </div>
     </div>
   </div>
@@ -4188,14 +4188,28 @@ function showGallusSubmit() {
 }
 
 function doGallusSubmit() {
-  const url    = document.getElementById('gallusSubmitUrl').value.trim();
+  let input = document.getElementById('gallusSubmitUrl').value.trim();
   const errEl  = document.getElementById('gallusSubmitError');
   const okEl   = document.getElementById('gallusSubmitSuccess');
   errEl.style.display = 'none';
   okEl.style.display  = 'none';
 
-  if (!url || !url.includes('gallusgolf.com')) {
-    errEl.textContent = 'Please paste a valid Gallus Golf URL.';
+  if (!input) {
+    errEl.textContent = 'Please paste your Gallus URL or round code.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  let url;
+  const guidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\??$/;
+  if (guidPattern.test(input)) {
+    // Bare GUID — construct the full share URL
+    const guid = input.replace(/\?$/, '');
+    url = `https://manager.gallusgolf.com/Share/Round/${guid}?`;
+  } else if (input.includes('gallusgolf.com')) {
+    url = input;
+  } else {
+    errEl.textContent = 'Please paste a valid Gallus Golf URL or round code (GUID).';
     errEl.style.display = 'block';
     return;
   }
@@ -4239,12 +4253,12 @@ function loadGallusQueue() {
     </tr></thead><tbody>`;
 
   rows.forEach((r, i) => {
-    const bg = r.Status === 'imported' ? '#e8f5e9' : r.Status === 'pending' ? '#fff9c4' : '#ffffff';
+    const bg = r.Status === 'imported' ? '#e8f5e9' : r.Status === 'skipped' ? '#f5f5f5' : r.Status === 'pending' ? '#fff9c4' : '#ffffff';
     const shortUrl = r.GallusUrl ? r.GallusUrl.substring(0, 40) + '...' : '';
     html += `<tr style="background:${bg}">
       <td style="${td};font-weight:600">${r.Player}</td>
       <td style="${td}">${r.DateSubmitted||''}</td>
-      <td style="${td}">${r.Status === 'imported' ? '✓ Imported' : '⏳ Pending'}</td>
+      <td style="${td}">${r.Status === 'imported' ? '✓ Imported' : r.Status === 'skipped' ? '⊘ Skipped' : '⏳ Pending'}</td>
       <td style="${td};font-family:'DM Mono',monospace;font-size:10px" title="${r.GallusUrl}">${shortUrl}</td>
       <td style="${td}">
         ${r.Status === 'pending' 
@@ -4345,6 +4359,18 @@ async function doGallusFetch() {
     errEl.textContent = 'Server error: ' + e.message;
     errEl.style.display = 'block';
   }
+}
+
+function cancelGallusReview() {
+  document.getElementById('gallusModal').style.display = 'none';
+  if (window._gallusSubmissionId) {
+    const now = new Date().toISOString().replace('T',' ').substring(0,19);
+    db.run(`UPDATE GallusSubmissions SET Status='skipped', ImportedBy=?, ImportedAt=? WHERE ID=?`,
+      [currentUser.name, now, window._gallusSubmissionId]);
+    saveDBToServer();
+    window._gallusSubmissionId = null;
+  }
+  _gallusData = null;
 }
 
 async function doGallusConfirm() {
@@ -6660,8 +6686,10 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       }
       hdcpTd.id = `hdcp-${key}`;
       if (st.hdcp !== null && st.hdcp !== undefined) {
-        hdcpTd.textContent = st.hdcp;
+        const arrow = st.hdcp < st.phdcp ? ' ▼' : st.hdcp > st.phdcp ? ' ▲' : '';
+        hdcpTd.textContent = st.hdcp + arrow;
         hdcpTd.style.color = st.hdcp < st.phdcp ? 'var(--green)' : st.hdcp > st.phdcp ? 'var(--red)' : '';
+        hdcpTd.style.fontWeight = arrow ? '700' : '';
       } else {
         hdcpTd.textContent = '';
       }
@@ -7102,9 +7130,11 @@ function onScoreInput(e) {
       // Update hdcp cell
       const hEl = document.getElementById(`hdcp-${key}`);
       if (hEl) {
-        hEl.textContent = newHdcp; hEl.dataset.gross = gross; hEl.dataset.par = par9;
+        const arrow = newHdcp < st.phdcp ? ' ▼' : newHdcp > st.phdcp ? ' ▲' : '';
+        hEl.textContent = newHdcp + arrow; hEl.dataset.gross = gross; hEl.dataset.par = par9;
         hEl.dataset.last5 = updatedLast5; hEl.dataset.maxs = updatedMaxS; hEl.dataset.ldate = updatedDate;
         hEl.style.color = newHdcp < st.phdcp ? 'var(--green)' : newHdcp > st.phdcp ? 'var(--red)' : '';
+        hEl.style.fontWeight = arrow ? '700' : '';
       }
       // phdcp tooltip stays as original historical last5 — do not update it
 
@@ -7266,7 +7296,7 @@ function distributeScores(key, nineDigits, firstInp) {
       const date = document.getElementById('entryDate').value;
 
       const hEl = document.getElementById(`hdcp-${key}`);
-      if (hEl) { hEl.textContent = newHdcp; hEl.dataset.gross = gross; hEl.dataset.par = par9; hEl.dataset.last5 = updatedLast5; hEl.dataset.maxs = updatedMaxS; hEl.dataset.ldate = date; hEl.style.color = newHdcp < st.phdcp ? 'var(--green)' : newHdcp > st.phdcp ? 'var(--red)' : ''; }
+      if (hEl) { const arrow = newHdcp < st.phdcp ? ' ▼' : newHdcp > st.phdcp ? ' ▲' : ''; hEl.textContent = newHdcp + arrow; hEl.dataset.gross = gross; hEl.dataset.par = par9; hEl.dataset.last5 = updatedLast5; hEl.dataset.maxs = updatedMaxS; hEl.dataset.ldate = date; hEl.style.color = newHdcp < st.phdcp ? 'var(--green)' : newHdcp > st.phdcp ? 'var(--red)' : ''; hEl.style.fontWeight = arrow ? '700' : ''; }
       // phdcp tooltip stays as original historical last5 — do not update it
       if (!st.phdcp) {
         if (pEl && !pEl.textContent.trim()) { pEl.textContent = newHdcp; pEl.style.color = 'var(--gray)'; st.phdcp = newHdcp; }
