@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260618.2</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260618.4</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260618.2</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260618.4</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1038,6 +1038,9 @@
               <option value="300">Last 300 lines</option>
               <option value="1000">Last 1000 lines</option>
             </select>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+              <input type="checkbox" id="serverLogSuspiciousOnly" onchange="loadServerLog()"> Unrecognized paths only
+            </label>
             <span id="serverLogInfo" style="font-size:11px;color:#888"></span>
           </div>
           <pre id="serverLogContent" style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:8px;font-size:11px;line-height:1.5;max-height:500px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-family:'DM Mono',monospace">Loading...</pre>
@@ -2115,13 +2118,16 @@ function loadHome() {
     <div class="stat-box"><div class="val">${weekCount}</div><div class="lbl">Weeks Played</div></div>
   `;
 
-  // Recent scores
+  // Recent scores — show one full round's worth (teams × 2 players)
+  const currentSeason = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
+  const teamCountForLimit = query(`SELECT COUNT(DISTINCT Team) as c FROM Teams WHERE League="Hugh's" AND Year=${currentSeason}`)[0]?.c || 12;
+  const recentLimit = teamCountForLimit * 2;
   const recentScores = query(`
     SELECT Player, Date, Gross, Net, FrontBack
     FROM Scores
     WHERE Gross IS NOT NULL AND Gross != 0
     ORDER BY Date DESC, Net ASC
-    LIMIT 15
+    LIMIT ${recentLimit}
   `);
   const tb = tbody('recentScores');
   recentScores.forEach(r => {
@@ -4400,10 +4406,25 @@ function loadLoginActivity() {
   }).join('') || '<tr><td colspan="6" style="padding:12px;color:#999;text-align:center">No login activity recorded</td></tr>';
 }
 
+// ── Known legitimate app routes (anything else is "suspicious") ─────────────
+const KNOWN_ROUTES = ['/', '/HughsGolf.html', '/HughsGolf.db', '/save', '/send-reset', '/verify-reset',
+  '/notify-login', '/flask-log', '/need-sub', '/notify-payout', '/fetch-gallus', '/get-ip', '/favicon.ico'];
+
+function parseLogLine(line) {
+  // Typical format: IP - - [timestamp] "METHOD /path HTTP/1.1" STATUS -
+  const m = line.match(/^([\d.a-fA-F:]+)\s+-\s+-\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+[^"]*"\s+(\d+)/);
+  if (!m) return null;
+  const [, ip, ts, method, path, status] = m;
+  const cleanPath = path.split('?')[0];
+  const isKnown = KNOWN_ROUTES.includes(cleanPath);
+  return { ip, ts, method, path, status: parseInt(status), isKnown };
+}
+
 async function loadServerLog() {
   const el = document.getElementById('serverLogContent');
   const infoEl = document.getElementById('serverLogInfo');
   const lines = document.getElementById('serverLogLines').value;
+  const showOnlySuspicious = document.getElementById('serverLogSuspiciousOnly')?.checked;
   el.textContent = 'Loading...';
   try {
     const resp = await fetch(`/flask-log?lines=${lines}`);
@@ -4412,12 +4433,29 @@ async function loadServerLog() {
       el.textContent = `Error: ${json.error}`;
       return;
     }
-    el.textContent = json.lines.join('');
-    infoEl.textContent = `Showing last ${json.lines.length} of ${json.total_lines} lines`;
+
+    let suspiciousCount = 0;
+    const rendered = json.lines.map(line => {
+      const parsed = parseLogLine(line);
+      if (!parsed) return `<span style="color:#888">${escapeHtml(line)}</span>`;
+      if (!parsed.isKnown) suspiciousCount++;
+      if (showOnlySuspicious && parsed.isKnown) return null;
+
+      const color = !parsed.isKnown ? '#ff6b6b' : parsed.status >= 400 ? '#ffa726' : '#81c784';
+      const tag = !parsed.isKnown ? ' ⚠ unknown path' : '';
+      return `<span style="color:${color}">[${parsed.ts}] ${parsed.ip} — ${parsed.method} ${escapeHtml(parsed.path)} → ${parsed.status}${tag}</span>`;
+    }).filter(x => x !== null);
+
+    el.innerHTML = rendered.join('\n');
+    infoEl.textContent = `Showing ${rendered.length} of ${json.lines.length} lines (${json.total_lines} total) — ${suspiciousCount} unrecognized path(s)`;
     el.scrollTop = el.scrollHeight;
   } catch(e) {
     el.textContent = `Failed to load log: ${e.message}`;
   }
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
