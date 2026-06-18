@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260617.39</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260618.2</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260617.39</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260618.2</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -715,7 +715,7 @@
       <span style="background:#c8e6c9;padding:2px 10px;border-radius:3px;font-weight:600">In Skins</span>
       <span style="background:#ffcdd2;padding:2px 10px;border-radius:3px;font-weight:600">No Show</span>
       <span style="background:#b3e5fc;padding:2px 10px;border-radius:3px;font-weight:600">Sub</span>
-      <span style="background:#fff9c4;border:2px solid #f9a825;padding:2px 10px;border-radius:3px;font-weight:600">Under Par</span>
+      <span style="background:#fdecea;border:2px solid var(--red);color:var(--red);padding:2px 10px;border-radius:3px;font-weight:600">Under Par</span>
       <span style="color:var(--red);font-weight:600;padding:2px 10px">Red = CTP hole</span>
     </div>
 
@@ -1062,6 +1062,9 @@
         <div style="padding:16px">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
             <button onclick="loadLoginActivity()" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">🔄 Refresh</button>
+            <select id="loginActivityPlayer" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+              <option value="">All players</option>
+            </select>
             <select id="loginActivityLimit" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
               <option value="50">Last 50</option>
               <option value="100" selected>Last 100</option>
@@ -4358,8 +4361,18 @@ function loadLoginActivity() {
     }
   }
 
+  // Populate player filter dropdown (once)
+  const playerSel = document.getElementById('loginActivityPlayer');
+  if (playerSel && playerSel.options.length <= 1) {
+    const players = query(`SELECT DISTINCT Player FROM Players WHERE Login='Y' ORDER BY Player`);
+    playerSel.innerHTML = '<option value="">All players</option>' +
+      players.map(r => `<option value="${r.Player}">${r.Player}</option>`).join('');
+  }
+  const selectedPlayer = playerSel ? playerSel.value : '';
+
   const limit = document.getElementById('loginActivityLimit').value;
-  const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed') ORDER BY log_time DESC LIMIT ${limit}`);
+  const playerFilter = selectedPlayer ? `AND text LIKE '${selectedPlayer.replace(/'/g,"''")}%'` : '';
+  const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed') ${playerFilter} ORDER BY log_time DESC LIMIT ${limit}`);
   const tbody = document.getElementById('loginActivityBody');
   tbody.innerHTML = rows.map((r,i) => {
     const isLogin = r.method === 'login';
