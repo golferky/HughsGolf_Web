@@ -26,7 +26,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260617.35'
+VERSION    = '20260618.7'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -593,8 +593,39 @@ def update_duckdns():
         time.sleep(300)  # every 5 minutes
 
 
-if __name__ == '__main__':
+def clear_stale_sessions():
+    """Periodically clear ActiveSession for players inactive for over 2 hours."""
+    while True:
+        time.sleep(1800)  # run every 30 minutes
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            # Clear sessions where last login was more than 2 hours ago
+            cutoff = (datetime.datetime.utcnow() - datetime.timedelta(hours=2)).strftime('%Y-%m-%d %H:%M:%S')
+            cur.execute("""
+                UPDATE Players SET ActiveSession=NULL
+                WHERE ActiveSession IS NOT NULL
+                AND Player NOT IN (
+                    SELECT DISTINCT text FROM (
+                        SELECT REPLACE(text, ' logged in', '') as text, MAX(log_time) as lt
+                        FROM LogTable WHERE method='login'
+                        GROUP BY REPLACE(text, ' logged in', '')
+                        HAVING lt >= ?
+                    )
+                )
+            """, (cutoff,))
+            cleared = cur.rowcount
+            conn.commit()
+            conn.close()
+            if cleared > 0:
+                print(f'[{datetime.datetime.now():%H:%M:%S}] Cleared {cleared} stale session(s)')
+        except Exception as e:
+            print(f'[{datetime.datetime.now():%H:%M:%S}] Session cleanup error: {e}')
+
+
+
     print(f'HughsGolf server v{VERSION} starting on port {PORT}')
     print(f'DB path: {DB_PATH}')
     threading.Thread(target=update_duckdns, daemon=True).start()
+    threading.Thread(target=clear_stale_sessions, daemon=True).start()
     app.run(host='0.0.0.0', port=PORT, debug=False)
