@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260618.9</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260618.10</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260618.9</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260618.10</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -798,6 +798,10 @@
       <div class="filter-group">
         <label>Search</label>
         <input type="text" id="hdcpSearch" placeholder="Filter player...">
+      </div>
+      <div class="filter-group">
+        <label>As Of</label>
+        <select id="hdcpAsOfDate" onchange="loadHandicaps()"></select>
       </div>
       <div class="filter-group" style="align-self:flex-end;padding-bottom:6px">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
@@ -3346,21 +3350,53 @@ function loadHandicaps() {
   const season = query("SELECT MAX(Season) as s FROM LeagueParms WHERE Name=\"Hugh's\""  )[0]?.s;
   const regularsOnly = document.getElementById('hdcpRegularsOnly')?.checked;
 
+  // Populate As Of date dropdown (most recent first, defaults to most recent = current)
+  const asOfSel = document.getElementById('hdcpAsOfDate');
+  if (asOfSel && asOfSel.options.length === 0) {
+    const dates = query(`SELECT DISTINCT Date as sDate FROM Handicaps WHERE League="Hugh's" ORDER BY Date DESC LIMIT 60`);
+    asOfSel.innerHTML = '<option value="">Most Recent</option>' +
+      dates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
+  }
+  const asOfDate = asOfSel ? asOfSel.value : '';
+
   const rosterPlayers = regularsOnly
     ? new Set(query(`SELECT DISTINCT Player FROM Teams WHERE League="Hugh's" AND Year=${season}`).map(r => r.Player))
     : null;
 
-  const rows = query(`
-    SELECT h.Player, h.Hdcp, h.PHdcp, h.Date
-    FROM Handicaps h
-    LEFT JOIN Players p ON p.Player = h.Player
-    WHERE h.Date = (SELECT MAX(h2.Date) FROM Handicaps h2 WHERE h2.Player = h.Player AND h2.League = h.League)
-      AND h.League = "Hugh's"
-    ORDER BY p.LastName, p.FirstName
-  `).filter(r => !rosterPlayers || rosterPlayers.has(r.Player));
+  // If a specific "as of" date is chosen, snapshot handicaps as they stood on/before that date;
+  // otherwise use the latest record for each player as normal.
+  const rows = (asOfDate
+    ? query(`
+        SELECT h.Player, h.Hdcp, h.PHdcp, h.Date
+        FROM Handicaps h
+        LEFT JOIN Players p ON p.Player = h.Player
+        WHERE h.Date = (SELECT MAX(h2.Date) FROM Handicaps h2 WHERE h2.Player = h.Player AND h2.League = h.League AND h2.Date <= '${asOfDate}')
+          AND h.League = "Hugh's"
+        ORDER BY p.LastName, p.FirstName
+      `)
+    : query(`
+        SELECT h.Player, h.Hdcp, h.PHdcp, h.Date
+        FROM Handicaps h
+        LEFT JOIN Players p ON p.Player = h.Player
+        WHERE h.Date = (SELECT MAX(h2.Date) FROM Handicaps h2 WHERE h2.Player = h.Player AND h2.League = h.League)
+          AND h.League = "Hugh's"
+        ORDER BY p.LastName, p.FirstName
+      `)
+  ).filter(r => !rosterPlayers || rosterPlayers.has(r.Player));
 
-  // Get last5 map
-  const last5Map = getPlayerLast5Map();
+  // Build last-5-scores map directly from Scores, respecting the "as of" cutoff
+  const last5Map = {};
+  rows.forEach(r => {
+    const cutoff = asOfDate || '99999999';
+    const scoreRows = query(`
+      SELECT Gross, Date FROM Scores
+      WHERE League="Hugh's" AND Player=? AND Gross IS NOT NULL AND Gross != 0 AND Date <= ?
+      ORDER BY Date DESC LIMIT 5
+    `, [r.Player, cutoff]);
+    if (scoreRows.length) {
+      last5Map[r.Player] = { scores: scoreRows.map(s => s.Gross).reverse().join('-'), date: scoreRows[0].Date };
+    }
+  });
 
   const tb = tbody('hdcpTable');
   rows.filter(r => !search || r.Player.toLowerCase().includes(search)).forEach(r => {
