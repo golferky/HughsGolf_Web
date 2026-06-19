@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.5</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.6</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.5</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.6</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1091,6 +1091,7 @@
                 <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Role</th>
                 <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Version</th>
                 <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">IP</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Device</th>
                 <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Time</th>
               </tr></thead>
               <tbody id="loginActivityBody"></tbody>
@@ -4515,6 +4516,8 @@ function loadLoginActivity() {
     const roleMatch = r.details?.match(/role=(\w+)/);
     const versionMatch = r.details?.match(/version=([\w.]+)/);
     const ipMatch = r.details?.match(/ip=([\d.a-fA-F:]+)/);
+    const deviceMatch = r.details?.match(/device=(\S+)/);
+    const deviceLabel = deviceMatch ? decodeURIComponent(deviceMatch[1]) : '—';
     const attemptMatch = r.details?.match(/attempt=(\d+\/\d+)/);
     const localTime = new Date(r.log_time.replace(' ','T')+'Z').toLocaleString();
     const eventLabel = r.method === 'login' ? '<span style="color:#2e7d32">→ Login</span>'
@@ -4522,11 +4525,12 @@ function loadLoginActivity() {
       : r.method === 'login_failed' ? `<span style="color:#c62828">✗ Failed${attemptMatch?` (${attemptMatch[1]})`:''}</span>`
       : '<span style="color:#888">← Logout</span>';
     return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
-      <td style="padding:6px 12px;font-weight:600">${player}</td>
+      <td style="padding:6px 12px;font-weight:600;cursor:pointer;color:var(--green)" onclick="document.getElementById('loginActivityPlayer').value='${player.replace(/'/g,"\\'")}';loadLoginActivity()">${player}</td>
       <td style="padding:6px 12px;font-size:12px">${eventLabel}</td>
       <td style="padding:6px 12px;font-size:12px;color:#666">${roleMatch ? roleMatch[1] : ''}</td>
       <td style="padding:6px 12px;font-size:12px;font-family:'DM Mono',monospace;color:#888">${versionMatch ? versionMatch[1] : '—'}</td>
       <td style="padding:6px 12px;font-size:11px;font-family:'DM Mono',monospace;color:#888">${ipMatch ? ipMatch[1] : '—'}</td>
+      <td style="padding:6px 12px;font-size:11px;color:#666">${deviceLabel}</td>
       <td style="padding:6px 12px;font-size:12px">${localTime}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="6" style="padding:12px;color:#999;text-align:center">No login activity recorded</td></tr>';
@@ -5126,6 +5130,27 @@ async function doSetPassword() {
   loginSuccess(player);
 }
 
+function detectDevice() {
+  const ua = navigator.userAgent;
+  let os = 'Unknown OS';
+  if (/iPhone/.test(ua)) os = 'iPhone';
+  else if (/iPad/.test(ua)) os = 'iPad';
+  else if (/Macintosh|Mac OS X/.test(ua)) os = 'Mac';
+  else if (/Android/.test(ua)) os = 'Android';
+  else if (/Windows/.test(ua)) os = 'Windows';
+  else if (/Linux/.test(ua)) os = 'Linux';
+
+  let browser = 'Unknown Browser';
+  if (/CriOS/.test(ua)) browser = 'Chrome (iOS)';
+  else if (/FxiOS/.test(ua)) browser = 'Firefox (iOS)';
+  else if (/EdgiOS|Edg\//.test(ua)) browser = 'Edge';
+  else if (/Chrome\//.test(ua)) browser = 'Chrome';
+  else if (/Firefox\//.test(ua)) browser = 'Firefox';
+  else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) browser = 'Safari';
+
+  return encodeURIComponent(`${os}/${browser}`);
+}
+
 async function loginSuccess(player) {
   currentUser = {
     name: player.Player,
@@ -5137,11 +5162,12 @@ async function loginSuccess(player) {
   // Log login
   const now = new Date().toISOString().replace('T',' ').substring(0,19);
   const appVersion = document.getElementById('appVersionDisplay')?.textContent?.trim() || 'unknown';
+  const deviceInfo = detectDevice();
   let loginIp = 'unknown';
   try { loginIp = (await (await fetch('/get-ip')).json()).ip || 'unknown'; } catch(e) { /* ignore */ }
   try {
     db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
-      [now, 'INFO', 'login', 'HughsGolf', `${player.Player} logged in`, `role=${currentUser.role} version=${appVersion} ip=${loginIp}`, now]);
+      [now, 'INFO', 'login', 'HughsGolf', `${player.Player} logged in`, `role=${currentUser.role} version=${appVersion} ip=${loginIp} device=${deviceInfo}`, now]);
     saveDBToServer();
   } catch(e) { console.warn('Login log failed:', e); }
 
