@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260618.11</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260618.12</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260618.11</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260618.12</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -3660,12 +3660,14 @@ function loadPayments() {
   } else {
     players = query(`SELECT DISTINCT Player FROM Payments WHERE League="${league}" AND Date >= '${dFrom}' AND Date < '${dTo}' ORDER BY Player`).map(r => r.Player);
   }
+  const rosterSet = new Set(query(`SELECT Player FROM Teams WHERE Year=${season}`).map(r => r.Player));
 
   // Build row data per player
   const rows = players.map(player => {
-    // LD Paid
-    const ldPaid = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='League Dues' AND Date >= ? AND Date < ?`, [player, league, dFrom, dTo])[0]?.s || 0);
-    const ldBal  = Math.max(0, duesTotal - ldPaid);
+    // LD Paid — only applies to current-season roster regulars, not one-time subs
+    const isRosterPlayer = rosterSet.has(player);
+    const ldPaid = isRosterPlayer ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='League Dues' AND Date >= ? AND Date < ?`, [player, league, dFrom, dTo])[0]?.s || 0) : null;
+    const ldBal  = isRosterPlayer ? Math.max(0, duesTotal - ldPaid) : null;
 
     // Skins Paid (season)
     const skinsPaid = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='Skin' AND Detail='Payment' AND Date >= ? AND Date < ?`, [player, league, dFrom, dTo])[0]?.s || 0);
@@ -3696,7 +3698,7 @@ function loadPayments() {
 
   // Totals
   const tot = rows.reduce((acc, r) => {
-    acc.ldPaid    += r.ldPaid;    acc.ldBal     += r.ldBal;
+    acc.ldPaid    += (r.ldPaid||0);    acc.ldBal     += (r.ldBal||0);
     acc.skinsPaid += r.skinsPaid; acc.ctpPaid   += r.ctpPaid;
     acc.skinsWonWk+= r.skinsWonWk;acc.skinsWonSea+=r.skinsWonSea;
     acc.ctpWonWk  += r.ctpWonWk; acc.ctpWonSea += r.ctpWonSea;
@@ -3704,7 +3706,7 @@ function loadPayments() {
     return acc;
   }, {ldPaid:0,ldBal:0,skinsPaid:0,ctpPaid:0,skinsWonWk:0,skinsWonSea:0,ctpWonWk:0,ctpWonSea:0,eoyPaid:0});
 
-  const fmtM = v => v ? `$${v.toFixed(2)}` : '$0.00';
+  const fmtM = v => v === null ? '—' : v ? `$${v.toFixed(2)}` : '$0.00';
   const thS  = 'background:var(--green);color:var(--gold);padding:8px 10px;text-align:right;font-size:11px;white-space:nowrap';
   const thSL = 'background:var(--green);color:var(--gold);padding:8px 10px;text-align:left;font-size:11px';
 
@@ -3716,9 +3718,9 @@ function loadPayments() {
         <th style="${thS}">LD Bal</th>
         <th style="${thS}">Skins Paid</th>
         <th style="${thS}">CTP Paid</th>
-        <th style="${thS}">Skins Won Wk</th>
+        ${weekDate ? `<th style="${thS}">Skins Won Wk</th>` : ''}
         <th style="${thS}">Skins Won Sea</th>
-        <th style="${thS}">CTP Won Wk</th>
+        ${weekDate ? `<th style="${thS}">CTP Won Wk</th>` : ''}
         <th style="${thS}">CTP Won Sea</th>
         <th style="${thS}">EOY Paid</th>
         <th style="${thS}">Last Paid</th>
@@ -3735,9 +3737,9 @@ function loadPayments() {
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;color:${r.ldBal>0?'var(--red)':'var(--gray)'}${r.ldBal>0?';font-weight:700':''}">${fmtM(r.ldBal)}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.skinsPaid)}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.ctpPaid)}</td>
-      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${r.skinsWonWk>0?'color:var(--green);font-weight:700':''}">${r.skinsWonWk>0?fmtM(r.skinsWonWk):'$0.00'}</td>
+      ${weekDate ? `<td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${r.skinsWonWk>0?'color:var(--green);font-weight:700':''}">${r.skinsWonWk>0?fmtM(r.skinsWonWk):'$0.00'}</td>` : ''}
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.skinsWonSea)}</td>
-      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${r.ctpWonWk>0?'color:var(--green);font-weight:700':''}">${r.ctpWonWk>0?fmtM(r.ctpWonWk):'$0.00'}</td>
+      ${weekDate ? `<td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${r.ctpWonWk>0?'color:var(--green);font-weight:700':''}">${r.ctpWonWk>0?fmtM(r.ctpWonWk):'$0.00'}</td>` : ''}
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.ctpWonSea)}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.eoyPaid)}</td>
       <td style="padding:7px 10px;text-align:right;font-size:11px;color:var(--gray)">${lastDate}</td>
@@ -3751,9 +3753,9 @@ function loadPayments() {
     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:${tot.ldBal>0?'var(--red)':'var(--gray)'}">${fmtM(tot.ldBal)}</td>
     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.skinsPaid)}</td>
     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.ctpPaid)}</td>
-    <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.skinsWonWk)}</td>
+    ${weekDate ? `<td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.skinsWonWk)}</td>` : ''}
     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.skinsWonSea)}</td>
-    <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.ctpWonWk)}</td>
+    ${weekDate ? `<td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.ctpWonWk)}</td>` : ''}
     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.ctpWonSea)}</td>
     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.eoyPaid)}</td>
     <td></td>
