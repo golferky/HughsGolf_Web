@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260618.10</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260618.11</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260618.10</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260618.11</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1874,6 +1874,9 @@ function loadPrizeMoney() {
       </table>
     </div>
     <div id="heldDetail" style="display:none;margin-bottom:12px;max-width:700px">
+      ${(currentUser?.role==='officer'||currentUser?.role==='developer') && heldDetailRows.length ? `
+      <button onclick="sendUnpaidReminders()" style="margin-bottom:8px;padding:6px 14px;background:#c62828;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">📧 Send Unpaid Balance Reminders</button>
+      ` : ''}
       <table style="border-collapse:collapse;width:100%">
         <thead><tr style="background:#c62828;color:white">
           <th style="padding:5px 10px;text-align:left;font-size:11px">Player</th>
@@ -4102,6 +4105,51 @@ async function saveDBToServer(successLabel, btnId) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Mark Winner as Paid ───────────────────────────────────────────────────────
+// ── Send Unpaid Balance Reminders ────────────────────────────────────────
+async function sendUnpaidReminders() {
+  const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
+  const seasonEnd = `${parseInt(season)+1}0101`;
+  const heldRows = query(`
+    SELECT Player, Date, "Desc", Detail, Earned FROM Payments
+    WHERE League="Hugh's" AND "Desc" IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','')
+    AND Player != 'Kitty' AND (DatePaid IS NULL OR DatePaid='') AND Date >= ${season}0101 AND Date < ${seasonEnd}
+    ORDER BY Player, Date
+  `);
+  if (!heldRows.length) { alert('No unpaid balances to remind about.'); return; }
+
+  // Group by player
+  const byPlayer = {};
+  heldRows.forEach(r => {
+    if (!byPlayer[r.Player]) byPlayer[r.Player] = { total: 0, items: [] };
+    byPlayer[r.Player].total += parseFloat(r.Earned);
+    byPlayer[r.Player].items.push(`${fmtDate(r.Date)} — ${r.Desc} ${r.Detail}: $${parseFloat(r.Earned).toFixed(2)}`);
+  });
+
+  const players = Object.keys(byPlayer);
+  if (!confirm(`Send unpaid balance reminder emails to ${players.length} player(s)?\n\n${players.map(p=>`${p}: $${byPlayer[p].total.toFixed(2)}`).join('\n')}`)) return;
+
+  let sentCount = 0, failedCount = 0;
+  for (const player of players) {
+    const { total, items } = byPlayer[player];
+    try {
+      const resp = await fetch('/notify-payout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          player, amount: total, source: 'unpaid winnings',
+          comment: items.join('\n'),
+          messageType: 'reminder'
+        })
+      });
+      const json = await resp.json();
+      if (json.ok) sentCount++; else failedCount++;
+    } catch(e) { failedCount++; }
+  }
+
+  alert(`✓ Sent ${sentCount} reminder(s).${failedCount ? ` ${failedCount} failed (likely no contact info on file).` : ''}`);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function doMarkPaid(player, date, desc, detail, amount) {
   // Look up player's contact info to preview notification
   const p = query(`SELECT Email, Phone, CellCarrier FROM Players WHERE Player=?`, [player])[0] || {};

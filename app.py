@@ -26,7 +26,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260618.7'
+VERSION    = '20260618.11'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -359,13 +359,14 @@ def need_sub():
 
 @app.route('/notify-payout', methods=['POST'])
 def notify_payout():
-    """Send email + SMS (via carrier gateway) notification of a kitty payout."""
+    """Send email + SMS (via carrier gateway) notification of a kitty payout or unpaid reminder."""
     body = request.get_json()
     player  = body.get('player', '').strip()
     amount  = body.get('amount', 0)
     source  = body.get('source', '')   # e.g. "Skin Kitty"
     comment = body.get('comment', '')
     recorded_by = body.get('recordedBy', '').strip()
+    message_type = body.get('messageType', 'payout')  # 'payout' or 'reminder'
 
     if not player:
         return jsonify({'ok': False, 'error': 'No player name'}), 400
@@ -403,8 +404,22 @@ def notify_payout():
         return jsonify({'ok': False, 'error': 'Email not configured'}), 500
 
     recorded_line = f"Recorded by: {recorded_by}\n\n" if recorded_by else ""
-    subject = "Hugh's Golf League — Payout"
-    body_text = f"""Hi {player},
+
+    if message_type == 'reminder':
+        subject = "Hugh's Golf League — Unpaid Balance"
+        body_text = f"""Hi {player},
+
+Just a friendly reminder that you have an unpaid balance of ${amount:.2f} from {source}.
+
+{comment}
+
+Whenever you get a chance to settle up, that'd be great — no rush.
+
+— Hugh's Golf League
+"""
+    else:
+        subject = "Hugh's Golf League — Payout"
+        body_text = f"""Hi {player},
 
 You've received a payout of ${amount:.2f} from the {source}.
 
