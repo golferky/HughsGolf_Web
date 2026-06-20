@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.12</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.13</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.12</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.13</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -3016,7 +3016,18 @@ function loadLeaders() {
     const playedDates = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="${league}" AND Date >= ${szn}0101 AND Date < ${parseInt(szn)+1}0101`).map(r => r.sDate);
     const rosterByGrade = query(`SELECT Player, Team, Grade FROM Teams WHERE League="${league}" AND Year=${szn}`);
     if (!rosterByGrade.length) return;
-    playedDates.forEach(date => {
+
+    // Build post-season date exclusion set for this season
+    const psExclude = new Set();
+    const psRow = query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="${league}" AND Season=${szn} AND PostSeasonDt IS NOT NULL`)[0];
+    if (psRow?.PostSeasonDt) {
+      const p = psRow.PostSeasonDt.split('/');
+      psExclude.add(`${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`);
+      const d2 = new Date(psRow.PostSeasonDt); d2.setDate(d2.getDate()+7);
+      psExclude.add(`${d2.getFullYear()}${String(d2.getMonth()+1).padStart(2,'0')}${String(d2.getDate()).padStart(2,'0')}`);
+    }
+
+    playedDates.filter(date => !psExclude.has(String(date))).forEach(date => {
       const scoredPlayers = new Set(query(`SELECT DISTINCT Player FROM Scores WHERE League="${league}" AND Date=${date}`).map(r => r.Player));
       const subbedSlots = new Set(query(`SELECT Team, Grade FROM Subs WHERE League="${league}" AND Date=${date}`).map(r => `${r.Team}-${r.Grade}`));
       rosterByGrade.forEach(t => {
