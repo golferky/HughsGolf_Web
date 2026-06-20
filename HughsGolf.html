@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.9</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.10</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.9</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.10</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -643,6 +643,12 @@
   <!-- LEADERS -->
   <div class="section" id="tab-leaders">
     <div class="controls">
+      <div class="filter-group">
+        <label>Period</label>
+        <select id="leadersPeriod" onchange="loadLeaders()">
+          <option value="career">Career (All-Time)</option>
+        </select>
+      </div>
       <div class="filter-group" style="align-self:flex-end;padding-bottom:6px">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
           <input type="checkbox" id="leadersShowAll" onchange="loadLeaders()"> Show All (instead of Top 25)
@@ -2862,36 +2868,85 @@ function loadMatchesTab() {
 
 // ── STABLEFORD ──
 // ── LEADERS ──────────────────────────────────────────────────────────────────
-function leaderCard(title, rows, valueKey, valueFmt, unit='') {
-  const showAll = document.getElementById('leadersShowAll')?.checked;
-  const display = showAll ? rows : rows.slice(0, 25);
-  const rowsHtml = display.map((r, i) => {
-    const isLeader = i === 0;
-    const isMe = currentUser && r.Player === currentUser.name;
-    const bg = isLeader ? '#fff3cd' : isMe ? '#e3f2fd' : (i%2===0?'#fff':'#faf7f0');
-    return `<tr style="background:${bg}">
-      <td style="padding:4px 8px;font-size:12px;${isLeader?'font-weight:700':''}">${r.Player}</td>
-      <td style="padding:4px 8px;font-size:12px;text-align:right;font-family:'DM Mono',monospace;${isLeader?'font-weight:700':''}">${valueFmt(r[valueKey])}${unit}</td>
-    </tr>`;
-  }).join('');
+function leaderCard(cardId, title, rows, valueKey, valueFmt, unit='') {
+  // Store raw rows + render config for re-sorting on header click
+  window._leaderCardData = window._leaderCardData || {};
+  window._leaderCardData[cardId] = { rows, valueKey, valueFmt, unit, sortDir: window._leaderCardData?.[cardId]?.sortDir || 'desc', sortBy: window._leaderCardData?.[cardId]?.sortBy || 'value' };
+
   return `
     <div class="card">
       <div class="card-header" style="font-size:13px">${title}</div>
       <div style="max-height:400px;overflow-y:auto">
         <table style="width:100%;border-collapse:collapse">
           <thead><tr style="position:sticky;top:0">
-            <th style="background:var(--green);color:var(--gold);padding:5px 8px;text-align:left;font-size:10px">Player</th>
-            <th style="background:var(--green);color:var(--gold);padding:5px 8px;text-align:right;font-size:10px">${title.split(' ')[0]}</th>
+            <th onclick="sortLeaderCard('${cardId}','player')" style="background:var(--green);color:var(--gold);padding:5px 8px;text-align:left;font-size:10px;cursor:pointer;user-select:none">Player ${sortArrow(cardId,'player')}</th>
+            <th onclick="sortLeaderCard('${cardId}','value')" style="background:var(--green);color:var(--gold);padding:5px 8px;text-align:right;font-size:10px;cursor:pointer;user-select:none">${title.split(' ')[0]} ${sortArrow(cardId,'value')}</th>
           </tr></thead>
-          <tbody>${rowsHtml || '<tr><td colspan="2" style="padding:8px;color:#999;font-size:11px;text-align:center">No data</td></tr>'}</tbody>
+          <tbody id="leaderBody-${cardId}">${renderLeaderRows(cardId)}</tbody>
         </table>
       </div>
     </div>`;
 }
 
+function sortArrow(cardId, col) {
+  const d = window._leaderCardData?.[cardId];
+  if (!d || d.sortBy !== col) return '';
+  return d.sortDir === 'asc' ? '▲' : '▼';
+}
+
+function renderLeaderRows(cardId) {
+  const d = window._leaderCardData[cardId];
+  const { rows, valueKey, valueFmt, unit, sortDir, sortBy } = d;
+  let sorted = [...rows];
+  if (sortBy === 'player') {
+    sorted.sort((a,b) => sortDir==='asc' ? a.Player.localeCompare(b.Player) : b.Player.localeCompare(a.Player));
+  } else {
+    sorted.sort((a,b) => sortDir==='asc' ? a[valueKey]-b[valueKey] : b[valueKey]-a[valueKey]);
+  }
+  const showAll = document.getElementById('leadersShowAll')?.checked;
+  const display = showAll ? sorted : sorted.slice(0, 25);
+  const rowsHtml = display.map((r, i) => {
+    const isTop = i === 0;
+    const isMe = currentUser && r.Player === currentUser.name;
+    const bg = isTop ? '#fff3cd' : isMe ? '#e3f2fd' : (i%2===0?'#fff':'#faf7f0');
+    return `<tr style="background:${bg}">
+      <td style="padding:4px 8px;font-size:12px;${isTop?'font-weight:700':''}">${r.Player}</td>
+      <td style="padding:4px 8px;font-size:12px;text-align:right;font-family:'DM Mono',monospace;${isTop?'font-weight:700':''}">${valueFmt(r[valueKey])}${unit}</td>
+    </tr>`;
+  }).join('');
+  return rowsHtml || '<tr><td colspan="2" style="padding:8px;color:#999;font-size:11px;text-align:center">No data</td></tr>';
+}
+
+function sortLeaderCard(cardId, col) {
+  const d = window._leaderCardData[cardId];
+  if (d.sortBy === col) {
+    d.sortDir = d.sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    d.sortBy = col;
+    d.sortDir = col === 'player' ? 'asc' : 'desc';
+  }
+  document.getElementById(`leaderBody-${cardId}`).innerHTML = renderLeaderRows(cardId);
+  // Update arrow indicators on this card's headers
+  const headers = document.getElementById(`leaderBody-${cardId}`).closest('table').querySelectorAll('th');
+  headers[0].innerHTML = `Player ${sortArrow(cardId,'player')}`;
+  headers[1].innerHTML = `${headers[1].textContent.split(' ')[0]} ${sortArrow(cardId,'value')}`;
+}
+
 function loadLeaders() {
   if (!db) return;
   const league = "Hugh's";
+  window._leaderCardData = {}; // reset sort state on every reload
+
+  // Populate Period dropdown (Career + each season) once
+  const periodSel = document.getElementById('leadersPeriod');
+  if (periodSel && periodSel.options.length <= 1) {
+    const seasons = query(`SELECT DISTINCT Season FROM LeagueParms WHERE Name="${league}" ORDER BY Season DESC`).map(r => r.Season);
+    periodSel.innerHTML = '<option value="career">Career (All-Time)</option>' +
+      seasons.map(s => `<option value="${s}">${s} Season</option>`).join('');
+  }
+  const period = periodSel ? periodSel.value : 'career';
+  const dateFilter = period === 'career' ? '' : ` AND Date >= ${period}0101 AND Date < ${parseInt(period)+1}0101`;
+  const dateFilterM = period === 'career' ? '' : ` AND Date >= ${period}0101 AND Date < ${parseInt(period)+1}0101`; // Matches table alias
 
   // Ensure course data is loaded for hole-by-hole stats
   if (!courseData) {
@@ -2901,32 +2956,53 @@ function loadLeaders() {
   }
 
   // Rounds played
-  const roundsRows = query(`SELECT Player, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND Gross IS NOT NULL AND Gross != 0 GROUP BY Player ORDER BY cnt DESC`);
+  const roundsRows = query(`SELECT Player, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND Gross IS NOT NULL AND Gross != 0${dateFilter} GROUP BY Player ORDER BY cnt DESC`);
 
   // Average Gross
-  const avgGrossRows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND Gross IS NOT NULL AND Gross != 0 GROUP BY Player HAVING cnt >= 3 ORDER BY avg ASC`);
+  const avgGrossRows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND Gross IS NOT NULL AND Gross != 0${dateFilter} GROUP BY Player HAVING cnt >= 3 ORDER BY avg ASC`);
 
   // Total $ earned (all Skin/CTP/EOY winnings, regardless of paid status)
-  const totalMoneyRows = query(`SELECT Player, SUM(Earned) as total FROM Payments WHERE League="${league}" AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','') AND Player != 'Kitty' GROUP BY Player ORDER BY total DESC`);
+  const totalMoneyRows = query(`SELECT Player, SUM(Earned) as total FROM Payments WHERE League="${league}" AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','') AND Player != 'Kitty'${dateFilter} GROUP BY Player ORDER BY total DESC`);
 
   // Skins Won (count of winning holes)
-  const skinsWonRows = query(`SELECT Player, COUNT(*) as cnt FROM Payments WHERE League="${league}" AND Desc='Skin' AND Detail LIKE '#%' GROUP BY Player ORDER BY cnt DESC`);
+  const skinsWonRows = query(`SELECT Player, COUNT(*) as cnt FROM Payments WHERE League="${league}" AND Desc='Skin' AND Detail LIKE '#%'${dateFilter} GROUP BY Player ORDER BY cnt DESC`);
 
   // CTPs Won (count)
-  const ctpsWonRows = query(`SELECT Player, COUNT(*) as cnt FROM Payments WHERE League="${league}" AND Desc='CTP' AND Detail LIKE '#%' GROUP BY Player ORDER BY cnt DESC`);
+  const ctpsWonRows = query(`SELECT Player, COUNT(*) as cnt FROM Payments WHERE League="${league}" AND Desc='CTP' AND Detail LIKE '#%'${dateFilter} GROUP BY Player ORDER BY cnt DESC`);
 
   // Points (sum of Matches.Points across all dates)
-  const pointsRows = query(`SELECT Player, SUM(Points) as total FROM Matches WHERE League="${league}" AND Points IS NOT NULL GROUP BY Player ORDER BY total DESC`);
+  const pointsRows = query(`SELECT Player, SUM(Points) as total FROM Matches WHERE League="${league}" AND Points IS NOT NULL${dateFilterM} GROUP BY Player ORDER BY total DESC`);
 
   // F9/B9 Avg
-  const f9Rows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND FrontBack='Front' AND Gross IS NOT NULL AND Gross != 0 GROUP BY Player HAVING cnt >= 3 ORDER BY avg ASC`);
-  const b9Rows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND FrontBack='Back' AND Gross IS NOT NULL AND Gross != 0 GROUP BY Player HAVING cnt >= 3 ORDER BY avg ASC`);
+  const f9Rows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND FrontBack='Front' AND Gross IS NOT NULL AND Gross != 0${dateFilter} GROUP BY Player HAVING cnt >= 3 ORDER BY avg ASC`);
+
+  // No Shows — for each season, each scheduled date, each roster player: no score and no sub covering them
+  const noShowCounts = {};
+  const allSeasons = (period === 'career'
+    ? query(`SELECT DISTINCT Season FROM LeagueParms WHERE Name="${league}"`).map(r => r.Season)
+    : [period]);
+  allSeasons.forEach(szn => {
+    const schedDates = query(`SELECT Date FROM Schedule WHERE League="${league}" AND Date >= ${szn}0101 AND Date < ${parseInt(szn)+1}0101`).map(r => r.Date);
+    const rosterByGrade = query(`SELECT Player, Team, Grade FROM Teams WHERE League="${league}" AND Year=${szn}`);
+    if (!rosterByGrade.length) return;
+    schedDates.forEach(date => {
+      const scoredPlayers = new Set(query(`SELECT DISTINCT Player FROM Scores WHERE League="${league}" AND Date=${date}`).map(r => r.Player));
+      const subbedSlots = new Set(query(`SELECT Team, Grade FROM Subs WHERE League="${league}" AND Date=${date}`).map(r => `${r.Team}-${r.Grade}`));
+      rosterByGrade.forEach(t => {
+        if (scoredPlayers.has(t.Player)) return; // they played
+        if (subbedSlots.has(`${t.Team}-${t.Grade}`)) return; // a sub covered their spot
+        noShowCounts[t.Player] = (noShowCounts[t.Player] || 0) + 1;
+      });
+    });
+  });
+  const noShowRows = Object.entries(noShowCounts).map(([Player, cnt]) => ({ Player, cnt })).sort((a,b) => b.cnt - a.cnt);
+  const b9Rows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND FrontBack='Back' AND Gross IS NOT NULL AND Gross != 0${dateFilter} GROUP BY Player HAVING cnt >= 3 ORDER BY avg ASC`);
 
   // Hole-by-hole stats: Eagles, Birdies, Pars, Bogeys, DoubleBogeys, Others
   // Uses current course pars (front/back) — assumes consistent course across seasons
   const holeStats = {}; // Player -> { eagle, birdie, par, bogey, dbogey, other }
   if (courseData) {
-    const allScoreRows = query(`SELECT Player, FrontBack, "1","2","3","4","5","6","7","8","9" FROM Scores WHERE League="${league}"`);
+    const allScoreRows = query(`SELECT Player, FrontBack, "1","2","3","4","5","6","7","8","9" FROM Scores WHERE League="${league}"${dateFilter}`);
     allScoreRows.forEach(r => {
       const pars = r.FrontBack === 'Back' ? courseData.back?.pars : courseData.front?.pars;
       if (!pars) return;
@@ -2951,20 +3027,21 @@ function loadLeaders() {
 
   const grid = document.getElementById('leadersGrid');
   grid.innerHTML = [
-    leaderCard('Rounds Played', roundsRows, 'cnt', v => v),
-    leaderCard('Points', pointsRows, 'total', v => parseFloat(v).toFixed(1)),
-    leaderCard('F9 Avg', f9Rows, 'avg', v => parseFloat(v).toFixed(1)),
-    leaderCard('B9 Avg', b9Rows, 'avg', v => parseFloat(v).toFixed(1)),
-    leaderCard('Avg Gross', avgGrossRows, 'avg', v => parseFloat(v).toFixed(1)),
-    leaderCard('Total $ Earned', totalMoneyRows, 'total', v => '$'+parseFloat(v).toFixed(0)),
-    leaderCard('Skins Won', skinsWonRows, 'cnt', v => v),
-    leaderCard('CTPs Won', ctpsWonRows, 'cnt', v => v),
-    leaderCard('Eagles', holeStatRows('eagle'), 'cnt', v => v),
-    leaderCard('Birdies', holeStatRows('birdie'), 'cnt', v => v),
-    leaderCard('Pars', holeStatRows('par'), 'cnt', v => v),
-    leaderCard('Bogeys', holeStatRows('bogey'), 'cnt', v => v),
-    leaderCard('DoubleBogeys', holeStatRows('dbogey'), 'cnt', v => v),
-    leaderCard('Others', holeStatRows('other'), 'cnt', v => v),
+    leaderCard('rounds', 'Rounds Played', roundsRows, 'cnt', v => v),
+    leaderCard('points', 'Points', pointsRows, 'total', v => parseFloat(v).toFixed(1)),
+    leaderCard('f9', 'F9 Avg', f9Rows, 'avg', v => parseFloat(v).toFixed(1)),
+    leaderCard('b9', 'B9 Avg', b9Rows, 'avg', v => parseFloat(v).toFixed(1)),
+    leaderCard('avggross', 'Avg Gross', avgGrossRows, 'avg', v => parseFloat(v).toFixed(1)),
+    leaderCard('totalmoney', 'Total $ Earned', totalMoneyRows, 'total', v => '$'+parseFloat(v).toFixed(0)),
+    leaderCard('skinswon', 'Skins Won', skinsWonRows, 'cnt', v => v),
+    leaderCard('ctpswon', 'CTPs Won', ctpsWonRows, 'cnt', v => v),
+    leaderCard('eagles', 'Eagles', holeStatRows('eagle'), 'cnt', v => v),
+    leaderCard('birdies', 'Birdies', holeStatRows('birdie'), 'cnt', v => v),
+    leaderCard('pars', 'Pars', holeStatRows('par'), 'cnt', v => v),
+    leaderCard('bogeys', 'Bogeys', holeStatRows('bogey'), 'cnt', v => v),
+    leaderCard('dbogeys', 'DoubleBogeys', holeStatRows('dbogey'), 'cnt', v => v),
+    leaderCard('others', 'Others', holeStatRows('other'), 'cnt', v => v),
+    leaderCard('noshows', 'No Shows', noShowRows, 'cnt', v => v),
   ].join('');
 }
 // ─────────────────────────────────────────────────────────────────────────────
