@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.24</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.25</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.24</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.25</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -3282,6 +3282,22 @@ function calcStablefordTeamTotals(date) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+function jumpToStableford(season, date) {
+  // Switch to Stableford tab using the same mechanism as clicking it directly
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
+  document.querySelector('[data-tab="stableford"]')?.classList.add('active');
+  document.getElementById('tab-stableford')?.classList.add('active');
+
+  // Pre-set season/date before the tab's load function runs
+  loadStablefordTab(); // populates season dropdown + default date
+  const seasonSel = document.getElementById('stablefordSeason');
+  if (seasonSel) seasonSel.value = season;
+  populateStablefordDateDropdown(); // repopulate dates for the chosen season
+  const dateSel = document.getElementById('stablefordDate');
+  if (dateSel) { dateSel.value = date; loadStableford(); }
+}
+
 // ── SF Standings — season-long Stableford running totals per team ───────────
 function loadSfStandings() {
   if (!db) return;
@@ -3349,7 +3365,7 @@ function loadSfStandings() {
       <td style="padding:6px 10px;text-align:center">${r.aPts}</td>
       <td style="padding:6px 10px;text-align:center">${r.bPts}</td>
       <td style="padding:6px 10px;text-align:center;font-weight:700">${r.total}</td>
-      ${playedDates.map(d => `<td style="padding:6px 8px;text-align:center;font-size:12px">${r.weeks[d] ?? ''}</td>`).join('')}
+      ${playedDates.map(d => `<td style="padding:6px 8px;text-align:center;font-size:12px;${r.weeks[d]!=null?'cursor:pointer;color:var(--green);text-decoration:underline':''}" ${r.weeks[d]!=null?`onclick="jumpToStableford(${season},${d})"`:''}>${r.weeks[d] ?? ''}</td>`).join('')}
       <td style="padding:6px 10px;text-align:center;font-weight:600;color:${gb===0?'var(--green)':'#888'}">${gb}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="100" style="padding:12px;text-align:center;color:#999">No data for this season</td></tr>';
