@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.19</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.21</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.19</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.21</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -571,6 +571,7 @@
   <div class="tab" data-tab="skins">Skins</div>
   <div class="tab" data-tab="ctps">CTPs</div>
   <div class="tab" data-tab="stableford">Stableford</div>
+  <div class="tab" data-tab="sfstandings">SF Standings</div>
   <div class="tab" data-tab="noshows">Attendance</div>
   <div class="tab" data-tab="schedule">Schedule</div>
 </div>
@@ -687,6 +688,25 @@
         <thead id="stablefordHead"></thead>
         <tbody id="stablefordBody"></tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- SF STANDINGS -->
+  <div class="section" id="tab-sfstandings">
+    <div class="controls">
+      <div class="filter-group">
+        <label>Season</label>
+        <select id="sfStandingsSeason" onchange="loadSfStandings()"></select>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">SF Stdg Report</div>
+      <div class="table-wrap">
+        <table id="sfStandingsTable" style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead id="sfStandingsHead"></thead>
+          <tbody id="sfStandingsBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -1892,6 +1912,13 @@ function loadPrizeMoney() {
             return `${k}: <strong>$${d.amount.toFixed(2)}</strong> (${d.players.join(' / ')})`;
           }).join('<br>')}
         </div>
+      </div>` : (currentUser?.role==='officer'||currentUser?.role==='developer') ? `
+      <div style="background:#e8eaf6;border:1px solid #3949ab;border-radius:8px;padding:12px 20px;min-width:260px">
+        <div style="font-size:11px;color:#3949ab;font-weight:600;margin-bottom:8px">HALF-SEASON STANDINGS PAYOUTS</div>
+        <div style="display:flex;gap:6px">
+          <button onclick="calculateHalfSeasonAndRefresh(${season},1)" style="padding:6px 12px;background:#3949ab;color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer">Calc 1st Half</button>
+          <button onclick="calculateHalfSeasonAndRefresh(${season},2)" style="padding:6px 12px;background:#3949ab;color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer">Calc 2nd Half</button>
+        </div>
       </div>` : ''}
       ${totalKitty > 0.01 ? `<button onclick="showKittyPay()" style="align-self:center;padding:10px 20px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px">💰 Pay from Kitty</button>` : ''}
     </div>
@@ -2097,6 +2124,7 @@ function refreshTab(tab) {
   if (tab === 'home') loadHome();
   if (tab === 'standings') loadStandings();
   if (tab === 'stableford') loadStablefordTab();
+  if (tab === 'sfstandings') loadSfStandings();
   if (tab === 'scores') loadScores();
   if (tab === 'skins') initSkinsTab();
   if (tab === 'noshows') loadNoShows();
@@ -3164,6 +3192,158 @@ function sbfColor(pts) {
   if (pts === 1) return '#add8e6';   // bogey light blue
   return '#ffcccc';                   // double bogey+ pink
 }
+
+// ── Reusable: Stableford team totals for ANY single date (used by SF Standings) ──
+function calcStablefordTeamTotals(date) {
+  if (!db) return {};
+  const league = "Hugh's";
+  const season = String(date).substring(0,4);
+
+  const fb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="${league}" LIMIT 1`)[0]?.FrontBack;
+  if (!fb) return {}; // no scores this date
+
+  const lp = query(`SELECT Course FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
+  const courseName = lp?.Course || 'Boone Links';
+  const courseRow = query(`SELECT Hole1,Hole2,Hole3,Hole4,Hole5,Hole6,Hole7,Hole8,Hole9,Hole10,Hole11,Hole12,Hole13,Hole14,Hole15,Hole16,Hole17,Hole18,H1,H2,H3,H4,H5,H6,H7,H8,H9,H10,H11,H12,H13,H14,H15,H16,H17,H18 FROM Courses WHERE Name=?`, [courseName])[0];
+  if (!courseRow) return {};
+
+  const pars = fb === 'Front'
+    ? [courseRow.Hole1,courseRow.Hole2,courseRow.Hole3,courseRow.Hole4,courseRow.Hole5,courseRow.Hole6,courseRow.Hole7,courseRow.Hole8,courseRow.Hole9].map(Number)
+    : [courseRow.Hole10,courseRow.Hole11,courseRow.Hole12,courseRow.Hole13,courseRow.Hole14,courseRow.Hole15,courseRow.Hole16,courseRow.Hole17,courseRow.Hole18].map(Number);
+
+  const subsMap = {};
+  query(`SELECT Player, Team, Grade FROM Subs WHERE Date=${date} AND League="${league}"`)
+    .forEach(r => { subsMap[`${r.Team}-${r.Grade}`] = r.Player; });
+
+  const scoresMap = {};
+  query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${date} AND FrontBack='${fb}' AND League="${league}" AND Gross IS NOT NULL AND Gross != 0`)
+    .forEach(r => { scoresMap[r.Player] = [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']].map(v => v ? parseInt(v) : null); });
+
+  const teams = {};
+  query(`SELECT Player, Team, Grade FROM Teams WHERE Year=${season}`)
+    .forEach(r => { if (!teams[r.Team]) teams[r.Team] = {}; teams[r.Team][r.Grade] = r.Player; });
+
+  function to9HoleRanks(hcps18) {
+    return hcps18.map(h => { const even = h % 2 === 1 ? h + 1 : h; return even / 2; });
+  }
+  function netPerHole(grossArr, phdcp, hcps9) {
+    const sorted = [...hcps9].map((si,i) => ({si,i})).sort((a,b) => a.si - b.si);
+    const strokeHoles = new Set(sorted.slice(0, phdcp).map(x => x.i));
+    return grossArr.map((g, i) => (g === null || g <= 0) ? null : g - (strokeHoles.has(i) ? 1 : 0));
+  }
+  function getPlayerPhdcp(playerName) {
+    const row = query(`SELECT PHdcp FROM Handicaps WHERE Player=? AND League="${league}" AND Date < ${date} ORDER BY Date DESC LIMIT 1`, [playerName])[0];
+    return row ? parseInt(row.PHdcp) || 0 : 0;
+  }
+
+  const hcps18 = fb === 'Front'
+    ? [courseRow.H1,courseRow.H2,courseRow.H3,courseRow.H4,courseRow.H5,courseRow.H6,courseRow.H7,courseRow.H8,courseRow.H9].map(Number)
+    : [courseRow.H10,courseRow.H11,courseRow.H12,courseRow.H13,courseRow.H14,courseRow.H15,courseRow.H16,courseRow.H17,courseRow.H18].map(Number);
+  const hcps = to9HoleRanks(hcps18);
+
+  const result = {}; // team -> { aPts, bPts, total, aPlayer, bPlayer }
+  Object.entries(teams).forEach(([team, t]) => {
+    const aPlayer = subsMap[`${team}-A`] || t['A'];
+    const bPlayer = subsMap[`${team}-B`] || t['B'];
+    const aGross = scoresMap[aPlayer] || Array(9).fill(null);
+    const bGross = scoresMap[bPlayer] || Array(9).fill(null);
+    const aPhdcp = getPlayerPhdcp(aPlayer);
+    const bPhdcp = getPlayerPhdcp(bPlayer);
+    const aNet = netPerHole(aGross, aPhdcp, hcps);
+    const bNet = netPerHole(bGross, bPhdcp, hcps);
+    const bbNet = aNet.map((an, i) => {
+      const bn = bNet[i];
+      if (an === null && bn === null) return null;
+      if (an === null) return bn;
+      if (bn === null) return an;
+      return Math.min(an, bn);
+    });
+    const aPtsArr = aNet.map((n, i) => sbfPts(n, pars[i]));
+    const bPtsArr = bNet.map((n, i) => sbfPts(n, pars[i]));
+    const bbPtsArr = bbNet.map((n, i) => sbfPts(n, pars[i]));
+    const aPtsTotal = aPtsArr.reduce((a,b) => a + (b||0), 0);
+    const bPtsTotal = bPtsArr.reduce((a,b) => a + (b||0), 0);
+    const total = bbPtsArr.reduce((a,b) => a + (b||0), 0);
+    const hasScores = aGross.some(s=>s!==null&&s>0) || bGross.some(s=>s!==null&&s>0);
+    if (hasScores) result[team] = { aPts: aPtsTotal, bPts: bPtsTotal, total, aPlayer, bPlayer };
+  });
+  return result;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── SF Standings — season-long Stableford running totals per team ───────────
+function loadSfStandings() {
+  if (!db) return;
+  const league = "Hugh's";
+
+  const seasonSel = document.getElementById('sfStandingsSeason');
+  if (seasonSel.options.length === 0) {
+    const seasons = query(`SELECT DISTINCT Season FROM LeagueParms WHERE Name="${league}" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+    const currentSeason = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="${league}"`)[0]?.s;
+    seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
+    seasonSel.value = currentSeason;
+  }
+  const season = seasonSel.value;
+
+  const playedDates = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="${league}" AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' ORDER BY Date ASC`).map(r => r.sDate);
+
+  const teamsInfo = {};
+  query(`SELECT Player, Team, Grade FROM Teams WHERE Year=${season}`)
+    .forEach(r => { if (!teamsInfo[r.Team]) teamsInfo[r.Team] = {}; teamsInfo[r.Team][r.Grade] = r.Player; });
+
+  // Accumulate per team: aPts, bPts, total, and per-week totals
+  const teamTotals = {};
+  Object.keys(teamsInfo).forEach(team => {
+    teamTotals[team] = { aPts: 0, bPts: 0, total: 0, weeks: {} };
+  });
+
+  playedDates.forEach(date => {
+    const weekData = calcStablefordTeamTotals(date);
+    Object.entries(weekData).forEach(([team, d]) => {
+      if (!teamTotals[team]) teamTotals[team] = { aPts: 0, bPts: 0, total: 0, weeks: {} };
+      teamTotals[team].aPts += d.aPts;
+      teamTotals[team].bPts += d.bPts;
+      teamTotals[team].total += d.total;
+      teamTotals[team].weeks[date] = d.total;
+    });
+  });
+
+  const rows = Object.entries(teamTotals).map(([team, d]) => ({
+    team, aPlayer: teamsInfo[team]?.['A'] || '', bPlayer: teamsInfo[team]?.['B'] || '',
+    aPts: d.aPts, bPts: d.bPts, total: d.total, weeks: d.weeks
+  })).sort((a,b) => b.total - a.total);
+
+  const leaderTotal = rows.length ? rows[0].total : 0;
+
+  // Header: Team, A Player, B Player, A Pts, B Pts, Total, [week columns], GB
+  const head = document.getElementById('sfStandingsHead');
+  head.innerHTML = `<tr>
+    <th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:center">Team</th>
+    <th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:left">A Player</th>
+    <th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:left">B Player</th>
+    <th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:center">A Pts</th>
+    <th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:center">B Pts</th>
+    <th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:center">Total</th>
+    ${playedDates.map(d => `<th style="background:var(--green);color:var(--gold);padding:6px 8px;text-align:center;font-size:11px">${fmtDate(d).replace(/\/\d{4}$/,'')}</th>`).join('')}
+    <th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:center">GB</th>
+  </tr>`;
+
+  const tbody = document.getElementById('sfStandingsBody');
+  tbody.innerHTML = rows.map((r, i) => {
+    const gb = leaderTotal - r.total;
+    return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
+      <td style="padding:6px 10px;text-align:center;font-weight:600">${r.team}</td>
+      <td style="padding:6px 10px">${r.aPlayer}</td>
+      <td style="padding:6px 10px">${r.bPlayer}</td>
+      <td style="padding:6px 10px;text-align:center">${r.aPts}</td>
+      <td style="padding:6px 10px;text-align:center">${r.bPts}</td>
+      <td style="padding:6px 10px;text-align:center;font-weight:700">${r.total}</td>
+      ${playedDates.map(d => `<td style="padding:6px 8px;text-align:center;font-size:12px">${r.weeks[d] ?? ''}</td>`).join('')}
+      <td style="padding:6px 10px;text-align:center;font-weight:600;color:${gb===0?'var(--green)':'#888'}">${gb}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="100" style="padding:12px;text-align:center;color:#999">No data for this season</td></tr>';
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function loadStableford() {
   if (!db) return;
@@ -7718,6 +7898,103 @@ function calcSkinWinnersForDate(date) {
 
   return { winners, potPerHole, totalPot, payerCount: skinPayers.size };
 }
+
+// ── Half-Season Standings Payout Calculator ──────────────────────────────────
+function calcHalfSeasonWinners(season, half) {
+  // half: 1 or 2
+  const league = "Hugh's";
+  const schedDates = query(`SELECT Date as sDate FROM Schedule WHERE League="${league}" AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' ORDER BY Date`);
+  if (!schedDates.length) return { ok: false, message: 'No schedule found for this season.' };
+  const midDate = schedDates[Math.floor(schedDates.length/2)].sDate;
+
+  const dFrom = `${season}0101`;
+  const dTo   = `${parseInt(season)+1}0101`;
+  const halfClause = half === 1 ? `AND m.Date < ${midDate}` : `AND m.Date >= ${midDate}`;
+
+  const rows = query(`
+    SELECT
+      t.Team,
+      MAX(CASE WHEN t.Grade='A' THEN t.Player END) as a_player,
+      MAX(CASE WHEN t.Grade='B' THEN t.Player END) as b_player,
+      ROUND((
+        SELECT COALESCE(SUM(m.Points),0) FROM Matches m
+        JOIN Teams ta ON ta.Player=m.Player AND ta.Year=${season} AND ta.Team=t.Team AND ta.Grade='A'
+        WHERE m.Date >= ${dFrom} AND m.Date < ${dTo} ${halfClause}
+      ) + (
+        SELECT COALESCE(SUM(m.Points),0) FROM Matches m
+        JOIN Subs s ON s.Player=m.Player AND s.Date=m.Date AND s.Team=t.Team AND s.Grade='A'
+        WHERE m.Date >= ${dFrom} AND m.Date < ${dTo} ${halfClause}
+      ), 1) as a_pts,
+      ROUND((
+        SELECT COALESCE(SUM(m.Points),0) FROM Matches m
+        JOIN Teams tb ON tb.Player=m.Player AND tb.Year=${season} AND tb.Team=t.Team AND tb.Grade='B'
+        WHERE m.Date >= ${dFrom} AND m.Date < ${dTo} ${halfClause}
+      ) + (
+        SELECT COALESCE(SUM(m.Points),0) FROM Matches m
+        JOIN Subs s ON s.Player=m.Player AND s.Date=m.Date AND s.Team=t.Team AND s.Grade='B'
+        WHERE m.Date >= ${dFrom} AND m.Date < ${dTo} ${halfClause}
+      ), 1) as b_pts,
+      ROUND((
+        SELECT COALESCE(SUM(m.Team_Points),0) FROM Matches m
+        JOIN Teams ta ON ta.Player=m.Player AND ta.Year=${season} AND ta.Team=t.Team AND ta.Grade='A'
+        WHERE m.Date >= ${dFrom} AND m.Date < ${dTo} ${halfClause}
+      ) + (
+        SELECT COALESCE(SUM(m.Team_Points),0) FROM Matches m
+        JOIN Subs s ON s.Player=m.Player AND s.Date=m.Date AND s.Team=t.Team AND s.Grade='A'
+        WHERE m.Date >= ${dFrom} AND m.Date < ${dTo} ${halfClause}
+      ), 1) as team_pts
+    FROM Teams t
+    WHERE t.Year = ${season}
+    GROUP BY t.Team
+  `);
+
+  if (!rows.length) return { ok: false, message: 'No teams found.' };
+
+  const ranked = rows.map(r => ({
+    team: r.Team, aPlayer: r.a_player, bPlayer: r.b_player,
+    total: parseFloat(r.a_pts||0) + parseFloat(r.b_pts||0) + parseFloat(r.team_pts||0)
+  })).sort((a,b) => b.total - a.total);
+
+  const lp = query(`SELECT HalfSeason1st, HalfSeason2nd, HalfSeason3rd FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
+  const amounts = [parseFloat(lp?.HalfSeason1st||0), parseFloat(lp?.HalfSeason2nd||0), parseFloat(lp?.HalfSeason3rd||0)];
+  if (!amounts[0]) return { ok: false, message: 'Half-Season prize amounts not configured for this season.' };
+
+  return { ok: true, ranked: ranked.slice(0,3), amounts, midDate };
+}
+
+function saveHalfSeasonWinners(season, half) {
+  const result = calcHalfSeasonWinners(season, half);
+  if (!result.ok) return result;
+
+  const league = "Hugh's";
+  const halfLabel = half === 1 ? 'H1' : 'H2';
+  const placeLabels = ['1st','2nd','3rd'];
+
+  // Clear existing Half Season payouts for this season/half before recreating
+  db.run(`DELETE FROM Payments WHERE League=? AND "Desc"='Half Season' AND Detail LIKE ?`, [league, `%-${halfLabel}`]);
+
+  const now = new Date().toLocaleString();
+  result.ranked.forEach((team, i) => {
+    const placeAmount = result.amounts[i];
+    const perPlayer = Math.round((placeAmount / 2) * 100) / 100;
+    [team.aPlayer, team.bPlayer].filter(Boolean).forEach(player => {
+      db.run(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,Comment) VALUES (?,?,?,?,?,?,?)`,
+        [league, player, `${season}1231`, 'Half Season', `${placeLabels[i]}-${halfLabel}`, perPlayer, `Team ${team.team} — ${placeLabels[i]} place, ${halfLabel}`]);
+    });
+  });
+
+  return { ok: true, count: result.ranked.length };
+}
+
+async function calculateHalfSeasonAndRefresh(season, half) {
+  if (!confirm(`Calculate ${half === 1 ? '1st' : '2nd'} Half standings payouts for ${season}?\n\nThis will determine the top 3 teams by points and create payment records.`)) return;
+  const result = saveHalfSeasonWinners(season, half);
+  if (!result.ok) { alert(result.message || 'Could not calculate.'); return; }
+  await saveDBToServer();
+  loadPrizeMoney();
+  alert(`✓ Calculated payouts for ${result.count} team(s).`);
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function saveSkinWinnersForDate(date) {
   const result = calcSkinWinnersForDate(date);
