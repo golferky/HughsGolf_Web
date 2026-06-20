@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.8</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.9</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.8</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.9</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -2893,6 +2893,13 @@ function loadLeaders() {
   if (!db) return;
   const league = "Hugh's";
 
+  // Ensure course data is loaded for hole-by-hole stats
+  if (!courseData) {
+    const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="${league}"`)[0]?.s;
+    const lp = query(`SELECT Course FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
+    loadCourse(lp?.Course || 'Boone Links');
+  }
+
   // Rounds played
   const roundsRows = query(`SELECT Player, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND Gross IS NOT NULL AND Gross != 0 GROUP BY Player ORDER BY cnt DESC`);
 
@@ -2911,14 +2918,53 @@ function loadLeaders() {
   // Points (sum of Matches.Points across all dates)
   const pointsRows = query(`SELECT Player, SUM(Points) as total FROM Matches WHERE League="${league}" AND Points IS NOT NULL GROUP BY Player ORDER BY total DESC`);
 
+  // F9/B9 Avg
+  const f9Rows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND FrontBack='Front' AND Gross IS NOT NULL AND Gross != 0 GROUP BY Player HAVING cnt >= 3 ORDER BY avg ASC`);
+  const b9Rows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND FrontBack='Back' AND Gross IS NOT NULL AND Gross != 0 GROUP BY Player HAVING cnt >= 3 ORDER BY avg ASC`);
+
+  // Hole-by-hole stats: Eagles, Birdies, Pars, Bogeys, DoubleBogeys, Others
+  // Uses current course pars (front/back) — assumes consistent course across seasons
+  const holeStats = {}; // Player -> { eagle, birdie, par, bogey, dbogey, other }
+  if (courseData) {
+    const allScoreRows = query(`SELECT Player, FrontBack, "1","2","3","4","5","6","7","8","9" FROM Scores WHERE League="${league}"`);
+    allScoreRows.forEach(r => {
+      const pars = r.FrontBack === 'Back' ? courseData.back?.pars : courseData.front?.pars;
+      if (!pars) return;
+      if (!holeStats[r.Player]) holeStats[r.Player] = { eagle:0, birdie:0, par:0, bogey:0, dbogey:0, other:0 };
+      for (let hi = 0; hi < 9; hi++) {
+        const gross = parseInt(r[String(hi+1)]);
+        if (isNaN(gross) || !pars[hi]) continue;
+        const diff = gross - pars[hi];
+        if (diff <= -2) holeStats[r.Player].eagle++;
+        else if (diff === -1) holeStats[r.Player].birdie++;
+        else if (diff === 0) holeStats[r.Player].par++;
+        else if (diff === 1) holeStats[r.Player].bogey++;
+        else if (diff === 2) holeStats[r.Player].dbogey++;
+        else holeStats[r.Player].other++;
+      }
+    });
+  }
+  const holeStatRows = (key) => Object.entries(holeStats)
+    .map(([Player, s]) => ({ Player, cnt: s[key] }))
+    .filter(r => r.cnt > 0)
+    .sort((a,b) => b.cnt - a.cnt);
+
   const grid = document.getElementById('leadersGrid');
   grid.innerHTML = [
     leaderCard('Rounds Played', roundsRows, 'cnt', v => v),
     leaderCard('Points', pointsRows, 'total', v => parseFloat(v).toFixed(1)),
+    leaderCard('F9 Avg', f9Rows, 'avg', v => parseFloat(v).toFixed(1)),
+    leaderCard('B9 Avg', b9Rows, 'avg', v => parseFloat(v).toFixed(1)),
     leaderCard('Avg Gross', avgGrossRows, 'avg', v => parseFloat(v).toFixed(1)),
     leaderCard('Total $ Earned', totalMoneyRows, 'total', v => '$'+parseFloat(v).toFixed(0)),
     leaderCard('Skins Won', skinsWonRows, 'cnt', v => v),
     leaderCard('CTPs Won', ctpsWonRows, 'cnt', v => v),
+    leaderCard('Eagles', holeStatRows('eagle'), 'cnt', v => v),
+    leaderCard('Birdies', holeStatRows('birdie'), 'cnt', v => v),
+    leaderCard('Pars', holeStatRows('par'), 'cnt', v => v),
+    leaderCard('Bogeys', holeStatRows('bogey'), 'cnt', v => v),
+    leaderCard('DoubleBogeys', holeStatRows('dbogey'), 'cnt', v => v),
+    leaderCard('Others', holeStatRows('other'), 'cnt', v => v),
   ].join('');
 }
 // ─────────────────────────────────────────────────────────────────────────────
