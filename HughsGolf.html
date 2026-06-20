@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.18</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260619.19</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.18</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260619.19</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -561,18 +561,18 @@
   <div class="tab active" data-tab="home">Home</div>
   <div class="tab" data-tab="admin">⚙ Admin</div>
   <div class="tab" data-tab="entry">📋 Scorecard</div>
-  <div class="tab" data-tab="standings">Standings</div>
   <div class="tab" data-tab="scores">Scores</div>
+  <div class="tab" data-tab="standings">Standings</div>
   <div class="tab" data-tab="matches">Matches</div>
-  <div class="tab" data-tab="skins">Skins</div>
-  <div class="tab" data-tab="noshows">Attendance</div>
   <div class="tab" data-tab="handicaps">Handicaps</div>
   <div class="tab" data-tab="leaders">🏆 Leaders</div>
-  <div class="tab" data-tab="ctps">CTPs</div>
   <div class="tab" data-tab="payments">Payments</div>
   <div class="tab" data-tab="prizemoney">PrizeMoney</div>
-  <div class="tab" data-tab="schedule">Schedule</div>
+  <div class="tab" data-tab="skins">Skins</div>
+  <div class="tab" data-tab="ctps">CTPs</div>
   <div class="tab" data-tab="stableford">Stableford</div>
+  <div class="tab" data-tab="noshows">Attendance</div>
+  <div class="tab" data-tab="schedule">Schedule</div>
 </div>
 
 <div class="content">
@@ -666,7 +666,11 @@
   <div class="section" id="tab-stableford">
     <div class="controls">
       <div class="filter-group">
-        <label>Date</label>
+        <label>Season</label>
+        <select id="stablefordSeason" onchange="populateStablefordDateDropdown()"></select>
+      </div>
+      <div class="filter-group">
+        <label>Week</label>
         <select id="stablefordDate"></select>
       </div>
     </div>
@@ -776,7 +780,11 @@
   <div class="section" id="tab-skins">
     <div class="controls">
       <div class="filter-group">
-        <label>Date</label>
+        <label>Season</label>
+        <select id="skinsSeason" onchange="populateSkinsDateDropdown()"></select>
+      </div>
+      <div class="filter-group">
+        <label>Week</label>
         <select id="skinsDate"></select>
       </div>
     </div>
@@ -850,7 +858,11 @@
   <div class="section" id="tab-ctps">
     <div class="controls">
       <div class="filter-group">
-        <label>Date</label>
+        <label>Season</label>
+        <select id="ctpsSeason" onchange="populateCtpsDateDropdown()"></select>
+      </div>
+      <div class="filter-group">
+        <label>Week</label>
         <select id="ctpsDate"></select>
       </div>
     </div>
@@ -2086,7 +2098,7 @@ function refreshTab(tab) {
   if (tab === 'standings') loadStandings();
   if (tab === 'stableford') loadStablefordTab();
   if (tab === 'scores') loadScores();
-  if (tab === 'skins') loadSkins();
+  if (tab === 'skins') initSkinsTab();
   if (tab === 'noshows') loadNoShows();
   if (tab === 'handicaps') loadHandicaps();
   if (tab === 'leaders') loadLeaders();
@@ -3112,8 +3124,17 @@ function loadLeaders() {
 
 function loadStablefordTab() {
   if (!db) return;
-  const season = query("SELECT MAX(Season) as s FROM LeagueParms WHERE Name=\"Hugh's\""  )[0]?.s;
-  const dates  = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="Hugh's" AND Date >= '${season}0101' AND Gross IS NOT NULL AND Gross != 0 ORDER BY Date DESC`);
+  const seasons = query(`SELECT DISTINCT Season FROM LeagueParms WHERE Name="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+  const seasonSel = document.getElementById('stablefordSeason');
+  const currentSeason = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
+  seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
+  seasonSel.value = currentSeason;
+  populateStablefordDateDropdown();
+}
+
+function populateStablefordDateDropdown() {
+  const season = document.getElementById('stablefordSeason').value;
+  const dates  = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="Hugh's" AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' AND Gross IS NOT NULL AND Gross != 0 ORDER BY Date DESC`);
   const sel = document.getElementById('stablefordDate');
   sel.innerHTML = dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
   if (!sel.dataset.listener) {
@@ -3317,21 +3338,25 @@ function loadStableford() {
   document.getElementById('stablefordBody').innerHTML = body;
 }
 
+function initSkinsTab() {
+  const seasons = query(`SELECT DISTINCT Season FROM LeagueParms WHERE Name="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+  const seasonSel = document.getElementById('skinsSeason');
+  const currentSeason = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
+  seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
+  seasonSel.value = currentSeason;
+  populateSkinsDateDropdown();
+}
+
+function populateSkinsDateDropdown() {
+  const season = document.getElementById('skinsSeason').value;
+  const skSel = document.getElementById('skinsDate');
+  const skinDates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='Skin' AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' ORDER BY Date DESC`);
+  skSel.innerHTML = skinDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
+  loadSkins();
+}
+
 function loadSkins() {
   if (!db) return;
-
-  // Refresh date options in case new Skin payments were added (e.g. auto-pay)
-  const skSel = document.getElementById('skinsDate');
-  const currentVal = skSel.value;
-  const skinDates = query("SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='Skin' ORDER BY Date DESC LIMIT 80");
-  const newOptionsHtml = skinDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
-  if (skSel.innerHTML !== newOptionsHtml) {
-    skSel.innerHTML = newOptionsHtml;
-    // Restore selection if still valid, else default to most recent (first option)
-    if (currentVal && skinDates.some(r => String(r.sDate) === currentVal)) {
-      skSel.value = currentVal;
-    }
-  }
 
   const date = document.getElementById('skinsDate').value;
   if (!date) {
@@ -3739,23 +3764,28 @@ function loadHandicaps() {
 // ── CTPs TAB ──
 function loadCtpsTab() {
   if (!db) return;
+  const seasons = query(`SELECT DISTINCT Season FROM LeagueParms WHERE Name="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+  const seasonSel = document.getElementById('ctpsSeason');
+  const currentSeason = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
+  seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
+  seasonSel.value = currentSeason;
+  populateCtpsDateDropdown();
+}
+
+function populateCtpsDateDropdown() {
+  const season = document.getElementById('ctpsSeason').value;
   const sel = document.getElementById('ctpsDate');
-  if (!sel.options.length) {
-    const season = query("SELECT MAX(Season) as s FROM LeagueParms WHERE Name=\"Hugh's\""  )[0]?.s;
-    const dates  = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='CTP' AND Detail='Payment' AND Date >= '${season}0101' ORDER BY Date DESC`);
-    sel.innerHTML = dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
-    sel.addEventListener('change', loadCtps);
-  }
+  const dates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='CTP' AND Detail='Payment' AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' ORDER BY Date DESC`);
+  sel.innerHTML = dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
   loadCtps();
 }
 
 function loadCtps() {
   if (!db) return;
-  refreshDateDropdown('ctpsDate', "SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='CTP' ORDER BY Date DESC LIMIT 80");
   const date    = document.getElementById('ctpsDate').value;
   if (!date) return;
   const league  = "Hugh's";
-  const season  = query("SELECT MAX(Season) as s FROM LeagueParms WHERE Name=\"Hugh's\""  )[0]?.s;
+  const season  = document.getElementById('ctpsSeason').value;
 
   // Determine front/back from scores
   const fb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="${league}" LIMIT 1`)[0]?.FrontBack || 'Front';
