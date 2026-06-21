@@ -4,6 +4,7 @@ param(
     [switch]$NoRestart,
     [switch]$PullLatest,
     [switch]$Deploy,
+    [switch]$RestartQnap,
     [string]$DbSource = "C:\HughsGolf\Files\HughsGolf.db",
     [string]$WebCode = $PSScriptRoot,
     [string]$QnapUser = "GaryAdmin",
@@ -118,11 +119,18 @@ if ($Deploy) {
         Write-Ok "Copied $file to QNAP"
     }
 
-    Write-Step "Restarting Flask on QNAP..."
-    $restartCommand = "PID=`$(ps | grep 'app.py' | grep -v grep | awk '{print `$1}'); if [ -n `"`$PID`" ]; then sudo kill `$PID; fi; sleep 1; sudo /etc/autorun.sh"
-    ssh -i $QnapKey "${QnapUser}@${QnapHost}" $restartCommand
-    if ($LASTEXITCODE -ne 0) { throw "QNAP Flask restart failed" }
-    Write-Ok "QNAP Flask restarted at http://garyscloud.myqnapcloud.com:$Port"
+    if ($RestartQnap) {
+        Write-Step "Restarting Flask on QNAP..."
+        $restartCommand = "PID=`$(ps | grep 'app.py' | grep -v grep | awk '{print `$1}'); if [ -n `"`$PID`" ]; then sudo -n kill `$PID; fi; sleep 1; sudo -n /etc/autorun.sh"
+        ssh -i $QnapKey "${QnapUser}@${QnapHost}" $restartCommand
+        if ($LASTEXITCODE -ne 0) {
+            throw "QNAP Flask restart failed. Configure passwordless sudo for the restart command, or restart QNAP Flask manually."
+        }
+        Write-Ok "QNAP Flask restarted at http://garyscloud.myqnapcloud.com:$Port"
+    } else {
+        Write-Ok "QNAP files updated"
+        Write-Warn "QNAP Flask restart skipped. HTML changes are live immediately; use -RestartQnap for app.py changes."
+    }
 }
 
 if (-not $NoRestart) {
