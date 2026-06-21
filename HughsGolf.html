@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.3</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.4</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.3</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.4</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1806,12 +1806,15 @@ function loadPrizeMoney() {
   const netDues = duesCollected - expenseTotal;
 
   // ── Half-Season Standings payouts ────────────────────────────────────────
-  const halfSeasonRows = query(`SELECT Player, Detail, Earned, Comment FROM Payments WHERE League="Hugh's" AND "Desc"='Half Season' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY Detail, Player`);
+  const halfSeasonRows = query(`SELECT Player, "Desc", Detail, Earned, Comment FROM Payments WHERE League="Hugh's" AND "Desc" LIKE 'Reg Season Champ-% half' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY "Desc", Detail, Player`);
   const halfSeasonByPlace = {};
   halfSeasonRows.forEach(r => {
-    if (!halfSeasonByPlace[r.Detail]) halfSeasonByPlace[r.Detail] = { players: [], amount: 0, comment: r.Comment };
-    halfSeasonByPlace[r.Detail].players.push(r.Player);
-    halfSeasonByPlace[r.Detail].amount += parseFloat(r.Earned || 0);
+    const halfKey = r.Desc.includes('1st half') ? 'H1' : 'H2';
+    const placeKey = String(r.Detail || '').replace('Earned-', '');
+    const key = `${placeKey}-${halfKey}`;
+    if (!halfSeasonByPlace[key]) halfSeasonByPlace[key] = { players: [], amount: 0, comment: r.Comment };
+    halfSeasonByPlace[key].players.push(r.Player);
+    halfSeasonByPlace[key].amount += parseFloat(r.Earned || 0);
   });
 
   let champ1, champ2, champ3;
@@ -7973,11 +7976,11 @@ function calcHalfSeasonWinners(season, half) {
     total: parseFloat(r.a_pts||0) + parseFloat(r.b_pts||0) + parseFloat(r.team_pts||0)
   })).sort((a,b) => b.total - a.total);
 
-  const lp = query(`SELECT HalfSeason1st, HalfSeason2nd, HalfSeason3rd FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
-  const amounts = [parseFloat(lp?.HalfSeason1st||0), parseFloat(lp?.HalfSeason2nd||0), parseFloat(lp?.HalfSeason3rd||0)];
-  if (!amounts[0]) return { ok: false, message: 'Half-Season prize amounts not configured for this season.' };
+  const lp = query(`SELECT PayPlaces FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
+  const payPlaces = Math.min(parseInt(lp?.PayPlaces || 3), 3);
+  const amounts = [55, 50, 40].slice(0, payPlaces); // per-player payouts, matching existing Reg Season Champ records
 
-  return { ok: true, ranked: ranked.slice(0,3), amounts, midDate };
+  return { ok: true, ranked: ranked.slice(0, payPlaces), amounts, midDate };
 }
 
 function saveHalfSeasonWinners(season, half) {
@@ -7985,19 +7988,18 @@ function saveHalfSeasonWinners(season, half) {
   if (!result.ok) return result;
 
   const league = "Hugh's";
-  const halfLabel = half === 1 ? 'H1' : 'H2';
+  const halfLabel = half === 1 ? '1st' : '2nd';
   const placeLabels = ['1st','2nd','3rd'];
+  const desc = `Reg Season Champ-${halfLabel} half`;
 
-  // Clear existing Half Season payouts for this season/half before recreating
-  db.run(`DELETE FROM Payments WHERE League=? AND "Desc"='Half Season' AND Detail LIKE ?`, [league, `%-${halfLabel}`]);
+  // Clear existing regular-season champion payouts for this season/half before recreating.
+  db.run(`DELETE FROM Payments WHERE League=? AND "Desc"=? AND Date >= ? AND Date < ?`, [league, desc, `${season}0101`, `${parseInt(season)+1}0101`]);
 
-  const now = new Date().toLocaleString();
   result.ranked.forEach((team, i) => {
-    const placeAmount = result.amounts[i];
-    const perPlayer = Math.round((placeAmount / 2) * 100) / 100;
+    const perPlayer = result.amounts[i];
     [team.aPlayer, team.bPlayer].filter(Boolean).forEach(player => {
-      db.run(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,Comment) VALUES (?,?,?,?,?,?,?)`,
-        [league, player, `${season}1231`, 'Half Season', `${placeLabels[i]}-${halfLabel}`, perPlayer, `Team ${team.team} — ${placeLabels[i]} place, ${halfLabel}`]);
+      db.run(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,DatePaid,Comment,PayMethod) VALUES (?,?,?,?,?,?,?,?,?)`,
+        [league, player, `${season}1231`, desc, `Earned-${placeLabels[i]}`, perPlayer, '', `${placeLabels[i]}-${halfLabel} half`, '']);
     });
   });
 
