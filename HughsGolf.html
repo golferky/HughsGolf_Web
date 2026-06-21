@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.12</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.13</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.12</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.13</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -6836,6 +6836,7 @@ let ctpHoles   = [];  // hole numbers that are CTP this week
 let entryInitialized = false;
 let entryDirty = false;
 let entryLast9Value = null;
+let entryManual9 = false;
 
 function calcEoySkins(season, silent=false) {
   const lp = query(`SELECT PostSeasonDt, SkinsPS FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
@@ -7051,15 +7052,16 @@ function initEntry() {
   const sel = document.getElementById('entryDate');
 
   if (!entryInitialized) {
-    sel.addEventListener('change', () => { entryState = {}; entryStateDate = null; buildEntryGrid(); });
+    sel.addEventListener('change', () => { entryState = {}; entryStateDate = null; entryManual9 = false; buildEntryGrid(); });
     const entry9Sel = document.getElementById('entry9');
     entryLast9Value = entry9Sel?.value || null;
     entry9Sel?.addEventListener('focus', () => { entryLast9Value = entry9Sel.value; });
     entry9Sel?.addEventListener('change', () => {
-      if (entryDirty && !confirm('You have unsaved scorecard changes. Switch Front/Back and discard those changes?')) {
+      if (!confirm('Switch Front/Back and rebuild the scorecard? Unsaved scorecard changes will be discarded.')) {
         entry9Sel.value = entryLast9Value || entryStateFb || 'Back';
         return;
       }
+      entryManual9 = true;
       entryDirty = false;
       entryLast9Value = entry9Sel.value;
       buildEntryGrid();
@@ -7153,8 +7155,8 @@ function buildEntryGrid() {
   }
   if (!lp) lp = query(`SELECT PostSeasonDt, SkinsPS, ClosestPS, Start9, StartDate FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
 
-  // Auto-detect Front/Back for regular season dates
-  if (!isPostSeason) {
+  // Auto-detect Front/Back for regular season dates unless the user just chose a side.
+  if (!isPostSeason && !entryManual9) {
     const existingFb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="Hugh's" LIMIT 1`)[0]?.FrontBack;
     if (existingFb) {
       document.getElementById('entry9').value = existingFb;
