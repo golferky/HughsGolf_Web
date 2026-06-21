@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.9</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.10</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.9</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.10</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -567,8 +567,7 @@
   <div class="tab" data-tab="leaders">🏆 Leaders</div>
   <div class="tab" data-tab="payments">Payments</div>
   <div class="tab" data-tab="prizemoney">PrizeMoney</div>
-  <div class="tab" data-tab="skins">Skins</div>
-  <div class="tab" data-tab="ctps">CTPs</div>
+  <div class="tab" data-tab="skins">Skins/CTPs</div>
   <div class="tab" data-tab="stableford">Stableford</div>
   <div class="tab" data-tab="noshows">Attendance</div>
   <div class="tab" data-tab="schedule">Schedule</div>
@@ -708,25 +707,8 @@
 
   <!-- SCORES VIEW -->
   <div class="section" id="tab-scores">
-    <div class="controls">
-      <div class="filter-group">
-        <label>Date</label>
-        <select id="scoresDate"></select>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-header">
-        <span>Scorecard</span>
-        <span class="subtitle" id="scoresSubtitle"></span>
-      </div>
-      <div class="table-wrap"><table id="scoresTable">
-        <thead><tr><th>Player</th><th class="num">Gross</th><th class="num">Net</th><th class="ctr">9</th><th class="num">Hdcp</th></tr></thead>
-        <tbody></tbody>
-      </table></div>
-    </div>
-
     <!-- SCORE ENTRY -->
-    <div class="controls" style="justify-content:space-between;align-items:flex-end;margin-top:20px">
+    <div class="controls" style="justify-content:space-between;align-items:flex-end">
       <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
         <div class="filter-group">
           <label>Date</label>
@@ -766,6 +748,23 @@
         <thead id="entryHead"></thead>
         <tbody id="entryBody"></tbody>
       </table>
+    </div>
+
+    <div class="controls" style="margin-top:20px">
+      <div class="filter-group">
+        <label>Date</label>
+        <select id="scoresDate"></select>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span>Scores</span>
+        <span class="subtitle" id="scoresSubtitle"></span>
+      </div>
+      <div class="table-wrap"><table id="scoresTable">
+        <thead><tr><th>Player</th><th class="num">Gross</th><th class="num">Net</th><th class="ctr">9</th><th class="num">Hdcp</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
     </div>
   </div>
 
@@ -822,6 +821,19 @@
         </table></div>
       </div>
     </div>
+
+  <!-- CTPS -->
+    <div class="controls" style="margin-top:20px">
+      <div class="filter-group">
+        <label>Season</label>
+        <select id="ctpsSeason" onchange="populateCtpsDateDropdown()"></select>
+      </div>
+      <div class="filter-group">
+        <label>Week</label>
+        <select id="ctpsDate"></select>
+      </div>
+    </div>
+    <div id="ctpsContent" style="margin-top:16px"></div>
   </div>
 
   <!-- NO-SHOWS -->
@@ -866,21 +878,6 @@
         <tbody></tbody>
       </table></div>
     </div>
-  </div>
-
-  <!-- CTPS -->
-  <div class="section" id="tab-ctps">
-    <div class="controls">
-      <div class="filter-group">
-        <label>Season</label>
-        <select id="ctpsSeason" onchange="populateCtpsDateDropdown()"></select>
-      </div>
-      <div class="filter-group">
-        <label>Week</label>
-        <select id="ctpsDate"></select>
-      </div>
-    </div>
-    <div id="ctpsContent" style="margin-top:16px"></div>
   </div>
 
   <!-- PAYMENTS -->
@@ -2146,12 +2143,12 @@ function refreshTab(tab) {
   if (tab === 'standings') loadStandings();
   if (tab === 'stableford') { loadStablefordTab(); loadSfStandings(); }
   if (tab === 'scores') { loadScores(); if (!courseData) initEntry(); else reRenderEntry(); }
-  if (tab === 'skins') initSkinsTab();
+  if (tab === 'skins') { initSkinsTab(); loadCtpsTab(); }
   if (tab === 'noshows') loadNoShows();
   if (tab === 'handicaps') loadHandicaps();
   if (tab === 'leaders') loadLeaders();
   if (tab === 'matches') loadMatchesTab();
-  if (tab === 'ctps') loadCtpsTab();
+  if (tab === 'ctps') switchTab('skins');
   if (tab === 'payments') loadPaymentsTab();
   if (tab === 'prizemoney') loadPrizeMoney();
   if (tab === 'admin') loadAdminTab();
@@ -7168,7 +7165,8 @@ function buildEntryGrid() {
     banner.id = 'postSeasonBanner';
     banner.style.cssText = 'background:linear-gradient(135deg,#1a4d1a,#2e7d2e);color:white;border-radius:6px;padding:10px 16px;font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between';
     banner.innerHTML = `<span>⛳ POST SEASON ${season} — 18 Holes · Skins $${lp?.SkinsPS||7}/player · CTP $${lp?.ClosestPS||3}/player</span>`;
-    document.getElementById('tab-entry').insertBefore(banner, document.querySelector('#tab-entry .table-wrap') || document.getElementById('entryGrid').parentElement);
+    const entryHost = document.getElementById('tab-scores');
+    entryHost?.insertBefore(banner, document.getElementById('entryGrid')?.parentElement || entryHost.firstChild);
   }
   entryStateDate = date;
   entryStateFb   = fb;
@@ -7203,7 +7201,8 @@ function buildEntryGrid() {
     banner.textContent = isNextDate
       ? `⏳ ${fmtDate(date)} is the next scheduled date — you can pre-assign subs but scores cannot be entered yet.`
       : `🔒 ${fmtDate(date)} is a future date — no changes allowed.`;
-    document.getElementById('tab-entry').insertBefore(banner, document.querySelector('#tab-entry .table-wrap') || document.getElementById('entryGrid').parentElement);
+    const entryHost = document.getElementById('tab-scores');
+    entryHost?.insertBefore(banner, document.getElementById('entryGrid')?.parentElement || entryHost.firstChild);
   }
 
   // CTP holes from Payments (winners recorded) — fall back to empty
