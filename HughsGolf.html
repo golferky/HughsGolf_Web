@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.1</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.2</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.1</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.2</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1491,7 +1491,7 @@ async function tryAutoLoad() {
   if (!location.href.startsWith('http')) return false;
   try {
     document.getElementById('dbStatus').textContent = 'Loading...';
-    const resp = await fetch('HughsGolf.db');
+    const resp = await fetch(`HughsGolf.db?v=${Date.now()}`, { cache: 'no-store' });
     if (!resp.ok) {
       document.getElementById('dbStatus').textContent = `DB fetch failed: ${resp.status}`;
       return false;
@@ -3506,12 +3506,6 @@ function loadStableford() {
       const winnerStyle = isWinner ? 'font-weight:700;background:#e8f5e9' : '';
       const net = t.aNet[i];
       rowA += `<td style="${cellS}">${g||''}</td><td style="${cellS};${winnerStyle}">${net!==null?net:''}</td>`;
-    });
-    // BB pts per hole in last column — rowspan 2
-    let bbPtsCell = '';
-    t.bbPts.forEach((pts, i) => {
-      const bg = sbfColor(pts);
-      bbPtsCell += `<td style="${cellS};background:${bg}!important">${pts!==null?pts:''}</td>`;
     });
     // Total cell rowspan 2
     rowA += `<td style="${cellS};font-weight:700;font-size:14px;background:${totalColor}" rowspan="2">${t.total}</td></tr>`;
