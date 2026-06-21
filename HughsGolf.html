@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.4</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.5</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.4</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.5</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1919,8 +1919,8 @@ function loadPrizeMoney() {
       <div style="background:#e8eaf6;border:1px solid #3949ab;border-radius:8px;padding:12px 20px;min-width:260px">
         <div style="font-size:11px;color:#3949ab;font-weight:600;margin-bottom:8px">HALF-SEASON STANDINGS PAYOUTS</div>
         <div style="display:flex;gap:6px">
-          <button onclick="calculateHalfSeasonAndRefresh(${season},1)" style="padding:6px 12px;background:#3949ab;color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer">Calc 1st Half</button>
-          <button onclick="calculateHalfSeasonAndRefresh(${season},2)" style="padding:6px 12px;background:#3949ab;color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer">Calc 2nd Half</button>
+          <button onclick="previewHalfSeasonWinners(${season},1)" style="padding:6px 12px;background:#3949ab;color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer">Preview 1st Half</button>
+          <button onclick="previewHalfSeasonWinners(${season},2)" style="padding:6px 12px;background:#3949ab;color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer">Preview 2nd Half</button>
         </div>
       </div>` : ''}
       ${totalKitty > 0.01 ? `<button onclick="showKittyPay()" style="align-self:center;padding:10px 20px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px">💰 Pay from Kitty</button>` : ''}
@@ -8006,13 +8006,16 @@ function saveHalfSeasonWinners(season, half) {
   return { ok: true, count: result.ranked.length };
 }
 
-async function calculateHalfSeasonAndRefresh(season, half) {
-  if (!confirm(`Calculate ${half === 1 ? '1st' : '2nd'} Half standings payouts for ${season}?\n\nThis will determine the top 3 teams by points and create payment records.`)) return;
-  const result = saveHalfSeasonWinners(season, half);
+function previewHalfSeasonWinners(season, half) {
+  const result = calcHalfSeasonWinners(season, half);
   if (!result.ok) { alert(result.message || 'Could not calculate.'); return; }
-  await saveDBToServer();
-  loadPrizeMoney();
-  alert(`✓ Calculated payouts for ${result.count} team(s).`);
+
+  const halfLabel = half === 1 ? '1st Half' : '2nd Half';
+  const placeLabels = ['1st','2nd','3rd'];
+  const lines = result.ranked.map((team, i) =>
+    `${placeLabels[i]}: Team ${team.team} (${team.aPlayer} / ${team.bPlayer}) - ${team.total.toFixed(1)} pts - $${result.amounts[i]} each`
+  );
+  alert(`${halfLabel} standings payout preview for ${season}\n\n${lines.join('\n')}\n\nNo payment records were created.`);
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
