@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.5</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.7</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.5</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.7</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1622,13 +1622,24 @@ dz.addEventListener('drop', e => {
 dz.addEventListener('click', () => document.getElementById('fileInput').click());
 
 // ── Tabs ──
+const OFFICER_ONLY_TABS = new Set(['admin', 'payments', 'prizemoney', 'schedule', 'stableford']);
+
+function canAccessTab(tabName, role = currentUser?.role || 'player') {
+  return !OFFICER_ONLY_TABS.has(tabName) || role === 'officer' || role === 'developer';
+}
+
+function switchTab(tabName) {
+  const targetTab = canAccessTab(tabName) ? tabName : 'home';
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
+  document.querySelector(`.tab[data-tab="${targetTab}"]`)?.classList.add('active');
+  document.getElementById('tab-' + targetTab)?.classList.add('active');
+  if (db) refreshTab(targetTab);
+}
+
 document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
-    t.classList.add('active');
-    document.getElementById('tab-' + t.dataset.tab).classList.add('active');
-    if (db) refreshTab(t.dataset.tab);
+    switchTab(t.dataset.tab);
   });
 });
 
@@ -1652,6 +1663,19 @@ function query(sql, params=[]) {
     stmt.free();
     return rows;
   } catch(e) { console.error(e, sql); return []; }
+}
+
+function hasDbColumn(tableName, columnName) {
+  return query(`PRAGMA table_info(${tableName})`).some(r => r.name === columnName);
+}
+
+function activeSessionsEnabled() {
+  return !!db && hasDbColumn('Players', 'ActiveSession');
+}
+
+function isSessionTokenStale(token) {
+  const createdAt = parseInt(String(token || '').split('-')[0], 10);
+  return !createdAt || (Date.now() - createdAt) > SESSION_TIMEOUT;
 }
 
 function fmtDate(d) {
@@ -4967,18 +4991,24 @@ function loadLoginActivity() {
   if (!db) return;
 
   // ── Currently Logged In ──────────────────────────────────────────────────
-  const activeSessions = query(`SELECT Player, ActiveSession FROM Players WHERE ActiveSession IS NOT NULL AND ActiveSession != ''`);
+  const sessionsAvailable = activeSessionsEnabled();
+  const activeSessions = sessionsAvailable
+    ? query(`SELECT Player, ActiveSession FROM Players WHERE ActiveSession IS NOT NULL AND ActiveSession != ''`)
+    : [];
   const activeEl = document.getElementById('currentlyLoggedInBody');
   if (activeEl) {
-    if (!activeSessions.length) {
+    if (!sessionsAvailable) {
+      activeEl.innerHTML = '<tr><td colspan="2" style="padding:8px;color:#999;text-align:center;font-size:12px">Session tracking not available in this DB</td></tr>';
+    } else if (!activeSessions.length) {
       activeEl.innerHTML = '<tr><td colspan="2" style="padding:8px;color:#999;text-align:center;font-size:12px">No one is currently logged in</td></tr>';
     } else {
       activeEl.innerHTML = activeSessions.map((r,i) => {
         const lastLogin = query(`SELECT log_time FROM LogTable WHERE method='login' AND text=? ORDER BY log_time DESC LIMIT 1`, [`${r.Player} logged in`])[0]?.log_time;
         const sinceMin = lastLogin ? Math.round((Date.now() - new Date(lastLogin.replace(' ','T')+'Z').getTime()) / 60000) : null;
-        const likelyTimedOut = sinceMin !== null && sinceMin > 30;
+        const likelyTimedOut = isSessionTokenStale(r.ActiveSession);
+        const ageText = sinceMin !== null ? `${sinceMin}m ago` : 'unknown age';
         const statusBadge = likelyTimedOut
-          ? `<span style="color:#e65100;font-size:11px">⚠ likely timed out (${sinceMin}m ago)</span>`
+          ? `<span style="color:#e65100;font-size:11px">⚠ likely timed out (${ageText})</span>`
           : `<span style="color:#2e7d32;font-size:11px">● active${sinceMin!==null?` (${sinceMin}m ago)`:''}</span>`;
         return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
           <td style="padding:6px 12px;font-weight:600">${r.Player}</td>
@@ -5586,20 +5616,28 @@ async function doLogin() {
   }
   loginAttempts = 0;
 
-  // ── Check for an existing active session on another device ──────────────
-  const existingSession = query(`SELECT ActiveSession FROM Players WHERE Player=?`, [name])[0]?.ActiveSession;
-  const myRememberedToken = localStorage.getItem(`hg_session_${name}`);
-  const isSameDeviceRefresh = existingSession && myRememberedToken && existingSession === myRememberedToken;
+  let sessionToken = null;
+  if (activeSessionsEnabled()) {
+    // ── Check for an existing active session on another device ──────────────
+    let existingSession = query(`SELECT ActiveSession FROM Players WHERE Player=?`, [name])[0]?.ActiveSession;
+    const myRememberedToken = localStorage.getItem(`hg_session_${name}`);
+    const isSameDeviceRefresh = existingSession && myRememberedToken && existingSession === myRememberedToken;
 
-  if (existingSession && !isSameDeviceRefresh) {
-    const proceed = confirm(`${name} is already logged in on another device or browser.\n\nContinue and log out the other session?`);
-    if (!proceed) return;
+    if (existingSession && isSessionTokenStale(existingSession)) {
+      db.run(`UPDATE Players SET ActiveSession=NULL WHERE Player=?`, [name]);
+      existingSession = null;
+    }
+
+    if (existingSession && !isSameDeviceRefresh) {
+      const proceed = confirm(`${name} is already logged in on another device or browser.\n\nContinue and log out the other session?`);
+      if (!proceed) return;
+    }
+
+    // Generate a new session token for this login (reuse remembered token if this is just a refresh)
+    sessionToken = isSameDeviceRefresh ? existingSession : `${Date.now()}-${Math.random().toString(36).substring(2,10)}`;
+    db.run(`UPDATE Players SET ActiveSession=? WHERE Player=?`, [sessionToken, name]);
+    localStorage.setItem(`hg_session_${name}`, sessionToken);
   }
-
-  // Generate a new session token for this login (reuse remembered token if this is just a refresh)
-  const sessionToken = isSameDeviceRefresh ? existingSession : `${Date.now()}-${Math.random().toString(36).substring(2,10)}`;
-  db.run(`UPDATE Players SET ActiveSession=? WHERE Player=?`, [sessionToken, name]);
-  localStorage.setItem(`hg_session_${name}`, sessionToken);
   window._mySessionToken = sessionToken;
 
   loginSuccess(player);
@@ -5650,11 +5688,13 @@ function detectDevice() {
 }
 
 async function loginSuccess(player) {
+  const officer = String(player.Officer || '').trim();
+  const officerKey = officer.toLowerCase();
   currentUser = {
     name: player.Player,
-    officer: player.Officer || '',
-    role: player.Officer === 'Developer' ? 'developer' :
-          (player.Officer === 'President' || player.Officer === 'Secretary') ? 'officer' : 'player'
+    officer,
+    role: officerKey === 'developer' ? 'developer' :
+          (officerKey === 'president' || officerKey === 'secretary') ? 'officer' : 'player'
   };
 
   // Log login
@@ -5693,9 +5733,14 @@ async function loginSuccess(player) {
   // ── Periodic check: has this session been kicked out by another login? ──
   clearInterval(window._sessionCheckInterval);
   window._sessionCheckInterval = setInterval(() => {
-    if (!currentUser || !window._mySessionToken) return;
+    if (!currentUser || !window._mySessionToken || !activeSessionsEnabled()) return;
     try {
       const current = query(`SELECT ActiveSession FROM Players WHERE Player=?`, [currentUser.name])[0]?.ActiveSession;
+      if (current && isSessionTokenStale(current)) {
+        db.run(`UPDATE Players SET ActiveSession=NULL WHERE Player=?`, [currentUser.name]);
+        saveDBToServer();
+        return;
+      }
       if (current && current !== window._mySessionToken) {
         clearInterval(window._sessionCheckInterval);
         alert(`You've been logged out because ${currentUser.name} signed in on another device.`);
@@ -5725,17 +5770,9 @@ function applyRoleAccess() {
   }
 
   // Tab visibility
-  const tabRules = {
-    'admin':      ['developer', 'officer'],
-    'payments':   ['developer', 'officer'],
-    'schedule':   ['developer', 'officer'],
-    'stableford': ['developer', 'officer'],
-  };
-
   document.querySelectorAll('.tab').forEach(tab => {
     const t = tab.dataset.tab;
-    const allowed = tabRules[t];
-    if (allowed && !allowed.includes(role)) {
+    if (!canAccessTab(t, role)) {
       tab.style.display = 'none';
     } else {
       tab.style.display = '';
@@ -5810,7 +5847,7 @@ function logoutUser(reason) {
     } catch(e) { /* ignore */ }
   }
   // Clear our ActiveSession lock if we still own it (avoid clearing someone else's newer session)
-  if (currentUser && window._mySessionToken) {
+  if (currentUser && window._mySessionToken && activeSessionsEnabled()) {
     try {
       const current = query(`SELECT ActiveSession FROM Players WHERE Player=?`, [currentUser.name])[0]?.ActiveSession;
       if (current === window._mySessionToken) {
