@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.11</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.12</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.11</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.12</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -6834,6 +6834,8 @@ let courseData = null;
 let ctpHoles   = [];  // hole numbers that are CTP this week
 
 let entryInitialized = false;
+let entryDirty = false;
+let entryLast9Value = null;
 
 function calcEoySkins(season, silent=false) {
   const lp = query(`SELECT PostSeasonDt, SkinsPS FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
@@ -7050,7 +7052,18 @@ function initEntry() {
 
   if (!entryInitialized) {
     sel.addEventListener('change', () => { entryState = {}; entryStateDate = null; buildEntryGrid(); });
-    document.getElementById('entry9').addEventListener('change', buildEntryGrid);
+    const entry9Sel = document.getElementById('entry9');
+    entryLast9Value = entry9Sel?.value || null;
+    entry9Sel?.addEventListener('focus', () => { entryLast9Value = entry9Sel.value; });
+    entry9Sel?.addEventListener('change', () => {
+      if (entryDirty && !confirm('You have unsaved scorecard changes. Switch Front/Back and discard those changes?')) {
+        entry9Sel.value = entryLast9Value || entryStateFb || 'Back';
+        return;
+      }
+      entryDirty = false;
+      entryLast9Value = entry9Sel.value;
+      buildEntryGrid();
+    });
     entryInitialized = true;
   }
 
@@ -7104,6 +7117,8 @@ function reRenderEntry() {
   }));
   const isPostSeason = document.getElementById('entryPostSeason')?.checked || false;
   renderEntryGrid(slots, nine, false, isPostSeason);
+  entryDirty = false;
+  entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
   applyCellClasses(nine);
   const par9 = nine.pars.reduce((a,b)=>a+b,0);
   Object.values(entryState).forEach(st => {
@@ -7143,12 +7158,14 @@ function buildEntryGrid() {
     const existingFb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="Hugh's" LIMIT 1`)[0]?.FrontBack;
     if (existingFb) {
       document.getElementById('entry9').value = existingFb;
+      entryLast9Value = existingFb;
     } else {
       const startMonth = lp?.StartDate ? parseInt(lp.StartDate.split('/')[0]) : 4;
       const thisMonth  = parseInt(date.toString().substring(4,6));
       const start9     = lp?.Start9 === 'B' ? 'Back' : 'Front';
       const fb2 = ((thisMonth - startMonth) % 2 === 0) ? start9 : (start9 === 'Front' ? 'Back' : 'Front');
       document.getElementById('entry9').value = fb2;
+      entryLast9Value = fb2;
     }
   }
   const fb = document.getElementById('entry9').value;
@@ -7360,6 +7377,8 @@ function buildEntryGrid() {
   }
 
   renderEntryGrid(slots, nine, isFuture, isPostSeason);
+  entryDirty = false;
+  entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
   applyCellClasses(nine);
   if (isPostSeason) calcEoySkins(season, true); // true = silent (no confirm/alert)
   if (isFuture) {
@@ -8244,6 +8263,7 @@ function onScoreInput(e) {
   const par9 = nine.pars.reduce((a,b)=>a+b,0);
 
   entryState[key].holes[hi] = val;
+  entryDirty = true;
 
   const st   = entryState[key];
   const gross = calcGross(st.holes);
@@ -8417,6 +8437,7 @@ function distributeScores(key, nineDigits, firstInp) {
   digits.forEach((d, i) => {
     if (inputs[i]) { inputs[i].value = d; entryState[key].holes[i] = d; }
   });
+  entryDirty = true;
   if (firstInp) firstInp.value = digits[0];
   if (inputs[8]) { inputs[8].focus(); inputs[8].select(); }
 
@@ -8581,6 +8602,8 @@ async function saveEntryToDB() {
   if (entryDate) saveSkinWinnersForDate(entryDate);
   document.getElementById('entryGrid').classList.add('save-flash');
   setTimeout(()=>document.getElementById('entryGrid').classList.remove('save-flash'),400);
+  entryDirty = false;
+  entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
 }
 
 document.getElementById('entryClear')?.addEventListener('click', ()=>{
@@ -8617,6 +8640,8 @@ document.getElementById('entryClear')?.addEventListener('click', ()=>{
     el.textContent=''; el.style.color='';
   });
   applyCellClasses(nine2);
+  entryDirty = false;
+  entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
 });
 
 // ── Payment Modal ──
