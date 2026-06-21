@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.7</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.9</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.7</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.9</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -560,7 +560,6 @@
 <div class="tabs">
   <div class="tab active" data-tab="home">Home</div>
   <div class="tab" data-tab="admin">⚙ Admin</div>
-  <div class="tab" data-tab="entry">📋 Scorecard</div>
   <div class="tab" data-tab="scores">Scores</div>
   <div class="tab" data-tab="standings">Standings</div>
   <div class="tab" data-tab="matches">Matches</div>
@@ -571,7 +570,6 @@
   <div class="tab" data-tab="skins">Skins</div>
   <div class="tab" data-tab="ctps">CTPs</div>
   <div class="tab" data-tab="stableford">Stableford</div>
-  <div class="tab" data-tab="sfstandings">SF Standings</div>
   <div class="tab" data-tab="noshows">Attendance</div>
   <div class="tab" data-tab="schedule">Schedule</div>
 </div>
@@ -689,17 +687,15 @@
         <tbody id="stablefordBody"></tbody>
       </table>
     </div>
-  </div>
 
-  <!-- SF STANDINGS -->
-  <div class="section" id="tab-sfstandings">
+    <!-- SF STANDINGS -->
     <div class="controls">
       <div class="filter-group">
         <label>Season</label>
         <select id="sfStandingsSeason" onchange="loadSfStandings()"></select>
       </div>
     </div>
-    <div class="card">
+    <div class="card" style="margin-top:20px">
       <div class="card-header">SF Stdg Report</div>
       <div class="table-wrap">
         <table id="sfStandingsTable" style="width:100%;border-collapse:collapse;font-size:12px">
@@ -728,11 +724,9 @@
         <tbody></tbody>
       </table></div>
     </div>
-  </div>
 
-  <!-- SCORE ENTRY -->
-  <div class="section" id="tab-entry">
-    <div class="controls" style="justify-content:space-between;align-items:flex-end">
+    <!-- SCORE ENTRY -->
+    <div class="controls" style="justify-content:space-between;align-items:flex-end;margin-top:20px">
       <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
         <div class="filter-group">
           <label>Date</label>
@@ -1622,7 +1616,7 @@ dz.addEventListener('drop', e => {
 dz.addEventListener('click', () => document.getElementById('fileInput').click());
 
 // ── Tabs ──
-const OFFICER_ONLY_TABS = new Set(['admin', 'payments', 'prizemoney', 'schedule', 'stableford']);
+const OFFICER_ONLY_TABS = new Set(['admin', 'payments', 'prizemoney', 'schedule']);
 
 function canAccessTab(tabName, role = currentUser?.role || 'player') {
   return !OFFICER_ONLY_TABS.has(tabName) || role === 'officer' || role === 'developer';
@@ -2150,9 +2144,8 @@ function refreshTab(tab) {
   if (!db) return;
   if (tab === 'home') loadHome();
   if (tab === 'standings') loadStandings();
-  if (tab === 'stableford') loadStablefordTab();
-  if (tab === 'sfstandings') loadSfStandings();
-  if (tab === 'scores') loadScores();
+  if (tab === 'stableford') { loadStablefordTab(); loadSfStandings(); }
+  if (tab === 'scores') { loadScores(); if (!courseData) initEntry(); else reRenderEntry(); }
   if (tab === 'skins') initSkinsTab();
   if (tab === 'noshows') loadNoShows();
   if (tab === 'handicaps') loadHandicaps();
@@ -2163,7 +2156,7 @@ function refreshTab(tab) {
   if (tab === 'prizemoney') loadPrizeMoney();
   if (tab === 'admin') loadAdminTab();
   if (tab === 'schedule') loadSchedule();
-  if (tab === 'entry') { if (!courseData) initEntry(); else reRenderEntry(); }
+  if (tab === 'entry') switchTab('scores');
   setTimeout(highlightCurrentPlayer, 50);
 }
 
@@ -5212,11 +5205,11 @@ async function importGallusSubmission(id, url) {
   showAdminSection('players'); // switch away briefly
   document.getElementById('gallusSubmitModal') && (document.getElementById('gallusSubmitModal').style.display = 'none');
 
-  // Switch to Scorecard tab and open import modal
+  // Switch to Scores tab and open import modal
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.querySelector('[data-tab="entry"]')?.classList.add('active');
-  document.getElementById('tab-entry')?.classList.add('active');
+  document.querySelector('[data-tab="scores"]')?.classList.add('active');
+  document.getElementById('tab-scores')?.classList.add('active');
   if (!courseData) await initEntry(); else reRenderEntry();
 
   showGallusImport();
