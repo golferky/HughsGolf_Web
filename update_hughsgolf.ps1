@@ -2,9 +2,14 @@ param(
     [switch]$NoDb,
     [switch]$NoGit,
     [switch]$NoRestart,
+    [switch]$PullLatest,
     [switch]$Deploy,
     [string]$DbSource = "C:\HughsGolf\Files\HughsGolf.db",
     [string]$WebCode = $PSScriptRoot,
+    [string]$QnapUser = "GaryAdmin",
+    [string]$QnapHost = "192.168.1.176",
+    [string]$QnapWeb = "/share/CACHEDEV2_DATA/Web",
+    [string]$QnapKey = "$env:USERPROFILE\.ssh\id_ed25519",
     [int]$Port = 8445
 )
 
@@ -34,6 +39,13 @@ if (-not (Test-Path -LiteralPath $WebCode)) {
 Set-Location -LiteralPath $WebCode
 
 $changed = $false
+
+if ($PullLatest) {
+    Write-Step "Pulling latest web files from GitHub..."
+    git pull --ff-only origin main
+    if ($LASTEXITCODE -ne 0) { throw "git pull failed; check for local changes in $WebCode" }
+    Write-Ok "Pulled latest GitHub version"
+}
 
 Write-Step "Checking web files..."
 foreach ($file in @("app.py", "HughsGolf.html")) {
@@ -95,8 +107,22 @@ if (-not $NoGit) {
 }
 
 if ($Deploy) {
-    Write-Step "Deploy requested..."
-    Write-Warn "QNAP deploy is not wired in this Windows script yet. Use GitHub pull on the target or extend this block with scp/ssh settings."
+    Write-Step "Deploying to QNAP..."
+    foreach ($file in @("app.py", "HughsGolf.html")) {
+        $source = Join-Path $WebCode $file
+        if (-not (Test-Path -LiteralPath $source)) {
+            throw "Cannot deploy missing file: $source"
+        }
+        scp -i $QnapKey $source "${QnapUser}@${QnapHost}:${QnapWeb}/$file"
+        if ($LASTEXITCODE -ne 0) { throw "scp failed for $file" }
+        Write-Ok "Copied $file to QNAP"
+    }
+
+    Write-Step "Restarting Flask on QNAP..."
+    $restartCommand = "PID=`$(ps | grep 'app.py' | grep -v grep | awk '{print `$1}'); if [ -n `"`$PID`" ]; then sudo kill `$PID; fi; sleep 1; sudo /etc/autorun.sh"
+    ssh -i $QnapKey "${QnapUser}@${QnapHost}" $restartCommand
+    if ($LASTEXITCODE -ne 0) { throw "QNAP Flask restart failed" }
+    Write-Ok "QNAP Flask restarted at http://garyscloud.myqnapcloud.com:$Port"
 }
 
 if (-not $NoRestart) {
