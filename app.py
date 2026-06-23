@@ -29,7 +29,8 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260623.2'
+VERSION    = '20260623.3'
+LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -264,7 +265,7 @@ def flask_log():
     """Return the last N lines of the Flask log."""
     n = request.args.get('lines', 100, type=int)
     n = min(max(n, 10), 1000)
-    log_path = os.path.join(BASE_DIR, 'flask.log')
+    log_path = LOG_PATH if os.path.exists(LOG_PATH) else os.path.join(BASE_DIR, 'flask.log')
     if not os.path.exists(log_path):
         return jsonify({'ok': False, 'error': 'Log file not found', 'lines': []})
     try:
@@ -288,13 +289,12 @@ def restart_server():
 
     def restart_after_response():
         time.sleep(0.5)
-        log_path = os.path.join(BASE_DIR, 'flask.log')
         if os.name == 'nt':
             subprocess.Popen([sys.executable, os.path.abspath(__file__)], cwd=BASE_DIR)
         else:
             cmd = (
                 f"sleep 1; cd {shlex.quote(BASE_DIR)}; "
-                f"nohup {shlex.quote(sys.executable)} app.py > {shlex.quote(log_path)} 2>&1 &"
+                f"nohup {shlex.quote(sys.executable)} app.py > {shlex.quote(LOG_PATH)} 2>&1 &"
             )
             subprocess.Popen(['sh', '-c', cmd], close_fds=True)
         os._exit(0)
