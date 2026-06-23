@@ -29,7 +29,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260623.3'
+VERSION    = '20260623.4'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -294,7 +294,7 @@ def restart_server():
         else:
             cmd = (
                 f"sleep 1; cd {shlex.quote(BASE_DIR)}; "
-                f"nohup {shlex.quote(sys.executable)} app.py > {shlex.quote(LOG_PATH)} 2>&1 &"
+                f"{shlex.quote(sys.executable)} app.py > {shlex.quote(LOG_PATH)} 2>&1 < /dev/null &"
             )
             subprocess.Popen(['sh', '-c', cmd], close_fds=True)
         os._exit(0)
