@@ -8,9 +8,12 @@ import os
 import shutil
 import datetime
 import random
+import shlex
 import string
 import smtplib
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -26,7 +29,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260623.1'
+VERSION    = '20260623.2'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -271,6 +274,33 @@ def flask_log():
         return jsonify({'ok': True, 'lines': tail, 'total_lines': len(all_lines)})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e), 'lines': []})
+
+
+@app.route('/restart-server', methods=['POST'])
+def restart_server():
+    """Restart the QNAP Flask process after a deploy."""
+    token = request.headers.get('X-Save-Token', '')
+    body = request.get_json(silent=True) or {}
+    if not token:
+        token = body.get('token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+
+    def restart_after_response():
+        time.sleep(0.5)
+        log_path = os.path.join(BASE_DIR, 'flask.log')
+        if os.name == 'nt':
+            subprocess.Popen([sys.executable, os.path.abspath(__file__)], cwd=BASE_DIR)
+        else:
+            cmd = (
+                f"sleep 1; cd {shlex.quote(BASE_DIR)}; "
+                f"nohup {shlex.quote(sys.executable)} app.py > {shlex.quote(log_path)} 2>&1 &"
+            )
+            subprocess.Popen(['sh', '-c', cmd], close_fds=True)
+        os._exit(0)
+
+    threading.Thread(target=restart_after_response, daemon=True).start()
+    return jsonify({'ok': True, 'message': 'Restarting Flask'})
 
 
 @app.route('/need-sub', methods=['POST'])
@@ -643,11 +673,13 @@ def clear_stale_sessions():
                 print(f'[{datetime.datetime.now():%H:%M:%S}] Cleared {cleared} stale session(s)')
         except Exception as e:
             print(f'[{datetime.datetime.now():%H:%M:%S}] Session cleanup error: {e}')
-
-
-
+def run_server():
     print(f'HughsGolf server v{VERSION} starting on port {PORT}')
     print(f'DB path: {DB_PATH}')
     threading.Thread(target=update_duckdns, daemon=True).start()
     threading.Thread(target=clear_stale_sessions, daemon=True).start()
     app.run(host='0.0.0.0', port=PORT, debug=False)
+
+
+if __name__ == '__main__':
+    run_server()

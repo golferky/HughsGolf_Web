@@ -11,6 +11,7 @@ param(
     [string]$QnapHost = "192.168.1.176",
     [string]$QnapWeb = "/share/CACHEDEV2_DATA/Web",
     [string]$QnapKey = "$env:USERPROFILE\.ssh\id_ed25519",
+    [string]$RestartToken = "HughsGolf2026Save",
     [int]$Port = 8445
 )
 
@@ -121,12 +122,23 @@ if ($Deploy) {
 
     if ($RestartQnap) {
         Write-Step "Restarting Flask on QNAP..."
-        $restartCommand = "PID=`$(ps | grep 'app.py' | grep -v grep | awk '{print `$1}'); if [ -n `"`$PID`" ]; then sudo -n kill `$PID; fi; sleep 1; sudo -n /etc/autorun.sh"
-        ssh -i $QnapKey "${QnapUser}@${QnapHost}" $restartCommand
-        if ($LASTEXITCODE -ne 0) {
-            throw "QNAP Flask restart failed. Configure passwordless sudo for the restart command, or restart QNAP Flask manually."
+        $restartUrl = "http://${QnapHost}:$Port/restart-server"
+        try {
+            Invoke-RestMethod -Method Post -Uri $restartUrl -Headers @{ "X-Save-Token" = $RestartToken } -TimeoutSec 10 | Out-Null
+            Write-Ok "Restart requested at $restartUrl"
+
+            Start-Sleep -Seconds 4
+            $versionResponse = Invoke-WebRequest -Uri "http://${QnapHost}:$Port/HughsGolf.html" -TimeoutSec 10
+            if ($versionResponse.Content -match "v202[0-9]+\.[0-9]+") {
+                Write-Ok "QNAP Flask responded with $($Matches[0])"
+            } else {
+                Write-Ok "QNAP Flask responded"
+            }
+        } catch {
+            Write-Warn "Could not restart Flask through $restartUrl"
+            Write-Warn "If this is the first deploy with restart-server, restart QNAP Flask once manually or reboot the QNAP. Future deploys can restart from this script."
+            throw "QNAP Flask restart endpoint failed: $($_.Exception.Message)"
         }
-        Write-Ok "QNAP Flask restarted at http://garyscloud.myqnapcloud.com:$Port"
     } else {
         Write-Ok "QNAP files updated"
         Write-Warn "QNAP Flask restart skipped. HTML changes are live immediately; use -RestartQnap for app.py changes."
