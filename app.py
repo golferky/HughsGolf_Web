@@ -26,13 +26,47 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260618.11'
+VERSION    = '20260623.1'
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
 # In-memory reset tokens: { token: { player, expires } }
 reset_tokens = {}
+
+CARRIER_GATEWAYS = {
+    'att': 'txt.att.net',
+    'at&t': 'txt.att.net',
+    'verizon': 'vtext.com',
+    'sprint': 'messaging.sprintpcs.com',
+    'tmobile': 'tmomail.net',
+    't-mobile': 'tmomail.net',
+    'boost': 'myboostmobile.com',
+    'cbw': 'gocbw.com',
+    'cricket': 'sms.cricketwireless.net',
+    'metro': 'mymetropcs.com',
+    'uscellular': 'email.uscc.net',
+    'us cellular': 'email.uscc.net',
+}
+
+
+def sms_address(phone, carrier):
+    """Return the email-to-SMS address using the same gateway style as desktop."""
+    if not phone or not carrier:
+        return None, 'Missing phone or carrier'
+
+    raw_carrier = str(carrier).strip().lower()
+    gateway = CARRIER_GATEWAYS.get(raw_carrier.replace(' ', '')) or CARRIER_GATEWAYS.get(raw_carrier)
+    if not gateway:
+        return None, f'Unknown carrier: {carrier}'
+
+    phone_digits = ''.join(c for c in str(phone) if c.isdigit())
+    if len(phone_digits) == 11 and phone_digits.startswith('1'):
+        phone_digits = phone_digits[1:]
+    if len(phone_digits) != 10:
+        return None, 'Invalid phone number format'
+
+    return f'{phone_digits}@{gateway}', None
 
 
 def get_gmail_creds():
@@ -251,20 +285,6 @@ def need_sub():
     if not player or not date or not message or not recipients:
         return jsonify({'ok': False, 'error': 'Missing required fields'}), 400
 
-    CARRIER_GATEWAYS = {
-        'verizon':   'vtext.com',
-        'att':       'txt.att.net',
-        'at&t':      'txt.att.net',
-        't-mobile':  'tmomail.net',
-        'tmobile':   'tmomail.net',
-        'sprint':    'messaging.sprintpcs.com',
-        'cricket':   'sms.cricketwireless.net',
-        'boost':     'sms.myboostmobile.com',
-        'metro':     'mymetropcs.com',
-        'us cellular': 'email.uscc.net',
-        'uscellular': 'email.uscc.net',
-    }
-
     gmail_user, gmail_pw = get_gmail_creds()
     if not gmail_user or not gmail_pw:
         return jsonify({'ok': False, 'error': 'Email not configured'}), 500
@@ -289,7 +309,10 @@ def need_sub():
 
     subject = f"Hugh's Golf League — Sub Needed for {date}"
     sent_count = 0
+    email_count = 0
+    sms_count = 0
     failed = []
+    errors = []
 
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -322,27 +345,32 @@ def need_sub():
                             recipients_list.append(secretary_email)
                         server.sendmail(gmail_user, recipients_list, msg.as_string())
                     sent_this_one = True
+                    email_count += 1
                 except Exception as e:
-                    print(f'need_sub email error for {recipient}: {e}')
+                    error = f'Email failed for {recipient}: {e}'
+                    errors.append(error)
+                    print(f'need_sub {error}')
 
             # SMS
             if r['Phone'] and r['CellCarrier']:
-                carrier_key = str(r['CellCarrier']).strip().lower()
-                gateway = CARRIER_GATEWAYS.get(carrier_key)
-                if gateway:
-                    phone_digits = ''.join(c for c in str(r['Phone']) if c.isdigit())
-                    if len(phone_digits) == 10:
-                        try:
-                            sms_msg = MIMEText(message)
-                            sms_msg['From']    = gmail_user
-                            sms_msg['To']      = f'{phone_digits}@{gateway}'
-                            sms_msg['Subject'] = "Hugh's Golf - Sub Needed"
-                            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-                                server.login(gmail_user, gmail_pw)
-                                server.send_message(sms_msg)
-                            sent_this_one = True
-                        except Exception as e:
-                            print(f'need_sub sms error for {recipient}: {e}')
+                addr, err = sms_address(r['Phone'], r['CellCarrier'])
+                if addr:
+                    try:
+                        sms_msg = MIMEText(message)
+                        sms_msg['From']    = gmail_user
+                        sms_msg['To']      = addr
+                        sms_msg['Subject'] = "Hugh's Golf - Sub Needed"
+                        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                            server.login(gmail_user, gmail_pw)
+                            server.send_message(sms_msg)
+                        sent_this_one = True
+                        sms_count += 1
+                    except Exception as e:
+                        error = f'SMS failed for {recipient}: {e}'
+                        errors.append(error)
+                        print(f'need_sub {error}')
+                else:
+                    errors.append(f'SMS skipped for {recipient}: {err}')
 
             if sent_this_one:
                 sent_count += 1
@@ -353,8 +381,8 @@ def need_sub():
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
-    print(f'[{datetime.datetime.now():%H:%M:%S}] Sub request from {player} for {date}: sent to {sent_count}/{len(recipients)}')
-    return jsonify({'ok': True, 'sent_count': sent_count, 'failed': failed})
+    print(f'[{datetime.datetime.now():%H:%M:%S}] Sub request from {player} for {date}: sent to {sent_count}/{len(recipients)} ({email_count} email, {sms_count} text)')
+    return jsonify({'ok': True, 'sent_count': sent_count, 'email_count': email_count, 'sms_count': sms_count, 'failed': failed, 'errors': errors})
 
 
 @app.route('/notify-payout', methods=['POST'])
@@ -370,21 +398,6 @@ def notify_payout():
 
     if not player:
         return jsonify({'ok': False, 'error': 'No player name'}), 400
-
-    # Carrier email-to-SMS gateways
-    CARRIER_GATEWAYS = {
-        'verizon':   'vtext.com',
-        'att':       'txt.att.net',
-        'at&t':      'txt.att.net',
-        't-mobile':  'tmomail.net',
-        'tmobile':   'tmomail.net',
-        'sprint':    'messaging.sprintpcs.com',
-        'cricket':   'sms.cricketwireless.net',
-        'boost':     'sms.myboostmobile.com',
-        'metro':     'mymetropcs.com',
-        'us cellular': 'email.uscc.net',
-        'uscellular': 'email.uscc.net',
-    }
 
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -450,29 +463,23 @@ You've received a payout of ${amount:.2f} from the {source}.
 
     # Send to SMS via carrier gateway
     if row['Phone'] and row['CellCarrier']:
-        carrier_key = row['CellCarrier'].strip().lower()
-        gateway = CARRIER_GATEWAYS.get(carrier_key)
-        if gateway:
-            phone_digits = ''.join(c for c in str(row['Phone']) if c.isdigit())
-            if len(phone_digits) == 10:
-                sms_address = f'{phone_digits}@{gateway}'
-                try:
-                    by_text = f" (by {recorded_by})" if recorded_by else ""
-                    sms_body = f"Hugh's Golf League: ${amount:.2f} payout from {source}{by_text}. {comment} Reply CONFIRMED if received."
-                    msg = MIMEText(sms_body)
-                    msg['From']    = gmail_user
-                    msg['To']      = sms_address
-                    msg['Subject'] = "Hugh's Golf League"
-                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-                        server.login(gmail_user, gmail_pw)
-                        server.send_message(msg)
-                    sent_to.append('sms')
-                except Exception as e:
-                    errors.append(f'SMS failed: {e}')
-            else:
-                errors.append('Invalid phone number format')
+        addr, err = sms_address(row['Phone'], row['CellCarrier'])
+        if addr:
+            try:
+                by_text = f" (by {recorded_by})" if recorded_by else ""
+                sms_body = f"Hugh's Golf League: ${amount:.2f} payout from {source}{by_text}. {comment} Reply CONFIRMED if received."
+                msg = MIMEText(sms_body)
+                msg['From']    = gmail_user
+                msg['To']      = addr
+                msg['Subject'] = "Hugh's Golf League"
+                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                    server.login(gmail_user, gmail_pw)
+                    server.send_message(msg)
+                sent_to.append('sms')
+            except Exception as e:
+                errors.append(f'SMS failed: {e}')
         else:
-            errors.append(f'Unknown carrier: {row["CellCarrier"]}')
+            errors.append(err)
 
     if not sent_to:
         return jsonify({'ok': False, 'error': '; '.join(errors) or 'No email or phone on file'}), 404

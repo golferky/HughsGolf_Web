@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260621.16</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260623.1</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260621.16</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260623.1</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -4699,7 +4699,7 @@ async function sendUnpaidReminders() {
 async function doMarkPaid(player, date, desc, detail, amount) {
   // Look up player's contact info to preview notification
   const p = query(`SELECT Email, Phone, CellCarrier FROM Players WHERE Player=?`, [player])[0] || {};
-  const CARRIERS = ['verizon','att','at&t','t-mobile','tmobile','sprint','cricket','boost','metro','us cellular','uscellular'];
+  const CARRIERS = ['verizon','att','at&t','t-mobile','tmobile','sprint','cricket','boost','cbw','metro','us cellular','uscellular'];
   const hasEmail = !!p.Email;
   const hasSms   = !!(p.Phone && p.CellCarrier && CARRIERS.includes(p.CellCarrier.trim().toLowerCase()));
 
@@ -4874,7 +4874,7 @@ async function doNeedSub() {
     });
     const json = await resp.json();
     if (json.ok) {
-      okEl.textContent = `✓ Sent to ${json.sent_count} player(s)${json.failed?.length ? ` (${json.failed.length} failed)` : ''}.`;
+      okEl.textContent = `Sent to ${json.sent_count} player(s): ${json.email_count || 0} email, ${json.sms_count || 0} text${json.failed?.length ? ` (${json.failed.length} failed)` : ''}.`;
       okEl.style.display = 'block';
 
       // Log it
