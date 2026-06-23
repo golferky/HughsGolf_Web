@@ -455,7 +455,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260623.5</div>
+  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260623.6</div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +494,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260623.5</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260623.6</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -4799,22 +4799,11 @@ function showNeedSub() {
   document.getElementById('needSubSelectAll').checked = false;
 
   const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
-  const isOfficer = currentUser.role === 'officer' || currentUser.role === 'developer';
 
   // "Requesting sub for" dropdown
   const forSel = document.getElementById('needSubFor');
-  if (isOfficer) {
-    const allPlayers = query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season} ORDER BY Player`).map(r => r.Player);
-    forSel.innerHTML = allPlayers.map(p => `<option value="${p}" ${p===currentUser.name?'selected':''}>${p}</option>`).join('');
-  } else {
-    // Find current player's team/grade, then both A and B players on that team
-    const myTeam = query(`SELECT Team FROM Teams WHERE League="Hugh's" AND Year=${season} AND Player=?`, [currentUser.name])[0];
-    let teammates = [currentUser.name];
-    if (myTeam) {
-      teammates = query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season} AND Team=?`, [myTeam.Team]).map(r => r.Player);
-    }
-    forSel.innerHTML = teammates.map(p => `<option value="${p}" ${p===currentUser.name?'selected':''}>${p}</option>`).join('');
-  }
+  const allPlayers = query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season} ORDER BY Player`).map(r => r.Player);
+  forSel.innerHTML = allPlayers.map(p => `<option value="${p}" ${p===currentUser.name?'selected':''}>${p}</option>`).join('');
   const today = new Date();
   const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
 
