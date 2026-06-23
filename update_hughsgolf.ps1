@@ -128,8 +128,9 @@ if ($Deploy) {
             Write-Ok "Restart requested at $restartUrl"
 
             Start-Sleep -Seconds 4
-            $versionResponse = Invoke-WebRequest -Uri "http://${QnapHost}:$Port/HughsGolf.html" -TimeoutSec 10
-            if ($versionResponse.Content -match "v202[0-9]+\.[0-9]+") {
+            $logResponse = Invoke-RestMethod -Uri "http://${QnapHost}:$Port/flask-log?lines=20" -TimeoutSec 10
+            $logText = ($logResponse.lines -join "`n")
+            if ($logText -match "HughsGolf server v(202[0-9]+\.[0-9]+)") {
                 Write-Ok "QNAP Flask responded with $($Matches[0])"
             } else {
                 Write-Ok "QNAP Flask responded"
