@@ -29,7 +29,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260623.4'
+VERSION    = '20260626.1'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -616,6 +616,39 @@ def fetch_gallus():
 
     print(f'[{datetime.datetime.now():%H:%M:%S}] Gallus import: {len(result_players)} players, {front_back}')
     return jsonify({'ok': True, 'players': result_players, 'frontBack': front_back})
+
+
+
+@app.route('/run-sql', methods=['POST'])
+def run_sql():
+    """Execute a SQL statement against HughsGolf.db (Developer only — token required)."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+
+    body = request.get_json()
+    sql  = (body.get('sql') or '').strip()
+    if not sql:
+        return jsonify({'ok': False, 'error': 'No SQL provided'}), 400
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur  = conn.cursor()
+        cur.execute(sql)
+        if sql.upper().startswith('SELECT'):
+            rows = [dict(r) for r in cur.fetchall()]
+            cols = [d[0] for d in cur.description] if cur.description else []
+            conn.close()
+            return jsonify({'ok': True, 'rows': rows, 'columns': cols, 'rowcount': len(rows)})
+        else:
+            conn.commit()
+            rc = cur.rowcount
+            conn.close()
+            print(f'[{datetime.datetime.now():%H:%M:%S}] run-sql: {sql[:80]} — {rc} row(s) affected')
+            return jsonify({'ok': True, 'rowcount': rc})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 def update_duckdns():
