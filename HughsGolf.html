@@ -5233,10 +5233,15 @@ function loadGallusQueue() {
 async function retryGallusSubmission(id) {
   if (!db) return;
   try {
+    // Look up submission details to show user what date it will import to
+    const subRow = query('SELECT Player, DateSubmitted, GallusUrl FROM GallusSubmissions WHERE ID=?', [id]);
+    if (!subRow.length) { alert('Submission not found.'); return; }
+    const sub = subRow[0];
+    const dt = sub.DateSubmitted ? sub.DateSubmitted.substring(0,10) : 'unknown date';
+    if (!confirm('Reset this submission for ' + sub.Player + ' (submitted ' + dt + ') back to Pending so it can be imported?')) return;
     db.run('UPDATE GallusSubmissions SET Status=?, ImportedBy=NULL WHERE ID=?', ['pending', id]);
-    markDirty();
     loadGallusQueue();
-    alert('Submission reset to Pending — click Import to retry.');
+    alert('Reset to Pending. Click Import to process it.');
   } catch(e) {
     alert('Error resetting submission: ' + e.message);
   }
