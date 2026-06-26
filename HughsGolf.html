@@ -5236,9 +5236,9 @@ async function retryGallusSubmission(id) {
     db.run('UPDATE GallusSubmissions SET Status=?, ImportedBy=NULL WHERE ID=?', ['pending', id]);
     markDirty();
     loadGallusQueue();
-    showToast('Submission reset to Pending — click Import to retry.');
+    alert('Submission reset to Pending — click Import to retry.');
   } catch(e) {
-    showToast('Error resetting submission: ' + e.message, true);
+    alert('Error resetting submission: ' + e.message);
   }
 }
 
