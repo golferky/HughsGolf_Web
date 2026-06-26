@@ -29,7 +29,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260626.1'
+VERSION    = '20260626.2'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -111,6 +111,13 @@ def html():
 @app.route('/HughsGolf.db')
 def database():
     return send_from_directory(BASE_DIR, 'HughsGolf.db')
+
+
+
+@app.route('/save-token')
+def save_token():
+    """Return the save token so the browser can authenticate DB saves."""
+    return jsonify({'token': SAVE_TOKEN})
 
 
 @app.route('/save', methods=['POST'])
