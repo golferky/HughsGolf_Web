@@ -455,7 +455,11 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div id="appVersionDisplay" style="font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">v20260626.3</div>
+  <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
+    <span id="appVersionDisplay">v20260626.4</span>
+    <span style="color:#335c3d">|</span>
+    <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
+  </div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
@@ -494,7 +498,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260623.6</div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace">v20260625.1</div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -950,6 +954,7 @@
       <button onclick="showAdminSection('sql')" id="adminBtnSql" class="admin-btn">🔍 SQL</button>
       <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
       <button onclick="showAdminSection('serverlog')" id="adminBtnServerlog" class="admin-btn">📋 Server Log</button>
+      <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">Backups</button>
       <button onclick="showAdminSection('loginactivity')" id="adminBtnLoginactivity" class="admin-btn">🔑 Login Activity</button>
       <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-btn">⚙ League Settings</button>
       <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
@@ -1090,23 +1095,77 @@
       </div>
     </div>
     <div id="adminServerlog" style="display:none">
+      <div class="controls" style="flex-wrap:wrap;gap:12px;margin-bottom:16px">
+        <div class="filter-group">
+          <label>Date</label>
+          <select id="logDateFilter" onchange="loadServerLog()">
+            <option value="">All Dates</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Level</label>
+          <select id="logLevelFilter" onchange="loadServerLog()">
+            <option value="">All Levels</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Source</label>
+          <select id="logSourceFilter" onchange="loadServerLog()">
+            <option value="">All Sources</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Search</label>
+          <input type="text" id="logSearch" placeholder="Filter text..." oninput="loadServerLog()" style="min-width:180px">
+        </div>
+        <div class="filter-group" style="justify-content:flex-end;align-self:flex-end">
+          <button onclick="resetLogDropdowns();loadServerLog()" style="padding:8px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">Refresh</button>
+        </div>
+      </div>
+      <div id="logRowCount" style="font-size:12px;color:var(--gray);margin-bottom:8px;font-family:'DM Mono',monospace"></div>
       <div class="card">
-        <div class="card-header">📋 Flask Server Log</div>
+        <div class="card-header">Server Log</div>
+        <div class="table-wrap" style="max-height:650px">
+          <table id="logTable">
+            <thead>
+              <tr>
+                <th style="width:150px">Time</th>
+                <th style="width:80px" class="ctr">Level</th>
+                <th style="width:100px">Method</th>
+                <th style="width:110px">Source</th>
+                <th>Message</th>
+                <th style="width:40px" class="ctr">&#x25B6;</th>
+              </tr>
+            </thead>
+            <tbody id="logTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div id="adminBackups" style="display:none">
+      <div class="card">
+        <div class="card-header">Database Backups</div>
         <div style="padding:16px">
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-            <button onclick="loadServerLog()" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">🔄 Refresh</button>
-            <select id="serverLogLines" onchange="loadServerLog()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
-              <option value="50">Last 50 lines</option>
-              <option value="100" selected>Last 100 lines</option>
-              <option value="300">Last 300 lines</option>
-              <option value="1000">Last 1000 lines</option>
-            </select>
-            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
-              <input type="checkbox" id="serverLogSuspiciousOnly" onchange="loadServerLog()"> Unrecognized paths only
-            </label>
-            <span id="serverLogInfo" style="font-size:11px;color:#888"></span>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+            <button onclick="loadBackups()" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">Refresh</button>
+            <button onclick="deleteSelectedBackups()" id="deleteSelectedBackupsBtn" disabled style="padding:6px 14px;background:#c62828;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:not-allowed;opacity:.45">Delete selected</button>
+            <span id="backupStatus" style="font-size:11px;color:#888"></span>
           </div>
-          <pre id="serverLogContent" style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:8px;font-size:11px;line-height:1.5;max-height:500px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-family:'DM Mono',monospace">Loading...</pre>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead><tr>
+                <th style="background:var(--green);color:var(--gold);padding:7px 10px;text-align:center;width:42px"><input type="checkbox" id="selectAllBackups" onchange="toggleAllBackups(this.checked)" title="Select all backups"></th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 10px;text-align:left">Backup</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 10px;text-align:left">Modified</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 10px;text-align:right">Size</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 10px;text-align:left">Recent Dates</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 10px;text-align:center">Actions</th>
+              </tr></thead>
+              <tbody id="backupBody">
+                <tr><td colspan="6" style="padding:12px;color:#999;text-align:center">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -1130,6 +1189,9 @@
             <button onclick="loadLoginActivity()" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">🔄 Refresh</button>
             <select id="loginActivityPlayer" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
               <option value="">All players</option>
+            </select>
+            <select id="loginActivityDate" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+              <option value="">All dates</option>
             </select>
             <select id="loginActivityLimit" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
               <option value="50">Last 50</option>
@@ -1467,11 +1529,13 @@ window.psBackFirst = false;
 let SQL;
 let sqlReady = false;
 let savedFileHandle = null; // remembered across page loads via IndexedDB
-const SAVE_TOKEN = 'HughsGolf2026Save'; // must match app.py SAVE_TOKEN
+let SAVE_TOKEN = '';
+let SERVER_DB_MODIFIED_MS = null;
 
 initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}` }).then(async s => {
   SQL = s;
   sqlReady = true;
+  await loadSaveToken();
   // Try auto-load via fetch (works on http://localhost)
   const autoLoaded = await tryAutoLoad();
   // Fall back to remembered file handle (File System Access API)
@@ -1481,10 +1545,30 @@ initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10
   document.getElementById('dbStatus').textContent = 'Error loading sql.js';
 });
 
+async function loadSaveToken() {
+  if (!location.href.startsWith('http')) return;
+  try {
+    const resp = await fetch(`/save-token?v=${Date.now()}`, { cache: 'no-store' });
+    const json = await resp.json();
+    if (!json.ok || !json.token) throw new Error(json.error || 'Save token unavailable');
+    SAVE_TOKEN = json.token;
+  } catch(e) {
+    console.warn('save token load failed', e);
+    document.getElementById('dbStatus').textContent = `Save token error: ${e.message}`;
+  }
+}
+
+async function ensureSaveToken() {
+  if (!SAVE_TOKEN && location.href.startsWith('http')) await loadSaveToken();
+  if (!SAVE_TOKEN) throw new Error('Save token unavailable. Refresh the page and try again.');
+  return SAVE_TOKEN;
+}
+
 async function tryAutoLoad() {
   if (!location.href.startsWith('http')) return false;
   try {
     document.getElementById('dbStatus').textContent = 'Loading...';
+    await loadDbInfo();
     const resp = await fetch(`HughsGolf.db?v=${Date.now()}`, { cache: 'no-store' });
     if (!resp.ok) {
       document.getElementById('dbStatus').textContent = `DB fetch failed: ${resp.status}`;
@@ -1501,6 +1585,32 @@ async function tryAutoLoad() {
   } catch(e) {
     document.getElementById('dbStatus').textContent = `Auto-load error: ${e.message}`;
     return false;
+  }
+}
+
+function formatDbInfoTime(ms) {
+  if (!ms) return '--';
+  return new Date(ms).toLocaleString([], {
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+async function loadDbInfo() {
+  const el = document.getElementById('dbVersionDisplay');
+  if (!el || !location.href.startsWith('http')) return;
+  try {
+    const resp = await fetch(`/db-info?v=${Date.now()}`, { cache: 'no-store' });
+    const json = await resp.json();
+    if (!json.ok) throw new Error(json.error || 'DB info unavailable');
+    SERVER_DB_MODIFIED_MS = json.modifiedMs || null;
+    el.textContent = `DB ${formatDbInfoTime(json.modifiedMs)}`;
+    el.title = `${json.filename} last updated ${json.modified} (${fmtBytes(json.size)})`;
+  } catch(e) {
+    el.textContent = 'DB ?';
+    el.title = e.message;
   }
 }
 
@@ -1731,21 +1841,19 @@ function populatePrizeMoneyDates() {
     pmDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
 }
 
-function loadPrizeMoney() {
+function loadPrizeMoney(options = {}) {
   if (!db) return;
 
   // Refresh date options in case new winner records were added (e.g. recalc)
   const pmDateSel = document.getElementById('prizemoneyDate');
   const pmSeason = document.getElementById('prizemoneySeason').value || query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
-  const pmCurrentVal = pmDateSel.value;
+  const pmCurrentVal = options.keepDate !== undefined ? String(options.keepDate) : pmDateSel.value;
   const pmDates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','') AND Player != 'Kitty' AND Date >= ${pmSeason}0101 AND Date < ${parseInt(pmSeason)+1}0101 ORDER BY Date DESC LIMIT 80`);
   const pmNewOptionsHtml = `<option value="">-- Season totals --</option>` + pmDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
   if (pmDateSel.innerHTML !== pmNewOptionsHtml) {
     pmDateSel.innerHTML = pmNewOptionsHtml;
-    if (pmCurrentVal && (pmCurrentVal === '' || pmDates.some(r => String(r.sDate) === pmCurrentVal))) {
-      pmDateSel.value = pmCurrentVal;
-    }
   }
+  if (pmCurrentVal === '' || pmDates.some(r => String(r.sDate) === pmCurrentVal)) pmDateSel.value = pmCurrentVal;
 
   const date   = document.getElementById('prizemoneyDate').value;
   const season = document.getElementById('prizemoneySeason').value || query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
@@ -2023,6 +2131,11 @@ function loadPrizeMoney() {
 
   if (!date) {
     document.getElementById('prizemoneyContent').innerHTML = kittyHtml;
+    if (options.reopenHeld || window._reopenHeldDetailAfterPrizeRefresh) {
+      window._reopenHeldDetailAfterPrizeRefresh = false;
+      const heldDetail = document.getElementById('heldDetail');
+      if (heldDetail) heldDetail.style.display = 'block';
+    }
     return;
   }
 
@@ -2079,7 +2192,12 @@ function loadPrizeMoney() {
         : `<span style="color:#999;font-size:11px">Unpaid</span>`;
       sentBadge = '';
     } else {
-      datePaidCell = datePaid;
+      const safePlayer = r.Player.replace(/'/g, "\\'");
+      const safeDetail = r.Detail.replace(/'/g, "\\'");
+      const isOfficerOrDev = currentUser?.role === 'officer' || currentUser?.role === 'developer';
+      datePaidCell = isOfficerOrDev
+        ? `${datePaid} <button onclick="doMarkPaid('${safePlayer}',${r.Date},'${r.Desc}','${safeDetail}',${earned})" style="margin-left:8px;padding:3px 10px;background:#1565c0;color:white;border:none;border-radius:4px;cursor:pointer;font-size:10px;font-weight:600">Update</button>`
+        : datePaid;
       sentBadge = r.Comment?.includes('[notified:')
           ? `<span style="color:#2e7d32;font-weight:600">✓ Sent via ${r.Comment.match(/\[notified:([^\]]*)\]/)?.[1]?.replace('+',' + ') || ''}</span>`
           : `<span style="color:#888">No contact info</span>`;
@@ -2138,6 +2256,11 @@ function loadPrizeMoney() {
 
   html += '</tbody></table>';
   document.getElementById('prizemoneyContent').innerHTML = kittyHtml + html;
+  if (options.reopenHeld || window._reopenHeldDetailAfterPrizeRefresh) {
+    window._reopenHeldDetailAfterPrizeRefresh = false;
+    const heldDetail = document.getElementById('heldDetail');
+    if (heldDetail) heldDetail.style.display = 'block';
+  }
 }
 
 function refreshTab(tab) {
@@ -4127,12 +4250,11 @@ function loadCtps() {
 function ctpSetWinner(hole, date, player, amount) {
   if (!player) return;
   const league     = "Hugh's";
-  const now        = new Date().toLocaleDateString();
   const wholeAmt   = Math.floor(amount); // whole dollars only
   // Clear any carryover for this hole
   db.run(`DELETE FROM Payments WHERE League=? AND Desc='CTP' AND Player='Kitty' AND Detail LIKE 'Carryover${hole}-%'`, [league]);
   db.run(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'CTP',?,?,?,'CTP Winner')`,
-    [league, player, date, `#${hole}`, wholeAmt, now]);
+    [league, player, date, `#${hole}`, wholeAmt, '']);
   saveDBToServer();
   loadCtps();
 }
@@ -4524,7 +4646,7 @@ function loadSchedule() {
 
 // ── ADMIN TAB ──
 function showAdminSection(section) {
-  ['players','teams','subs','sql','rainout','sync','gallus','serverlog','leaguesettings','loginactivity'].forEach(s => {
+  ['players','teams','subs','sql','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity'].forEach(s => {
     document.getElementById(`admin${s.charAt(0).toUpperCase()+s.slice(1)}`).style.display = s===section?'block':'none';
     document.getElementById(`adminBtn${s.charAt(0).toUpperCase()+s.slice(1)}`).className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
@@ -4536,6 +4658,7 @@ function showAdminSection(section) {
   if (section==='sync')    initSync();
   if (section==='gallus')  loadGallusQueue();
   if (section==='serverlog') loadServerLog();
+  if (section==='backups') loadBackups();
   if (section==='leaguesettings') loadLeagueSettings();
   if (section==='loginactivity') loadLoginActivity();
 }
@@ -4615,17 +4738,21 @@ async function saveDBToServer(successLabel, btnId) {
   if (globalBtn) { globalBtn.textContent = '⏳ Saving…'; globalBtn.disabled = true; }
 
   try {
+    const token = await ensureSaveToken();
     const data = db.export();
     const resp = await fetch('/save', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/octet-stream',
-        'X-Save-Token': SAVE_TOKEN
+        'X-Save-Token': token,
+        'X-DB-Modified-Ms': SERVER_DB_MODIFIED_MS ? String(SERVER_DB_MODIFIED_MS) : ''
       },
       body: data
     });
     const json = await resp.json();
     if (!json.ok) throw new Error(json.error || 'Save failed');
+    if (json.modifiedMs) SERVER_DB_MODIFIED_MS = json.modifiedMs;
+    loadDbInfo();
 
     // Update calling button if provided
     if (btnId) {
@@ -4758,8 +4885,9 @@ async function confirmMarkPaid() {
   db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
     [logTime, 'INFO', 'markPaid', 'HughsGolf', `Marked ${desc} ${detail} paid to ${player}`, `amount=$${amount.toFixed(2)} by=${currentUser.name} notified=${notifyTag||'none'}`, logTime]);
 
+  const keepPrizeMoneyDate = document.getElementById('prizemoneyDate')?.value || '';
   await saveDBToServer();
-  loadPrizeMoney();
+  loadPrizeMoney({ keepDate: keepPrizeMoneyDate, reopenHeld: true });
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -5048,9 +5176,18 @@ function loadLoginActivity() {
   }
   const selectedPlayer = playerSel ? playerSel.value : '';
 
+  const dateSel = document.getElementById('loginActivityDate');
+  if (dateSel && dateSel.options.length <= 1) {
+    const dates = query(`SELECT DISTINCT date(log_time) as d FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed') AND log_time IS NOT NULL AND log_time != '' ORDER BY d DESC`);
+    dateSel.innerHTML = '<option value="">All dates</option>' +
+      dates.filter(r => r.d).map(r => `<option value="${r.d}">${r.d}</option>`).join('');
+  }
+  const selectedDate = dateSel ? dateSel.value : '';
+
   const limit = document.getElementById('loginActivityLimit').value;
   const playerFilter = selectedPlayer ? `AND text LIKE '${selectedPlayer.replace(/'/g,"''")}%'` : '';
-  const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed') ${playerFilter} ORDER BY log_time DESC LIMIT ${limit}`);
+  const dateFilter = selectedDate ? `AND date(log_time)='${selectedDate.replace(/'/g,"''")}'` : '';
+  const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed') ${playerFilter} ${dateFilter} ORDER BY log_time DESC LIMIT ${limit}`);
   const tbody = document.getElementById('loginActivityBody');
   tbody.innerHTML = rows.map((r,i) => {
     const isLogin = r.method === 'login';
@@ -5082,8 +5219,8 @@ function loadLoginActivity() {
 }
 
 // ── Known legitimate app routes (anything else is "suspicious") ─────────────
-const KNOWN_ROUTES = ['/', '/HughsGolf.html', '/HughsGolf.db', '/save', '/send-reset', '/verify-reset',
-  '/notify-login', '/flask-log', '/restart-server', '/need-sub', '/notify-payout', '/fetch-gallus', '/get-ip', '/favicon.ico'];
+const KNOWN_ROUTES = ['/', '/HughsGolf.html', '/HughsGolf.db', '/db-info', '/save-token', '/save', '/send-reset', '/verify-reset',
+  '/notify-login', '/flask-log', '/backup-list', '/restore-backup', '/delete-backup', '/restart-server', '/need-sub', '/notify-payout', '/fetch-gallus', '/get-ip', '/favicon.ico'];
 
 function parseLogLine(line) {
   // Typical format: IP - - [timestamp] "METHOD /path HTTP/1.1" STATUS -
@@ -5095,42 +5232,341 @@ function parseLogLine(line) {
   return { ip, ts, method, path, status: parseInt(status), isKnown };
 }
 
-async function loadServerLog() {
-  const el = document.getElementById('serverLogContent');
-  const infoEl = document.getElementById('serverLogInfo');
-  const lines = document.getElementById('serverLogLines').value;
-  const showOnlySuspicious = document.getElementById('serverLogSuspiciousOnly')?.checked;
-  el.textContent = 'Loading...';
-  try {
-    const resp = await fetch(`/flask-log?lines=${lines}`);
-    const json = await resp.json();
-    if (!json.ok) {
-      el.textContent = `Error: ${json.error}`;
-      return;
-    }
+function resetLogDropdowns() {
+  ['logDateFilter','logLevelFilter','logSourceFilter'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    while (sel.options.length > 1) sel.remove(1);
+  });
+}
 
-    let suspiciousCount = 0;
-    const rendered = json.lines.map(line => {
-      const parsed = parseLogLine(line);
-      if (!parsed) return `<span style="color:#888">${escapeHtml(line)}</span>`;
-      if (!parsed.isKnown) suspiciousCount++;
-      if (showOnlySuspicious && parsed.isKnown) return null;
+function loadServerLog() {
+  if (!db) return;
 
-      const color = !parsed.isKnown ? '#ff6b6b' : parsed.status >= 400 ? '#ffa726' : '#81c784';
-      const tag = !parsed.isKnown ? ' ⚠ unknown path' : '';
-      return `<span style="color:${color}">[${parsed.ts}] ${parsed.ip} — ${parsed.method} ${escapeHtml(parsed.path)} → ${parsed.status}${tag}</span>`;
-    }).filter(x => x !== null);
+  const dateVal = document.getElementById('logDateFilter')?.value || '';
+  const levelVal = document.getElementById('logLevelFilter')?.value || '';
+  const sourceVal = document.getElementById('logSourceFilter')?.value || '';
+  const searchVal = (document.getElementById('logSearch')?.value || '').trim().toLowerCase();
 
-    el.innerHTML = rendered.join('\n');
-    infoEl.textContent = `Showing ${rendered.length} of ${json.lines.length} lines (${json.total_lines} total) — ${suspiciousCount} unrecognized path(s)`;
-    el.scrollTop = el.scrollHeight;
-  } catch(e) {
-    el.textContent = `Failed to load log: ${e.message}`;
+  const dateSel = document.getElementById('logDateFilter');
+  if (dateSel && dateSel.options.length <= 1) {
+    try {
+      const dates = db.exec("SELECT DISTINCT date(log_time) as d FROM LogTable WHERE d IS NOT NULL ORDER BY d DESC");
+      if (dates.length && dates[0].values) {
+        dates[0].values.forEach(r => {
+          const o = document.createElement('option');
+          o.value = r[0];
+          o.textContent = r[0];
+          dateSel.appendChild(o);
+        });
+      }
+    } catch(e) {}
+    if (dateVal) dateSel.value = dateVal;
   }
+
+  const levelSel = document.getElementById('logLevelFilter');
+  if (levelSel && levelSel.options.length <= 1) {
+    try {
+      const levels = db.exec("SELECT DISTINCT level FROM LogTable WHERE level IS NOT NULL ORDER BY level");
+      if (levels.length && levels[0].values) {
+        levels[0].values.forEach(r => {
+          const o = document.createElement('option');
+          o.value = r[0];
+          o.textContent = r[0];
+          levelSel.appendChild(o);
+        });
+      }
+    } catch(e) {}
+    if (levelVal) levelSel.value = levelVal;
+  }
+
+  const sourceSel = document.getElementById('logSourceFilter');
+  if (sourceSel && sourceSel.options.length <= 1) {
+    try {
+      const sources = db.exec("SELECT DISTINCT source FROM LogTable WHERE source IS NOT NULL ORDER BY source");
+      if (sources.length && sources[0].values) {
+        sources[0].values.forEach(r => {
+          const o = document.createElement('option');
+          o.value = r[0];
+          o.textContent = r[0];
+          sourceSel.appendChild(o);
+        });
+      }
+    } catch(e) {}
+    if (sourceVal) sourceSel.value = sourceVal;
+  }
+
+  const where = [];
+  const params = [];
+  if (dateVal) {
+    where.push("date(log_time) = ?");
+    params.push(dateVal);
+  }
+  if (levelVal) {
+    where.push("level = ?");
+    params.push(levelVal);
+  }
+  if (sourceVal) {
+    where.push("source = ?");
+    params.push(sourceVal);
+  }
+  const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+
+  let rows = [];
+  try {
+    rows = query(
+      `SELECT id, log_time, level, method, source, text, details
+       FROM LogTable ${whereClause}
+       ORDER BY id DESC LIMIT 500`,
+      params
+    );
+  } catch(e) {
+    document.getElementById('logTableBody').innerHTML =
+      `<tr><td colspan="6" style="color:var(--red);font-family:'DM Mono',monospace;padding:12px">${escapeHtml(String(e.message || e))}</td></tr>`;
+    return;
+  }
+
+  if (searchVal) {
+    rows = rows.filter(r =>
+      (r.text || '').toLowerCase().includes(searchVal) ||
+      (r.details || '').toLowerCase().includes(searchVal) ||
+      (r.method || '').toLowerCase().includes(searchVal)
+    );
+  }
+
+  document.getElementById('logRowCount').textContent =
+    `${rows.length} row${rows.length !== 1 ? 's' : ''}${rows.length === 500 ? ' (limit 500; use date filter to narrow)' : ''}`;
+
+  const levelColors = {
+    'ERROR': 'background:#fce4ec;color:#880e4f',
+    'WARN': 'background:#fff3e0;color:#e65100',
+    'INFO': 'background:#e3f2fd;color:#1565c0',
+    'DEBUG': 'background:#f3e5f5;color:#6a1b9a',
+  };
+
+  const tbody = document.getElementById('logTableBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No log entries found</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => {
+    const { id, log_time, level, method, source, text, details } = r;
+    const lvlStyle = levelColors[(level || '').toUpperCase()] || 'background:#eee;color:#333';
+    const hasDetails = details && String(details).trim();
+    const detailsId = `logdet_${id}`;
+    return `
+      <tr>
+        <td style="font-family:'DM Mono',monospace;font-size:11px;white-space:nowrap">${escapeHtml(String(log_time || ''))}</td>
+        <td class="ctr"><span class="badge" style="${lvlStyle}">${escapeHtml(String(level || ''))}</span></td>
+        <td style="font-family:'DM Mono',monospace;font-size:11px">${escapeHtml(String(method || ''))}</td>
+        <td style="font-size:12px;color:var(--gray)">${escapeHtml(String(source || ''))}</td>
+        <td style="font-size:13px">${escapeHtml(String(text || ''))}</td>
+        <td class="ctr">
+          ${hasDetails
+            ? `<span onclick="toggleLogDetail('${detailsId}')" style="cursor:pointer;font-size:14px;user-select:none" title="Toggle details">&#x25B6;</span>`
+            : ''}
+        </td>
+      </tr>
+      ${hasDetails ? `
+      <tr id="${detailsId}" style="display:none">
+        <td colspan="6" style="background:#1a1a2e;padding:10px 14px">
+          <pre style="font-family:'DM Mono',monospace;font-size:11px;color:#a5d6a7;white-space:pre-wrap;word-break:break-all;margin:0">${escapeHtml(String(details))}</pre>
+        </td>
+      </tr>` : ''}
+    `;
+  }).join('');
+}
+
+function toggleLogDetail(id) {
+  const row = document.getElementById(id);
+  if (!row) return;
+  const visible = row.style.display !== 'none';
+  row.style.display = visible ? 'none' : 'table-row';
+  const arrow = row.previousElementSibling?.querySelector('span[onclick]');
+  if (arrow) arrow.innerHTML = visible ? '&#x25B6;' : '&#x25BC;';
 }
 
 function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function escapeAttr(s) {
+  return escapeHtml(String(s || '')).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function fmtBytes(bytes) {
+  const mb = Number(bytes || 0) / (1024 * 1024);
+  return `${mb.toFixed(2)} MB`;
+}
+
+function renderBackupDates(dates) {
+  if (!dates || !dates.length) return '<span style="color:#999">No recent dates</span>';
+  return dates.map(d => {
+    const cells = [
+      d.scores ? `S:${d.scores}` : '',
+      d.matches ? `M:${d.matches}` : '',
+      d.payments ? `P:${d.payments}` : '',
+      d.subs ? `Sub:${d.subs}` : '',
+      d.handicaps ? `H:${d.handicaps}` : ''
+    ].filter(Boolean).join(' ');
+    return `<div style="font-family:'DM Mono',monospace;font-size:11px">${fmtDate(d.Date)} <span style="color:#666">${cells}</span></div>`;
+  }).join('');
+}
+
+async function loadBackups() {
+  const body = document.getElementById('backupBody');
+  const status = document.getElementById('backupStatus');
+  const selectAll = document.getElementById('selectAllBackups');
+  if (!body || !status) return;
+  if (selectAll) selectAll.checked = false;
+  updateSelectedBackupDeleteButton();
+  if (currentUser?.role !== 'developer') {
+    body.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#c62828;text-align:center">Developer access required</td></tr>';
+    return;
+  }
+  body.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#999;text-align:center">Loading...</td></tr>';
+  status.textContent = '';
+
+  try {
+    const token = await ensureSaveToken();
+    const resp = await fetch('/backup-list?limit=40', { headers: { 'X-Save-Token': token } });
+    const json = await resp.json();
+    if (!json.ok) throw new Error(json.error || 'Could not load backups');
+
+    status.textContent = `${json.backups.length} backup(s)`;
+    body.innerHTML = json.backups.map((b, i) => {
+      const safeName = String(b.filename || '').replace(/'/g, "\\'");
+      const safeAttr = escapeAttr(b.filename || '');
+      const recentDates = b.error ? `<span style="color:#c62828">${escapeHtml(b.error)}</span>` : renderBackupDates(b.dates);
+      return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
+        <td style="padding:8px 10px;text-align:center"><input type="checkbox" class="backup-select" value="${safeAttr}" onchange="updateSelectedBackupDeleteButton()" aria-label="Select ${safeAttr}"></td>
+        <td style="padding:8px 10px;font-family:'DM Mono',monospace">${escapeHtml(b.filename)}</td>
+        <td style="padding:8px 10px">${escapeHtml(b.modified || '')}</td>
+        <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtBytes(b.size)}</td>
+        <td style="padding:8px 10px">${recentDates}</td>
+        <td style="padding:8px 10px;text-align:center;white-space:nowrap">
+          <button onclick="restoreBackup('${safeName}')" style="padding:5px 12px;background:#c62828;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Restore</button>
+          <button onclick="deleteBackup('${safeName}')" style="margin-left:6px;padding:5px 12px;background:white;color:#c62828;border:1px solid #c62828;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Delete</button>
+        </td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" style="padding:12px;color:#999;text-align:center">No backups found</td></tr>';
+    updateSelectedBackupDeleteButton();
+  } catch(e) {
+    body.innerHTML = `<tr><td colspan="6" style="padding:12px;color:#c62828;text-align:center">${escapeHtml(e.message)}</td></tr>`;
+    updateSelectedBackupDeleteButton();
+  }
+}
+
+async function restoreBackup(filename) {
+  if (currentUser?.role !== 'developer') return;
+  const ok = confirm(`Restore this backup to the live web database?\n\n${filename}\n\nThe current live database will be saved as a new safety backup first. Everyone should refresh after restore.`);
+  if (!ok) return;
+
+  const status = document.getElementById('backupStatus');
+  if (status) status.textContent = 'Restoring...';
+  try {
+    const token = await ensureSaveToken();
+    const resp = await fetch('/restore-backup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Save-Token': token },
+      body: JSON.stringify({ filename })
+    });
+    const json = await resp.json();
+    if (!json.ok) throw new Error(json.error || 'Restore failed');
+    alert(`Restored ${json.restored}\n\nPrevious live DB saved as ${json.safetyBackup}.\n\nThe page will reload now.`);
+    location.reload();
+  } catch(e) {
+    alert(`Restore failed: ${e.message}`);
+    if (status) status.textContent = 'Restore failed';
+  }
+}
+
+function getSelectedBackupNames() {
+  return Array.from(document.querySelectorAll('.backup-select:checked'))
+    .map(cb => cb.value)
+    .filter(Boolean);
+}
+
+function updateSelectedBackupDeleteButton() {
+  const selected = getSelectedBackupNames();
+  const btn = document.getElementById('deleteSelectedBackupsBtn');
+  const selectAll = document.getElementById('selectAllBackups');
+  const boxes = Array.from(document.querySelectorAll('.backup-select'));
+  if (btn) {
+    btn.disabled = selected.length === 0;
+    btn.textContent = selected.length ? `Delete selected (${selected.length})` : 'Delete selected';
+    btn.style.cursor = selected.length ? 'pointer' : 'not-allowed';
+    btn.style.opacity = selected.length ? '1' : '.45';
+  }
+  if (selectAll) {
+    selectAll.checked = boxes.length > 0 && selected.length === boxes.length;
+    selectAll.indeterminate = selected.length > 0 && selected.length < boxes.length;
+  }
+}
+
+function toggleAllBackups(checked) {
+  document.querySelectorAll('.backup-select').forEach(cb => { cb.checked = checked; });
+  updateSelectedBackupDeleteButton();
+}
+
+async function deleteBackup(filename) {
+  if (currentUser?.role !== 'developer') return;
+  const ok = confirm(`Delete this backup permanently?\n\n${filename}\n\nUse this only for known-bad backups.`);
+  if (!ok) return;
+
+  const status = document.getElementById('backupStatus');
+  if (status) status.textContent = 'Deleting...';
+  try {
+    const token = await ensureSaveToken();
+    const resp = await fetch('/delete-backup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Save-Token': token },
+      body: JSON.stringify({ filename })
+    });
+    const json = await resp.json();
+    if (!json.ok) throw new Error(json.error || 'Delete failed');
+    if (status) status.textContent = `Deleted ${json.deleted}`;
+    loadBackups();
+  } catch(e) {
+    alert(`Delete failed: ${e.message}`);
+    if (status) status.textContent = 'Delete failed';
+  }
+}
+
+async function deleteSelectedBackups() {
+  if (currentUser?.role !== 'developer') return;
+  const filenames = getSelectedBackupNames();
+  if (!filenames.length) {
+    alert('Select one or more backups first.');
+    return;
+  }
+
+  const ok = confirm(`Delete these ${filenames.length} backup(s) permanently?\n\n${filenames.join('\n')}\n\nUse this only for known-bad backups.`);
+  if (!ok) return;
+
+  const status = document.getElementById('backupStatus');
+  if (status) status.textContent = `Deleting ${filenames.length} backup(s)...`;
+
+  try {
+    const token = await ensureSaveToken();
+    const deleted = [];
+    for (const filename of filenames) {
+      const resp = await fetch('/delete-backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Save-Token': token },
+        body: JSON.stringify({ filename })
+      });
+      const json = await resp.json();
+      if (!json.ok) throw new Error(`${filename}: ${json.error || 'Delete failed'}`);
+      deleted.push(json.deleted || filename);
+    }
+    if (status) status.textContent = `Deleted ${deleted.length} backup(s)`;
+    await loadBackups();
+  } catch(e) {
+    alert(`Delete failed: ${e.message}`);
+    if (status) status.textContent = 'Delete failed';
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -5233,8 +5669,7 @@ function loadGallusQueue() {
 async function retryGallusSubmission(id) {
   if (!db) return;
   try {
-    // Look up submission details to show user what date it will import to
-    const subRow = query('SELECT Player, DateSubmitted, GallusUrl FROM GallusSubmissions WHERE ID=?', [id]);
+    const subRow = query('SELECT Player, DateSubmitted FROM GallusSubmissions WHERE ID=?', [id]);
     if (!subRow.length) { alert('Submission not found.'); return; }
     const sub = subRow[0];
     const dt = sub.DateSubmitted ? sub.DateSubmitted.substring(0,10) : 'unknown date';
@@ -5263,8 +5698,8 @@ async function importGallusSubmission(id, url) {
   try {
     const subRow = query('SELECT DateSubmitted FROM GallusSubmissions WHERE ID=?', [id]);
     if (subRow.length && subRow[0].DateSubmitted) {
-      const dt = subRow[0].DateSubmitted; // e.g. "2026-06-23 22:15:41"
-      const dateInt = dt.substring(0,10).replace(/-/g,''); // "20260623"
+      const dt = subRow[0].DateSubmitted;
+      const dateInt = dt.substring(0,10).replace(/-/g,'');
       const sel = document.getElementById('entryDate');
       const opt = Array.from(sel.options).find(o => o.value === dateInt);
       if (opt) {
@@ -5817,6 +6252,8 @@ function applyRoleAccess() {
   if (lsBtn) lsBtn.style.display = role === 'developer' ? '' : 'none';
   const laBtn = document.getElementById('adminBtnLoginactivity');
   if (laBtn) laBtn.style.display = role === 'developer' ? '' : 'none';
+  const backupBtn = document.getElementById('adminBtnBackups');
+  if (backupBtn) backupBtn.style.display = role === 'developer' ? '' : 'none';
 
   // Need a Sub — only for this year's regulars (on Teams table) or officers
   const needSubBtn = document.getElementById('needSubBtn');
@@ -6868,11 +7305,8 @@ document.getElementById('sqlRun').addEventListener('click', () => {
       const logUser = window._currentPlayer || 'Admin';
       const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
       const sqlPreview = sql.length > 200 ? sql.substring(0,200) + '…' : sql;
-      db.run(
-        `INSERT INTO LogTable (log_time, method, player, text) VALUES (?, 'admin-sql', ?, ?)`,
-        [logTime, logUser, sqlPreview]
-      );
-      markDirty();
+      db.run(`INSERT INTO LogTable (log_time, method, player, text) VALUES (?, 'admin-sql', ?, ?)`,
+        [logTime, logUser, sqlPreview]);
     } catch(_) {}
     if (!results.length) { document.getElementById('sqlResults').innerHTML = '<div class="empty">No results</div>'; return; }
     const {columns, values} = results[0];
