@@ -117,7 +117,7 @@ def database():
 @app.route('/save-token')
 def save_token():
     """Return the save token so the browser can authenticate DB saves."""
-    return jsonify({'token': SAVE_TOKEN})
+    return jsonify({'ok': True, 'token': SAVE_TOKEN})
 
 
 @app.route('/save', methods=['POST'])
