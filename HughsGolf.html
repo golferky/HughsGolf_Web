@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260626.4</span>
+    <span id="appVersionDisplay">v20260626.5</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -1282,7 +1282,13 @@
         <div><label style="font-size:11px;font-weight:600;color:var(--gray)">FIRST NAME</label><br><input id="pmFirstName" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;margin-top:2px"></div>
         <div><label style="font-size:11px;font-weight:600;color:var(--gray)">LAST NAME</label><br><input id="pmLastName" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;margin-top:2px"></div>
         <div style="grid-column:1/-1"><label style="font-size:11px;font-weight:600;color:var(--gray)">EMAIL</label><br><input id="pmEmail" type="email" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;margin-top:2px"></div>
-        <div><label style="font-size:11px;font-weight:600;color:var(--gray)">PHONE (CELL)</label><br><input id="pmPhone" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;margin-top:2px"></div>
+        <div><label style="font-size:11px;font-weight:600;color:var(--gray)">PHONE (CELL)</label><br>
+          <div style="display:flex;gap:6px;margin-top:2px">
+            <input id="pmPhone" type="text" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px">
+            <button type="button" onclick="lookupCarrier()" style="padding:6px 10px;background:#1565c0;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;white-space:nowrap">🔍 Lookup</button>
+          </div>
+          <div id="pmCarrierLookupStatus" style="font-size:11px;color:#666;margin-top:3px"></div>
+        </div>
         <div><label style="font-size:11px;font-weight:600;color:var(--gray)">CARRIER</label><br>
           <select id="pmCarrier" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;margin-top:2px">
             <option value="">None</option>
@@ -6860,6 +6866,116 @@ function normalizeCarrier(val) {
     'metro': 'Metro', 'metropcs': 'Metro',
   };
   return map[v] || 'Other';
+}
+
+// Carrier name mapping from Numverify to our dropdown values
+function numverifyCarrierToLocal(carrier) {
+  if (!carrier) return null;
+  const c = carrier.toLowerCase();
+  if (c.includes('at&t') || c.includes('att')) return 'AT&T';
+  if (c.includes('t-mobile') || c.includes('tmobile')) return 'T-Mobile';
+  if (c.includes('verizon')) return 'Verizon';
+  if (c.includes('sprint')) return 'Sprint';
+  if (c.includes('cricket')) return 'Cricket';
+  if (c.includes('boost')) return 'Boost';
+  if (c.includes('us cellular') || c.includes('uscellular')) return 'US Cellular';
+  if (c.includes('metro')) return 'Metro';
+  return null; // unknown
+}
+
+async function lookupCarrier() {
+  const phone = document.getElementById('pmPhone').value.trim();
+  const statusEl = document.getElementById('pmCarrierLookupStatus');
+  if (!phone) { statusEl.textContent = 'Enter a phone number first.'; return; }
+
+  // Get Numverify API key from LeagueParms
+  const lp = query(`SELECT NumverifyKey FROM LeagueParms WHERE Name="Hugh's" AND Season=(SELECT MAX(Season) FROM LeagueParms WHERE Name="Hugh's")`)[0];
+  if (!lp || !lp.NumverifyKey) {
+    statusEl.textContent = '⚠ Numverify API key not configured in League Settings.';
+    return;
+  }
+
+  // Format phone — strip non-digits, ensure 10 digits
+  const digits = phone.replace(/\D/g, '');
+  const phone10 = digits.length === 11 && digits.startsWith('1') ? digits.substring(1) : digits;
+  if (phone10.length !== 10) { statusEl.textContent = '⚠ Invalid phone number format.'; return; }
+
+  statusEl.textContent = '🔍 Looking up carrier...';
+  statusEl.style.color = '#666';
+
+  try {
+    const url = `https://apilayer.net/api/validate?access_key=${lp.NumverifyKey}&number=1${phone10}&country_code=US&format=1`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+
+    if (!data.valid) {
+      statusEl.textContent = '⚠ Phone number appears invalid.';
+      statusEl.style.color = '#c62828';
+      return;
+    }
+
+    const detectedCarrier = numverifyCarrierToLocal(data.carrier);
+    const currentCarrier = document.getElementById('pmCarrier').value;
+    const carrierName = detectedCarrier || (data.carrier ? data.carrier : 'Unknown');
+
+    if (!detectedCarrier) {
+      statusEl.textContent = `ℹ Carrier detected: ${data.carrier || 'Unknown'} — not in our list.`;
+      statusEl.style.color = '#e65100';
+      return;
+    }
+
+    if (detectedCarrier === currentCarrier) {
+      statusEl.textContent = `✓ Carrier confirmed: ${detectedCarrier}`;
+      statusEl.style.color = '#2e7d32';
+      return;
+    }
+
+    // Carrier differs — ask to update
+    const msg = currentCarrier
+      ? `Carrier detected as ${detectedCarrier} but currently set to ${currentCarrier}. Update to ${detectedCarrier}?`
+      : `Carrier detected as ${detectedCarrier}. Set carrier to ${detectedCarrier}?`;
+
+    if (confirm(msg)) {
+      document.getElementById('pmCarrier').value = detectedCarrier;
+      statusEl.textContent = `✓ Updated to ${detectedCarrier}`;
+      statusEl.style.color = '#2e7d32';
+
+      // Offer test text
+      if (confirm(`Send a test text to ${phone} to verify delivery?`)) {
+        const playerName = document.getElementById('playerModalId').value;
+        await sendTestText(playerName, phone, detectedCarrier);
+      }
+    } else {
+      statusEl.textContent = `ℹ Kept as ${currentCarrier || 'None'}`;
+      statusEl.style.color = '#666';
+    }
+  } catch(e) {
+    statusEl.textContent = `⚠ Lookup failed: ${e.message}`;
+    statusEl.style.color = '#c62828';
+  }
+}
+
+async function sendTestText(player, phone, carrier) {
+  try {
+    const resp = await fetch('/notify-payout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Save-Token': await ensureSaveToken() },
+      body: JSON.stringify({
+        player, amount: 0, source: 'Contact Test',
+        comment: "Hugh's Golf League — testing your contact info. No reply needed.",
+        recordedBy: currentUser?.name || 'Admin',
+        messageType: 'test'
+      })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      alert(`Test text sent to ${phone}!`);
+    } else {
+      alert(`Test text failed: ${data.error}`);
+    }
+  } catch(e) {
+    alert(`Test text error: ${e.message}`);
+  }
 }
 
 function editPlayer(name) {
