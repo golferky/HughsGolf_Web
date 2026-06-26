@@ -5230,6 +5230,18 @@ function loadGallusQueue() {
   el.innerHTML = html;
 }
 
+async function retryGallusSubmission(id) {
+  if (!db) return;
+  try {
+    db.run('UPDATE GallusSubmissions SET Status=?, ImportedBy=NULL WHERE ID=?', ['pending', id]);
+    markDirty();
+    loadGallusQueue();
+    showToast('Submission reset to Pending — click Import to retry.');
+  } catch(e) {
+    showToast('Error resetting submission: ' + e.message, true);
+  }
+}
+
 async function importGallusSubmission(id, url) {
   // Pre-fill the Import Gallus modal with this URL
   showAdminSection('players'); // switch away briefly
