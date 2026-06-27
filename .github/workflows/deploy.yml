@@ -1,0 +1,26 @@
+name: Deploy to QNAP
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to QNAP
+        env:
+          QNAP_SSH_KEY: ${{ secrets.QNAP_SSH_KEY }}
+          QNAP_HOST: ${{ secrets.QNAP_HOST }}
+          QNAP_USER: ${{ secrets.QNAP_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$QNAP_SSH_KEY" > ~/.ssh/qnap_key
+          chmod 600 ~/.ssh/qnap_key
+          ssh-keyscan -H $QNAP_HOST >> ~/.ssh/known_hosts
+          scp -i ~/.ssh/qnap_key app.py $QNAP_USER@$QNAP_HOST:/share/CACHEDEV2_DATA/Web/app.py
+          scp -i ~/.ssh/qnap_key HughsGolf.html $QNAP_USER@$QNAP_HOST:/share/CACHEDEV2_DATA/Web/HughsGolf.html
+          ssh -i ~/.ssh/qnap_key $QNAP_USER@$QNAP_HOST "chmod +x /share/CACHEDEV2_DATA/Web/restart_flask.sh && /share/CACHEDEV2_DATA/Web/restart_flask.sh"
