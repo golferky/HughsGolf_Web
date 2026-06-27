@@ -9043,23 +9043,30 @@ function checkPlayerProfileCompletion(playerName) {
   const p = query(`SELECT Email, Phone, CellCarrier, Login FROM Players WHERE Player=?`, [playerName])[0];
   if (!p) return;
 
-  const missing = [];
-  if (!p.Email)       missing.push('📧 No email on file');
-  if (!p.Phone)       missing.push('📱 No phone on file');
-  if (!p.CellCarrier) missing.push('📶 No carrier on file');
+  const missingContact = [];
+  if (!p.Email)       missingContact.push('📧 No email on file');
+  if (!p.Phone)       missingContact.push('📱 No phone on file');
+  if (!p.CellCarrier) missingContact.push('📶 No carrier on file');
 
   // Check if ever logged in
   const logins = query(`SELECT COUNT(*) as cnt FROM LogTable WHERE method='login' AND text LIKE ?`, [playerName + '%'])[0];
-  if (!logins || logins.cnt === 0) missing.push('🔑 Has never logged into the website');
+  const neverLoggedIn = !logins || logins.cnt === 0;
 
-  if (!missing.length) return;
+  // Case 1: Missing contact info -> prompt to edit
+  if (missingContact.length) {
+    const msg = `${playerName} is missing some contact info:\n\n` +
+      missingContact.join('\n') +
+      (neverLoggedIn ? '\n🔑 Has never logged into the website' : '') +
+      '\n\nWould you like to update their profile now?';
+    if (confirm(msg)) {
+      editPlayer(playerName);
+    }
+    return;
+  }
 
-  const msg = `${playerName} is missing some contact info:\n\n` +
-    missing.join('\n') +
-    '\n\nWould you like to update their profile now?';
-
-  if (confirm(msg)) {
-    editPlayer(playerName);
+  // Case 2: Contact info complete but never logged in -> just a reminder
+  if (neverLoggedIn) {
+    alert(`Reminder: ${playerName} has never logged into the HughsGolf website.\n\nYou may want to remind them to set up their login when you get a chance.`);
   }
 }
 
