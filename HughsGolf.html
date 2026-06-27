@@ -5198,7 +5198,7 @@ function loadLoginActivity() {
   const playerFilter = selectedPlayer ? `AND text LIKE '${selectedPlayer.replace(/'/g,"''")}%'` : '';
   const dateFilter = selectedDate ? `AND date(log_time)='${selectedDate.replace(/'/g,"''")}'` : '';
   const showDev = document.getElementById('loginActivityShowDev')?.checked;
-  const devFilter = showDev ? '' : `AND (details NOT LIKE '%role=developer%')`;
+  const devFilter = showDev ? '' : `AND (details IS NULL OR details NOT LIKE 'role=developer%')`;
   const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed') ${playerFilter} ${dateFilter} ${devFilter} ORDER BY log_time DESC LIMIT ${limit}`);
   const tbody = document.getElementById('loginActivityBody');
   tbody.innerHTML = rows.map((r,i) => {
