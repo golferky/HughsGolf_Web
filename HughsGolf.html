@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.5</span>
+    <span id="appVersionDisplay">v20260627.6</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -6201,6 +6201,98 @@ function detectDevice() {
   return encodeURIComponent(`${os}/${browser}`);
 }
 
+async function checkPlayerProfileOnLogin(playerName) {
+  const p = query(`SELECT Email, Phone, CellCarrier FROM Players WHERE Player=?`, [playerName])[0];
+  if (!p) return;
+
+  const missing = [];
+  if (!p.Email)       missing.push('📧 Email address');
+  if (!p.Phone)       missing.push('📱 Cell phone number');
+  if (!p.CellCarrier) missing.push('📶 Cell carrier (for text notifications)');
+
+  if (!missing.length) return;
+
+  // Build a nice modal
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:white;border-radius:12px;padding:28px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+      <div style="font-size:20px;font-weight:700;color:#1b5e20;margin-bottom:8px">👋 Welcome, ${playerName}!</div>
+      <div style="font-size:14px;color:#444;margin-bottom:16px">
+        Your profile is missing some contact info we use for league notifications:
+      </div>
+      <ul style="font-size:13px;color:#333;margin:0 0 20px 0;padding-left:20px">
+        ${missing.map(m => `<li style="margin-bottom:6px">${m}</li>`).join('')}
+      </ul>
+      <div style="font-size:12px;color:#888;margin-bottom:20px">
+        Would you like to update your contact info now?
+      </div>
+      <div style="display:flex;gap:10px">
+        <button id="profileSkipBtn" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:13px">Maybe Later</button>
+        <button id="profileUpdateBtn" style="flex:2;padding:10px;background:#1b5e20;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Update Now</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  document.getElementById('profileSkipBtn').onclick = () => overlay.remove();
+  document.getElementById('profileUpdateBtn').onclick = () => {
+    overlay.remove();
+    showPlayerSelfEditModal(playerName);
+  };
+}
+
+function showPlayerSelfEditModal(playerName) {
+  const p = query(`SELECT * FROM Players WHERE Player=?`, [playerName])[0];
+  if (!p) return;
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:white;border-radius:12px;padding:28px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+      <div style="font-size:18px;font-weight:700;color:#1b5e20;margin-bottom:20px">📋 Update Your Contact Info</div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">EMAIL</label>
+        <input id="selfEmail" type="email" value="${p.Email||''}" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">CELL PHONE</label>
+        <input id="selfPhone" type="tel" value="${p.Phone||''}" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">CARRIER</label>
+        <select id="selfCarrier" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+          <option value="">None</option>
+          <option value="AT&T" ${p.CellCarrier==='AT&T'?'selected':''}>AT&T</option>
+          <option value="T-Mobile" ${p.CellCarrier==='T-Mobile'?'selected':''}>T-Mobile</option>
+          <option value="Verizon" ${p.CellCarrier==='Verizon'?'selected':''}>Verizon</option>
+          <option value="Sprint" ${p.CellCarrier==='Sprint'?'selected':''}>Sprint</option>
+          <option value="Cricket" ${p.CellCarrier==='Cricket'?'selected':''}>Cricket</option>
+          <option value="Boost" ${p.CellCarrier==='Boost'?'selected':''}>Boost</option>
+          <option value="US Cellular" ${p.CellCarrier==='US Cellular'?'selected':''}>US Cellular</option>
+          <option value="Metro" ${p.CellCarrier==='Metro'?'selected':''}>Metro</option>
+          <option value="Other" ${p.CellCarrier==='Other'?'selected':''}>Other</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button id="selfCancelBtn" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:13px">Cancel</button>
+        <button id="selfSaveBtn" style="flex:2;padding:10px;background:#1b5e20;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Save</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  document.getElementById('selfCancelBtn').onclick = () => overlay.remove();
+  document.getElementById('selfSaveBtn').onclick = () => {
+    const email   = document.getElementById('selfEmail').value.trim();
+    const phone   = document.getElementById('selfPhone').value.trim();
+    const carrier = document.getElementById('selfCarrier').value;
+    db.run(`UPDATE Players SET Email=?, Phone=?, CellCarrier=? WHERE Player=?`,
+      [email, phone, carrier, playerName]);
+    saveDBToServer();
+    overlay.remove();
+    alert('✓ Contact info updated. Thank you!');
+  };
+}
+
 async function loginSuccess(player) {
   const officer = String(player.Officer || '').trim();
   const officerKey = officer.toLowerCase();
@@ -6245,6 +6337,10 @@ async function loginSuccess(player) {
   resetSessionTimer();
   applyRoleAccess();
   updateWeeksLeftBanner();
+  // Check player profile completion on login (players only)
+  if (currentUser.role === 'player') {
+    setTimeout(() => checkPlayerProfileOnLogin(player.Player), 1000);
+  }
 
   // ── Periodic check: has this session been kicked out by another login? ──
   clearInterval(window._sessionCheckInterval);
