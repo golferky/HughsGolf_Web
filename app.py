@@ -29,7 +29,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260626.2'
+VERSION    = '20260627.1'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -112,6 +112,27 @@ def html():
 def database():
     return send_from_directory(BASE_DIR, 'HughsGolf.db')
 
+
+
+
+@app.route('/db-info')
+def db_info():
+    """Return DB file metadata for display in the header."""
+    try:
+        if not os.path.exists(DB_PATH):
+            return jsonify({'ok': False, 'error': 'DB not found'}), 404
+        stat = os.stat(DB_PATH)
+        modified_ms = int(stat.st_mtime * 1000)
+        modified_str = datetime.datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+        return jsonify({
+            'ok': True,
+            'filename': os.path.basename(DB_PATH),
+            'size': stat.st_size,
+            'modified': modified_str,
+            'modifiedMs': modified_ms
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @app.route('/save-token')
