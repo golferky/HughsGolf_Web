@@ -6223,11 +6223,11 @@ async function doSelfProfileSave(overlay, playerName) {
     const now = new Date().toISOString().replace('T',' ').substring(0,19);
     db.run("INSERT INTO LogTable (log_time, method, source, text) VALUES (?, 'profile-update', ?, ?)",
       [now, playerName, playerName + ' updated their contact info']);
-    await saveDBToServer();
+    const saveResult = await saveDBToServer();
     overlay.remove();
     alert('\u2713 Contact info updated. Thank you, ' + playerName + '!');
   } catch(e) {
-    alert('Save failed: ' + e.message);
+    alert('Save failed: ' + e.message + '\n\nDB loaded: ' + (db ? 'yes' : 'no'));
   }
 }
 
