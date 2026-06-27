@@ -117,6 +117,28 @@ def database():
 
 
 
+
+@app.route('/latest-version')
+def latest_version():
+    """Return the latest commit SHA and version from GitHub."""
+    import urllib.request, json
+    try:
+        url = 'https://api.github.com/repos/golferky/HughsGolf_Web/commits/main'
+        req = urllib.request.Request(url, headers={'User-Agent': 'HughsGolf'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        sha = data.get('sha', '')[:7]
+        msg = data.get('commit', {}).get('message', '')
+        sha_file = '/share/CACHEDEV2_DATA/Web/.last_deployed_sha'
+        current = ''
+        if os.path.exists(sha_file):
+            with open(sha_file) as f:
+                current = f.read().strip()[:7]
+        return jsonify({'ok': True, 'latest': sha, 'current': current, 'message': msg, 'upToDate': sha == current})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 @app.route('/redeploy', methods=['POST'])
 def redeploy():
     """Trigger auto-deploy script (Developer only)."""
