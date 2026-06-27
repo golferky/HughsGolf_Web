@@ -6342,7 +6342,7 @@ async function loginSuccess(player) {
   updateWeeksLeftBanner();
   // Check player profile completion on login (players only)
   if (currentUser.role === 'player') {
-    setTimeout(() => checkPlayerProfileOnLogin(player.Player), 1000);
+    checkPlayerProfileOnLogin(player.Player);
   }
 
   // ── Periodic check: has this session been kicked out by another login? ──
