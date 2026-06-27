@@ -456,13 +456,13 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.8</span>
+    <span id="appVersionDisplay">v20260627.9</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
-    <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
+    <span id="loggedInUser" onclick="showMyProfile()" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px;cursor:pointer;text-decoration:underline" title="View my profile"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
     <button id="logoutBtn" onclick="logoutUser()" style="display:none;padding:6px 12px;background:#4a3000;color:var(--gold);border:1px solid var(--gold);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:6px">Logout</button>
     <span id="dbStatus">No database loaded</span>
