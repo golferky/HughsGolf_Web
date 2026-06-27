@@ -6198,16 +6198,24 @@ function detectDevice() {
 
 
 async function triggerRedeploy() {
-  if (!confirm('Check GitHub for updates and deploy if new code is available?')) return;
   try {
     const token = await ensureSaveToken();
+    const vResp = await fetch('/latest-version');
+    const vData = await vResp.json();
+    if (!vData.ok) { alert('Could not check version: ' + vData.error); return; }
+    if (vData.upToDate) { alert('Already on latest version (' + vData.latest + ').'); return; }
+    if (!confirm('New version available: ' + vData.latest + '\n\n' + vData.message + '\n\nDeploy now?')) return;
     const resp = await fetch('/redeploy', { method: 'POST', headers: { 'X-Save-Token': token } });
     const data = await resp.json();
     if (data.ok) {
-      alert('\u2713 Checking for updates... If new code is available it will be live in about 30 seconds.');
+      alert('Deploying version ' + vData.latest + '... Live in about 30 seconds.');
     } else {
       alert('Redeploy failed: ' + data.error);
     }
+  } catch(e) {
+    alert('Redeploy error: ' + e.message);
+  }
+}
   } catch(e) {
     alert('Redeploy error: ' + e.message);
   }
