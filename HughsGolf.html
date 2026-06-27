@@ -9029,6 +9029,9 @@ function onScoreInput(e) {
       // Write to Handicaps table immediately
       db.run(`INSERT OR REPLACE INTO Handicaps (League, Player, Date, PHdcp, Hdcp)
               VALUES ("Hugh's", ?, ?, ?, ?)`, [st.active, updatedDate, st.phdcp, newHdcp]);
+      // Update PlayerLast5 table
+      db.run(`INSERT OR REPLACE INTO PlayerLast5 (League, Player, Last5, LastDate)
+              VALUES ("Hugh's", ?, ?, ?)`, [st.active, updatedLast5, updatedDate]);
     }
 
     // ── Instant per-player Score save + auto-pay ─────────────────────────
