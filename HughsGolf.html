@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.4</span>
+    <span id="appVersionDisplay">v20260627.5</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -9022,6 +9022,40 @@ function onScoreInput(e) {
 
     // ── Instant per-player Score save + auto-pay ─────────────────────────
     savePlayerScoreNow(key, gross, net);
+  }
+}
+
+
+// ── Player Profile Completion Check ──────────────────────────────────────────
+const _profileCheckedThisSession = new Set();
+
+function checkPlayerProfileCompletion(playerName) {
+  // Only for admin/officer roles
+  if (!currentUser || (currentUser.role !== 'developer' && currentUser.role !== 'officer')) return;
+  // Only check once per player per session
+  if (_profileCheckedThisSession.has(playerName)) return;
+  _profileCheckedThisSession.add(playerName);
+
+  const p = query(`SELECT Email, Phone, CellCarrier, Login FROM Players WHERE Player=?`, [playerName])[0];
+  if (!p) return;
+
+  const missing = [];
+  if (!p.Email)       missing.push('📧 No email on file');
+  if (!p.Phone)       missing.push('📱 No phone on file');
+  if (!p.CellCarrier) missing.push('📶 No carrier on file');
+
+  // Check if ever logged in
+  const logins = query(`SELECT COUNT(*) as cnt FROM LogTable WHERE method='login' AND text LIKE ?`, [playerName + '%'])[0];
+  if (!logins || logins.cnt === 0) missing.push('🔑 Has never logged into the website');
+
+  if (!missing.length) return;
+
+  const msg = `${playerName} is missing some contact info:\n\n` +
+    missing.join('\n') +
+    '\n\nWould you like to update their profile now?';
+
+  if (confirm(msg)) {
+    editPlayer(playerName);
   }
 }
 
