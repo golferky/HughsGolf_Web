@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.3</span>
+    <span id="appVersionDisplay">v20260627.4</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -1326,8 +1326,7 @@
       </div>
       <div style="display:flex;gap:8px">
         <button onclick="closePlayerModal()" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:13px">Cancel</button>
-        <button onclick="renamePlayer()" id="pmRenameBtn" style="flex:1;padding:10px;background:#e65100;color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;display:none">✏️ Rename</button>
-        <button onclick="savePlayer()" style="flex:2;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Save Player</button>
+<button onclick="savePlayer()" style="flex:2;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Save Player</button>
       </div>
     </div>
   </div>
@@ -7255,6 +7254,24 @@ async function savePlayer() {
     if (pw1) {
       const hash = await hashPassword(pw1);
       db.run(`UPDATE Players SET Password=? WHERE Player=?`, [hash, fullName]);
+    }
+    // Cascade name change across all tables if name changed
+    if (fullName !== originalName) {
+      const old = originalName.replace(/'/g, "''");
+      const neu = fullName.replace(/'/g, "''");
+      db.run("UPDATE Handicaps          SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+      db.run("UPDATE Matches            SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+      db.run("UPDATE Matches            SET Opponent='" + neu + "' WHERE Opponent='" + old + "'");
+      db.run("UPDATE NewHdcp            SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+      db.run("UPDATE Payments           SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+      db.run("UPDATE PlayerLast5        SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+      db.run("UPDATE ScoreMethod        SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+      db.run("UPDATE Scores             SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+      db.run("UPDATE Subs              SET Player='"    + neu + "' WHERE Player='"   + old + "'");
+      db.run("UPDATE Teams              SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+      db.run("UPDATE GallusSubmissions  SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+      const now = new Date().toISOString().replace('T',' ').substring(0,19);
+      db.run("INSERT INTO LogTable (log_time, method, player, text) VALUES ('" + now + "', 'admin-rename', '" + neu + "', 'Renamed " + old + " to " + neu + "')");
     }
   } else {
     db.run(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login) VALUES (?,?,?,?,?,?,?,?,?)`,
