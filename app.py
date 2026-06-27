@@ -115,6 +115,29 @@ def database():
 
 
 
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """GitHub webhook — pull latest code and restart Flask."""
+    import hmac, hashlib, subprocess, threading
+    secret = os.environ.get('WEBHOOK_SECRET', '').encode()
+    sig = request.headers.get('X-Hub-Signature-256', '')
+    body = request.get_data()
+    if secret:
+        expected = 'sha256=' + hmac.new(secret, body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return jsonify({'ok': False, 'error': 'Invalid signature'}), 403
+
+    def do_deploy():
+        import time
+        time.sleep(1)
+        subprocess.run(['/share/CACHEDEV2_DATA/Web/auto_deploy.sh'], check=False)
+
+    threading.Thread(target=do_deploy, daemon=True).start()
+    print(f'[{datetime.datetime.now():%H:%M:%S}] Webhook received — deploying...')
+    return jsonify({'ok': True, 'message': 'Deploy triggered'})
+
+
 @app.route('/db-info')
 def db_info():
     """Return DB file metadata for display in the header."""
