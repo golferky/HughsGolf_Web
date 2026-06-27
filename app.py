@@ -116,6 +116,21 @@ def database():
 
 
 
+
+@app.route('/redeploy', methods=['POST'])
+def redeploy():
+    """Trigger auto-deploy script (Developer only)."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    import subprocess, threading
+    def do_deploy():
+        subprocess.run(['/share/CACHEDEV2_DATA/Web/auto_deploy.sh'], check=False)
+    threading.Thread(target=do_deploy, daemon=True).start()
+    print(f'[{datetime.datetime.now():%H:%M:%S}] Manual redeploy triggered')
+    return jsonify({'ok': True, 'message': 'Deploy triggered'})
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """GitHub webhook — pull latest code and restart Flask."""
