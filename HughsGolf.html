@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.2</span>
+    <span id="appVersionDisplay">v20260627.3</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -1326,6 +1326,7 @@
       </div>
       <div style="display:flex;gap:8px">
         <button onclick="closePlayerModal()" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:13px">Cancel</button>
+        <button onclick="renamePlayer()" id="pmRenameBtn" style="flex:1;padding:10px;background:#e65100;color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;display:none">✏️ Rename</button>
         <button onclick="savePlayer()" style="flex:2;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Save Player</button>
       </div>
     </div>
@@ -6865,6 +6866,8 @@ function openPlayerModal(name) {
   document.getElementById('pmPasswordHasOne').textContent = '';
   document.getElementById('pmPasswordSection').style.display = 'none'; // set password after adding
   document.getElementById('playerModal').style.display = 'flex';
+  const renameBtn = document.getElementById('pmRenameBtn');
+  if (renameBtn) renameBtn.style.display = name ? '' : 'none';
 }
 
 function normalizeCarrier(val) {
@@ -7147,6 +7150,51 @@ function confirmChanges(title, oldValues, newValues) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+
+async function renamePlayer() {
+  const oldName = document.getElementById('playerModalId').value;
+  if (!oldName) { alert('No player selected.'); return; }
+
+  const newName = prompt('Rename "' + oldName + '" to:', oldName);
+  if (!newName || newName.trim() === '') return;
+  const trimmed = newName.trim();
+  if (trimmed === oldName) { alert('Name is unchanged.'); return; }
+
+  const existing = query('SELECT Player FROM Players WHERE Player=?', [trimmed]);
+  if (existing.length) { alert('"' + trimmed + '" already exists as a player.'); return; }
+
+  if (!confirm('Rename "' + oldName + '" to "' + trimmed + '"?\n\nThis will update all tables including Scores, Handicaps, Matches, Payments, and more.')) return;
+
+  try {
+    const old = oldName.replace(/'/g, "''");
+    const neu = trimmed.replace(/'/g, "''");
+
+    db.run('BEGIN TRANSACTION');
+    db.run("UPDATE Players           SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+    db.run("UPDATE Handicaps         SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+    db.run("UPDATE Matches           SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+    db.run("UPDATE Matches           SET Opponent='" + neu + "' WHERE Opponent='" + old + "'");
+    db.run("UPDATE NewHdcp           SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+    db.run("UPDATE Payments          SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+    db.run("UPDATE PlayerLast5       SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+    db.run("UPDATE ScoreMethod       SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+    db.run("UPDATE Scores            SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+    db.run("UPDATE Subs              SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+    db.run("UPDATE Teams             SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+    db.run("UPDATE GallusSubmissions SET Player='"   + neu + "' WHERE Player='"   + old + "'");
+    const now = new Date().toISOString().replace('T',' ').substring(0,19);
+    db.run("INSERT INTO LogTable (log_time, method, player, text) VALUES ('" + now + "', 'admin-rename', '" + neu + "', 'Renamed " + old + " to " + neu + "')");
+    db.run('COMMIT');
+
+    await saveDBToServer();
+    document.getElementById('playerModalId').value = trimmed;
+    alert('\u2713 "' + oldName + '" renamed to "' + trimmed + '" across all tables.');
+
+  } catch(e) {
+    try { db.run('ROLLBACK'); } catch(_) {}
+    alert('Rename failed: ' + e.message);
+  }
+}
 
 async function savePlayer() {
   const originalName = document.getElementById('playerModalId').value;
