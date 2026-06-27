@@ -4844,6 +4844,8 @@ async function doMarkPaid(player, date, desc, detail, amount) {
   if (hasEmail) methods.push(`email (${p.Email})`);
   if (hasSms)   methods.push(`text (${p.Phone}, may not always arrive)`);
 
+  // Profile check when accessing payment
+  if (player) checkPlayerProfileCompletion(player);
   document.getElementById('markPaidSummary').textContent = `Mark $${amount.toFixed(2)} ${desc} ${detail} as paid to ${player}.`;
   document.getElementById('markPaidDateTime').value = new Date().toLocaleString();
   document.getElementById('markPaidNotify').checked = methods.length > 0;
@@ -8972,6 +8974,8 @@ function onScoreInput(e) {
 
   entryState[key].holes[hi] = val;
   entryDirty = true;
+  // Profile check on first hole entry per player per session
+  if (entryState[key]?.active) checkPlayerProfileCompletion(entryState[key].active);
 
   const st   = entryState[key];
   const gross = calcGross(st.holes);
