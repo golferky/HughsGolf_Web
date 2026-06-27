@@ -6201,6 +6201,21 @@ function detectDevice() {
   return encodeURIComponent(`${os}/${browser}`);
 }
 
+async function doSelfProfileSave(overlay, playerName) {
+  const email   = document.getElementById('selfEmail').value.trim();
+  const phone   = document.getElementById('selfPhone').value.trim();
+  const carrier = document.getElementById('selfCarrier').value;
+  try {
+    db.run('UPDATE Players SET Email=?, Phone=?, CellCarrier=? WHERE Player=?',
+      [email, phone, carrier, playerName]);
+    await saveDBToServer();
+    overlay.remove();
+    alert('\u2713 Contact info updated. Thank you, ' + playerName + '!');
+  } catch(e) {
+    alert('Save failed: ' + e.message);
+  }
+}
+
 async function checkPlayerProfileOnLogin(playerName) {
   const p = query(`SELECT Email, Phone, CellCarrier FROM Players WHERE Player=?`, [playerName])[0];
   if (!p) return;
@@ -6281,16 +6296,7 @@ function showPlayerSelfEditModal(playerName) {
   document.body.appendChild(overlay);
 
   document.getElementById('selfCancelBtn').onclick = () => overlay.remove();
-  document.getElementById('selfSaveBtn').onclick = async () => {
-    const email   = document.getElementById('selfEmail').value.trim();
-    const phone   = document.getElementById('selfPhone').value.trim();
-    const carrier = document.getElementById('selfCarrier').value;
-    db.run(`UPDATE Players SET Email=?, Phone=?, CellCarrier=? WHERE Player=?`,
-      [email, phone, carrier, playerName]);
-    await saveDBToServer();
-    overlay.remove();
-    alert('✓ Contact info updated. Thank you!');
-  };
+  document.getElementById('selfSaveBtn').onclick = () => doSelfProfileSave(overlay, playerName);
 }
 
 async function loginSuccess(player) {
