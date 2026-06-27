@@ -6866,8 +6866,9 @@ function openPlayerModal(name) {
   document.getElementById('pmPasswordHasOne').textContent = '';
   document.getElementById('pmPasswordSection').style.display = 'none'; // set password after adding
   document.getElementById('playerModal').style.display = 'flex';
-  const renameBtn = document.getElementById('pmRenameBtn');
-  if (renameBtn) renameBtn.style.display = name ? '' : 'none';
+  // Hide rename button for new players
+  const renameBtn0 = document.getElementById('pmRenameBtn');
+  if (renameBtn0) renameBtn0.style.display = 'none';
 }
 
 function normalizeCarrier(val) {
@@ -7018,6 +7019,9 @@ function editPlayer(name) {
   document.getElementById('pmPasswordSection').style.display = (currentUser?.role === 'developer' || currentUser?.role === 'officer') ? '' : 'none';
   document.getElementById('pmResetPwBtn').style.display = hasPw ? '' : 'none';
   document.getElementById('playerModal').style.display = 'flex';
+  // Show rename button for existing players
+  const renameBtn = document.getElementById('pmRenameBtn');
+  if (renameBtn) renameBtn.style.display = '';
 }
 
 function resetPlayerPassword() {
