@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.1</span>
+    <span id="appVersionDisplay">v20260627.2</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -5198,7 +5198,16 @@ function loadLoginActivity() {
   const playerFilter = selectedPlayer ? `AND text LIKE '${selectedPlayer.replace(/'/g,"''")}%'` : '';
   const dateFilter = selectedDate ? `AND date(log_time)='${selectedDate.replace(/'/g,"''")}'` : '';
   const showDev = document.getElementById('loginActivityShowDev')?.checked;
-  const devFilter = showDev ? '' : `AND (details IS NULL OR details NOT LIKE 'role=developer%')`;
+  let devFilter = '';
+  if (!showDev) {
+    const devPlayers = query(`SELECT Player FROM Players WHERE Officer='Developer'`).map(r => r.Player);
+    if (devPlayers.length) {
+      const devList = devPlayers.map(p => `'${p.replace(/'/g,"''")}'`).join(',');
+      devFilter = `AND text NOT LIKE ANY (SELECT Player||'%' FROM Players WHERE Officer='Developer')`;
+      // SQLite doesn't support ANY, use NOT IN with subquery instead
+      devFilter = `AND NOT EXISTS (SELECT 1 FROM Players WHERE Officer='Developer' AND text LIKE Player||'%')`;
+    }
+  }
   const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed') ${playerFilter} ${dateFilter} ${devFilter} ORDER BY log_time DESC LIMIT ${limit}`);
   const tbody = document.getElementById('loginActivityBody');
   tbody.innerHTML = rows.map((r,i) => {
