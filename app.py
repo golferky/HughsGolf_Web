@@ -125,6 +125,9 @@ def redeploy():
         return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
     import subprocess, threading
     def do_deploy():
+        sha_file = '/share/CACHEDEV2_DATA/Web/.last_deployed_sha'
+        if os.path.exists(sha_file):
+            os.remove(sha_file)
         subprocess.run(['/share/CACHEDEV2_DATA/Web/auto_deploy.sh'], check=False)
     threading.Thread(target=do_deploy, daemon=True).start()
     print(f'[{datetime.datetime.now():%H:%M:%S}] Manual redeploy triggered')
