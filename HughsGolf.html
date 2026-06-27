@@ -6196,6 +6196,23 @@ function detectDevice() {
   return encodeURIComponent(`${os}/${browser}`);
 }
 
+
+async function triggerRedeploy() {
+  if (!confirm('Check GitHub for updates and deploy if new code is available?')) return;
+  try {
+    const token = await ensureSaveToken();
+    const resp = await fetch('/redeploy', { method: 'POST', headers: { 'X-Save-Token': token } });
+    const data = await resp.json();
+    if (data.ok) {
+      alert('\u2713 Checking for updates... If new code is available it will be live in about 30 seconds.');
+    } else {
+      alert('Redeploy failed: ' + data.error);
+    }
+  } catch(e) {
+    alert('Redeploy error: ' + e.message);
+  }
+}
+
 async function doSelfProfileSave(overlay, playerName) {
   const email   = document.getElementById('selfEmail').value.trim();
   const phone   = document.getElementById('selfPhone').value.trim();
