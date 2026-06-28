@@ -462,7 +462,7 @@
   </div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <div class="header-right">
-    <span id="loggedInUser" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px"></span>
+    <span id="loggedInUser" onclick="showMyProfile()" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px;cursor:pointer;text-decoration:underline" title="View my profile"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
     <button id="logoutBtn" onclick="logoutUser()" style="display:none;padding:6px 12px;background:#4a3000;color:var(--gold);border:1px solid var(--gold);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:6px">Logout</button>
     <span id="dbStatus">No database loaded</span>
@@ -6215,6 +6215,37 @@ async function triggerRedeploy() {
   } catch(e) {
     alert('Redeploy error: ' + e.message);
   }
+}
+
+
+function showMyProfile() {
+  if (!currentUser || !db) return;
+  const p = query('SELECT * FROM Players WHERE Player=?', [currentUser.name])[0];
+  if (!p) return;
+  const existing = document.getElementById('myProfileOverlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'myProfileOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  const missing = [];
+  if (!p.Email) missing.push('Email');
+  if (!p.Phone) missing.push('Phone');
+  if (!p.CellCarrier) missing.push('Carrier');
+  const warn = missing.length ? '<div style="background:#fff3e0;border-radius:6px;padding:10px;margin-bottom:16px;font-size:12px;color:#e65100">Missing: ' + missing.join(', ') + '</div>' : '';
+  const pn = p.Player.replace(/'/g, "\\'");
+  overlay.innerHTML = '<div style="background:white;border-radius:12px;padding:28px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2)">'
+    + '<div style="font-size:18px;font-weight:700;color:#1b5e20;margin-bottom:16px">My Profile</div>'
+    + warn
+    + '<div style="font-size:13px;margin-bottom:8px"><b>Name:</b> ' + p.Player + '</div>'
+    + '<div style="font-size:13px;margin-bottom:8px"><b>Email:</b> ' + (p.Email || 'not set') + '</div>'
+    + '<div style="font-size:13px;margin-bottom:8px"><b>Phone:</b> ' + (p.Phone || 'not set') + '</div>'
+    + '<div style="font-size:13px;margin-bottom:20px"><b>Carrier:</b> ' + (p.CellCarrier || 'not set') + '</div>'
+    + '<div style="display:flex;gap:10px">'
+    + '<button onclick="document.getElementById(\'myProfileOverlay\').remove()" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;cursor:pointer">Close</button>'
+    + '<button onclick="document.getElementById(\'myProfileOverlay\').remove();showPlayerSelfEditModal(\'' + pn + '\');" style="flex:2;padding:10px;background:#1b5e20;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Edit</button>'
+    + '</div></div>';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 }
 
 async function doSelfProfileSave(overlay, playerName) {
