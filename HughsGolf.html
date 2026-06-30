@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.17</span>
+    <span id="appVersionDisplay">v20260627.18</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -7385,23 +7385,41 @@ async function savePlayer() {
       const hash = await hashPassword(pw1);
       db.run(`UPDATE Players SET Password=? WHERE Player=?`, [hash, fullName]);
     }
-    // Cascade name change across all tables if name changed
+    // Cascade name change across all tables if name changed — use /run-sql to bypass stale-save
     if (fullName !== originalName) {
       const old = originalName.replace(/'/g, "''");
       const neu = fullName.replace(/'/g, "''");
-      db.run("UPDATE Handicaps          SET Player='"   + neu + "' WHERE Player='"   + old + "'");
-      db.run("UPDATE Matches            SET Player='"   + neu + "' WHERE Player='"   + old + "'");
-      db.run("UPDATE Matches            SET Opponent='" + neu + "' WHERE Opponent='" + old + "'");
-      db.run("UPDATE NewHdcp            SET Player='"   + neu + "' WHERE Player='"   + old + "'");
-      db.run("UPDATE Payments           SET Player='"   + neu + "' WHERE Player='"   + old + "'");
-      db.run("UPDATE PlayerLast5        SET Player='"   + neu + "' WHERE Player='"   + old + "'");
-      db.run("UPDATE ScoreMethod        SET Player='"   + neu + "' WHERE Player='"   + old + "'");
-      db.run("UPDATE Scores             SET Player='"   + neu + "' WHERE Player='"   + old + "'");
-      db.run("UPDATE Subs              SET Player='"    + neu + "' WHERE Player='"   + old + "'");
-      db.run("UPDATE Teams              SET Player='"   + neu + "' WHERE Player='"   + old + "'");
-      db.run("UPDATE GallusSubmissions  SET Player='"   + neu + "' WHERE Player='"   + old + "'");
-      const now = new Date().toISOString().replace('T',' ').substring(0,19);
-      db.run("INSERT INTO LogTable (log_time, method, player, text) VALUES ('" + now + "', 'admin-rename', '" + neu + "', 'Renamed " + old + " to " + neu + "')");
+      const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || '';
+      const cascadeStatements = [
+        `UPDATE Players SET Player='${neu}', FirstName='${firstName.replace(/'/g,"''")}', LastName='${lastName.replace(/'/g,"''")}' WHERE Player='${old}'`,
+        `UPDATE Handicaps SET Player='${neu}' WHERE Player='${old}'`,
+        `UPDATE Matches SET Player='${neu}' WHERE Player='${old}'`,
+        `UPDATE Matches SET Opponent='${neu}' WHERE Opponent='${old}'`,
+        `UPDATE Matches SET Partner='${neu}' WHERE Partner='${old}'`,
+        `UPDATE NewHdcp SET Player='${neu}' WHERE Player='${old}'`,
+        `UPDATE Payments SET Player='${neu}' WHERE Player='${old}'`,
+        `UPDATE PlayerLast5 SET Player='${neu}' WHERE Player='${old}'`,
+        `UPDATE ScoreMethod SET Player='${neu}' WHERE Player='${old}'`,
+        `UPDATE Scores SET Player='${neu}' WHERE Player='${old}'`,
+        `UPDATE Subs SET Player='${neu}' WHERE Player='${old}'`,
+        `UPDATE Teams SET Player='${neu}' WHERE Player='${old}'`,
+        `UPDATE GallusSubmissions SET Player='${neu}' WHERE Player='${old}'`,
+      ];
+      let allOk = true;
+      for (const sql of cascadeStatements) {
+        try {
+          const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ sql, sessionToken }) });
+          const json = await resp.json();
+          if (!json.ok) { console.warn('Cascade SQL failed:', sql, json.error); allOk = false; }
+        } catch(e) { console.warn('Cascade SQL error:', e); allOk = false; }
+      }
+      if (allOk) {
+        alert(`✓ Player renamed from "${originalName}" to "${fullName}" across all tables.`);
+      } else {
+        alert(`⚠ Rename completed with some errors — check console for details.`);
+      }
+      // Also update local memory so UI reflects change immediately
+      cascadeStatements.forEach(sql => { try { db.run(sql); } catch(e) {} });
     }
   } else {
     db.run(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login) VALUES (?,?,?,?,?,?,?,?,?)`,
