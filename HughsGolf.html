@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.20</span>
+    <span id="appVersionDisplay">v20260627.21</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -6528,7 +6528,7 @@ function applyRoleAccess() {
   // Need a Sub — only for this year's regulars (on Teams table) or officers
   const needSubBtn = document.getElementById('needSubBtn');
   if (needSubBtn) {
-    if (role === 'developer') {
+    if (role === 'developer' || role === 'officer') {
       needSubBtn.style.display = '';
       needSubBtn.onclick = showNeedSub;
       needSubBtn.style.opacity = '1';
