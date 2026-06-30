@@ -29,7 +29,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260627.8'
+VERSION    = '20260627.9'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -232,6 +232,20 @@ def save_db():
     data = request.get_data()
     if not data:
         return jsonify({'ok': False, 'error': 'Empty body'}), 400
+
+    # Check if client is on an outdated version
+    client_version = request.headers.get('X-Client-Version', '')
+    if client_version:
+        try:
+            import re
+            with open(os.path.join(BASE_DIR, 'HughsGolf.html'), 'r') as f:
+                content = f.read(2000)
+            match = re.search(r'v(2026\d+\.\d+)', content)
+            server_version = match.group(1) if match else None
+            if server_version and client_version != server_version:
+                return jsonify({'ok': False, 'error': 'stale_version', 'serverVersion': server_version}), 409
+        except Exception:
+            pass
 
     if os.path.exists(DB_PATH):
         ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
