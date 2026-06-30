@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.13</span>
+    <span id="appVersionDisplay">v20260627.14</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -1394,6 +1394,12 @@
       <textarea id="needSubMessage" rows="4" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;box-sizing:border-box;font-family:'DM Sans',sans-serif"></textarea>
 
       <div style="font-size:11px;color:#888;margin:6px 0 12px">A copy will also be sent to the League Secretary.</div>
+
+      <div id="needSubSkipEmailDiv" style="display:none;margin-bottom:8px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:#c62828;font-weight:600">
+          <input type="checkbox" id="needSubSkipEmail"> 🧪 Skip sending emails (test mode — log only)
+        </label>
+      </div>
 
       <div id="needSubError" style="color:#c62828;font-size:12px;margin-bottom:8px;display:none"></div>
       <div id="needSubSuccess" style="color:#2e7d32;font-size:12px;margin-bottom:8px;display:none"></div>
@@ -4962,6 +4968,11 @@ function showNeedSub() {
   document.getElementById('needSubSuccess').style.display = 'none';
   document.getElementById('needSubSelectAll').checked = false;
   document.getElementById('needSubSearch').value = '';
+  // Show skip email option for developers only
+  const skipDiv = document.getElementById('needSubSkipEmailDiv');
+  if (skipDiv) skipDiv.style.display = currentUser?.role === 'developer' ? '' : 'none';
+  const skipCb = document.getElementById('needSubSkipEmail');
+  if (skipCb) skipCb.checked = false;
 
   const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
 
@@ -5062,7 +5073,7 @@ async function doNeedSub() {
     const resp = await fetch('/need-sub', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ player: forPlayer, date, message, recipients: selected })
+      body: JSON.stringify({ player: forPlayer, date, message, recipients: selected, skipEmail: document.getElementById('needSubSkipEmail')?.checked || false })
     });
     const json = await resp.json();
     if (json.ok) {
@@ -6481,10 +6492,17 @@ function applyRoleAccess() {
   // Need a Sub — only for this year's regulars (on Teams table) or officers
   const needSubBtn = document.getElementById('needSubBtn');
   if (needSubBtn) {
-    const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
-    const isRegular = query(`SELECT 1 FROM Teams WHERE League="Hugh's" AND Year=${season} AND Player=?`, [currentUser.name]).length > 0;
-    const isOfficer = role === 'officer' || role === 'developer';
-    needSubBtn.style.display = (isRegular || isOfficer) ? '' : 'none';
+    if (role === 'developer') {
+      needSubBtn.style.display = '';
+      needSubBtn.onclick = showNeedSub;
+      needSubBtn.style.opacity = '1';
+      needSubBtn.title = '';
+    } else {
+      needSubBtn.style.display = '';
+      needSubBtn.onclick = () => alert('Need a Sub is temporarily disabled.\n\nThis feature is being tested by the developer. Please check with your league developer if you need a sub.');
+      needSubBtn.style.opacity = '0.5';
+      needSubBtn.title = 'Temporarily disabled — contact developer';
+    }
   }
 
   // Tab visibility

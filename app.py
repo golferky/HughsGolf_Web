@@ -29,7 +29,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260627.6'
+VERSION    = '20260627.7'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -413,6 +413,7 @@ def need_sub():
     date       = body.get('date', '').strip()
     message    = body.get('message', '').strip()
     recipients = body.get('recipients', [])
+    skip_email = body.get('skipEmail', False)
 
     if not player or not date or not message or not recipients:
         return jsonify({'ok': False, 'error': 'Missing required fields'}), 400
@@ -454,6 +455,13 @@ def need_sub():
                 continue
 
             sent_this_one = False
+
+            if skip_email:
+                # Test mode — count as sent without actually sending
+                sent_this_one = True
+                sent_count += 1
+                email_count += 1
+                continue
 
             # Email
             if r['Email']:
