@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.10</span>
+    <span id="appVersionDisplay">v20260627.13</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -1387,6 +1387,7 @@
           <input type="checkbox" id="needSubSelectAll" onchange="toggleAllSubs()"> Select all eligible subs
         </label>
       </div>
+      <input type="text" id="needSubSearch" placeholder="Search subs..." oninput="filterNeedSubList()" style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px;margin-bottom:6px;box-sizing:border-box">
       <div id="needSubList" style="max-height:160px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:8px;margin-bottom:12px;font-size:12px"></div>
 
       <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Message</div>
@@ -4727,6 +4728,34 @@ function resetSessionTimer() {
 }
 
 document.addEventListener('click', resetSessionTimer);
+
+// ── Version check — prompt reload if server has newer version ───────────────
+async function checkServerVersion() {
+  try {
+    const resp = await fetch('/version?t=' + Date.now());
+    if (!resp.ok) return;
+    const { version } = await resp.json();
+    const currentVersion = document.getElementById('appVersionDisplay')?.textContent?.trim();
+    if (version && currentVersion && version !== currentVersion) {
+      let banner = document.getElementById('versionUpdateBanner');
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'versionUpdateBanner';
+        banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#1a472a;color:white;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;z-index:9999;font-size:13px;box-shadow:0 -2px 8px rgba(0,0,0,0.3)';
+        banner.innerHTML = `<span>🔄 A new version (${version}) is available. Reload to get the latest.</span>
+          <button onclick="location.reload(true)" style="padding:6px 16px;background:white;color:#1a472a;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">Reload Now</button>`;
+        document.body.appendChild(banner);
+      }
+    }
+  } catch(e) { /* ignore network errors */ }
+}
+
+// Check every 5 minutes
+setInterval(checkServerVersion, 5 * 60 * 1000);
+// Also check once after 30 seconds (catches quick deploys)
+setTimeout(checkServerVersion, 30 * 1000);
+// ─────────────────────────────────────────────────────────────────────────────
+
 document.addEventListener('keypress', resetSessionTimer);
 
 // ── Server Save ───────────────────────────────────────────────────────────────
@@ -4932,6 +4961,7 @@ function showNeedSub() {
   document.getElementById('needSubError').style.display = 'none';
   document.getElementById('needSubSuccess').style.display = 'none';
   document.getElementById('needSubSelectAll').checked = false;
+  document.getElementById('needSubSearch').value = '';
 
   const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
 
@@ -5003,6 +5033,14 @@ function toggleAllSubs() {
   document.querySelectorAll('.needSubCheck').forEach(cb => cb.checked = checked);
 }
 
+function filterNeedSubList() {
+  const search = document.getElementById('needSubSearch').value.toLowerCase();
+  document.querySelectorAll('#needSubList label').forEach(label => {
+    const name = label.textContent.toLowerCase();
+    label.style.display = name.includes(search) ? '' : 'none';
+  });
+}
+
 async function doNeedSub() {
   const date = document.getElementById('needSubDate').value;
   const message = document.getElementById('needSubMessage').value.trim();
@@ -5031,11 +5069,18 @@ async function doNeedSub() {
       okEl.textContent = `Sent to ${json.sent_count} player(s): ${json.email_count || 0} email, ${json.sms_count || 0} text${json.failed?.length ? ` (${json.failed.length} failed)` : ''}.`;
       okEl.style.display = 'block';
 
-      // Log it
+      // Log it — use server-side SQL to avoid stale-save conflicts
       const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
-      db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
-        [logTime, 'INFO', 'needSub', 'HughsGolf', `${currentUser.name} requested a sub for ${forPlayer} on ${date}`, `recipients=${selected.join(',')} sent=${json.sent_count}`, logTime]);
-      await saveDBToServer();
+      const logSql = `INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES ('${logTime}','INFO','needSub','HughsGolf','${(currentUser.name + ' requested a sub for ' + forPlayer + ' on ' + date).replace(/'/g,"''")}','recipients=${selected.join(',').replace(/'/g,"''")} sent=${json.sent_count}','${logTime}')`;
+      const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || '';
+      try {
+        await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ sql: logSql, sessionToken }) });
+      } catch(e) {
+        // Fallback to local write
+        db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+          [logTime, 'INFO', 'needSub', 'HughsGolf', `${currentUser.name} requested a sub for ${forPlayer} on ${date}`, `recipients=${selected.join(',')} sent=${json.sent_count}`, logTime]);
+        await saveDBToServer();
+      }
 
       setTimeout(() => { document.getElementById('needSubModal').style.display = 'none'; }, 2500);
     } else {
@@ -5185,7 +5230,7 @@ function loadLoginActivity() {
 
   const dateSel = document.getElementById('loginActivityDate');
   if (dateSel && dateSel.options.length <= 1) {
-    const dates = query(`SELECT DISTINCT date(log_time) as d FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed') AND log_time IS NOT NULL AND log_time != '' ORDER BY d DESC`);
+    const dates = query(`SELECT DISTINCT date(log_time) as d FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed','needSub') AND log_time IS NOT NULL AND log_time != '' ORDER BY d DESC`);
     dateSel.innerHTML = '<option value="">All dates</option>' +
       dates.filter(r => r.d).map(r => `<option value="${r.d}">${r.d}</option>`).join('');
   }
@@ -5205,7 +5250,7 @@ function loadLoginActivity() {
       devFilter = `AND NOT EXISTS (SELECT 1 FROM Players WHERE Officer='Developer' AND text LIKE Player||'%')`;
     }
   }
-  const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed') ${playerFilter} ${dateFilter} ${devFilter} ORDER BY log_time DESC LIMIT ${limit}`);
+  const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed','needSub') ${playerFilter} ${dateFilter} ${devFilter} ORDER BY log_time DESC LIMIT ${limit}`);
   const tbody = document.getElementById('loginActivityBody');
   tbody.innerHTML = rows.map((r,i) => {
     const isLogin = r.method === 'login';
@@ -5219,10 +5264,13 @@ function loadLoginActivity() {
     const deviceMatch = r.details?.match(/device=(\S+)/);
     const deviceLabel = deviceMatch ? decodeURIComponent(deviceMatch[1]) : '—';
     const attemptMatch = r.details?.match(/attempt=(\d+\/\d+)/);
+    const sentMatch = r.details?.match(/sent=(\d+)/);
+    const forMatch = r.text?.match(/for (.+) on/);
     const localTime = new Date(r.log_time.replace(' ','T')+'Z').toLocaleString();
     const eventLabel = r.method === 'login' ? '<span style="color:#2e7d32">→ Login</span>'
       : r.method === 'session_timeout' ? '<span style="color:#e65100">⏱ Timeout</span>'
       : r.method === 'login_failed' ? `<span style="color:#c62828">✗ Failed${attemptMatch?` (${attemptMatch[1]})`:''}</span>`
+      : r.method === 'needSub' ? `<span style="color:#6a1b9a">🔄 Sub Request${forMatch?` for ${forMatch[1]}`:''}${sentMatch?` → ${sentMatch[1]} sent`:''}</span>`
       : '<span style="color:#888">← Logout</span>';
     return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
       <td style="padding:6px 12px;font-weight:600;cursor:pointer;color:var(--green)" onclick="document.getElementById('loginActivityPlayer').value='${player.replace(/'/g,"\\'")}';loadLoginActivity()">${player}</td>

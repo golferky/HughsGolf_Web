@@ -29,7 +29,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260627.2'
+VERSION    = '20260627.6'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -104,6 +104,11 @@ def index():
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
     return resp
+
+
+@app.route('/version')
+def version():
+    return jsonify({'version': VERSION})
 
 
 @app.route('/HughsGolf.html')
@@ -416,23 +421,18 @@ def need_sub():
     if not gmail_user or not gmail_pw:
         return jsonify({'ok': False, 'error': 'Email not configured'}), 500
 
-    # Get secretary's email for CC
-    secretary_email = None
+    # Get all officers' emails for CC, plus developer BCC
+    officer_emails = []
+    developer_email = 'garyrscudder@gmail.com'
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        cur.execute("SELECT Secretary FROM LeagueParms WHERE Name=\"Hugh's\" AND Season=(SELECT MAX(Season) FROM LeagueParms WHERE Name=\"Hugh's\")")
-        sec_row = cur.fetchone()
-        secretary_name = sec_row['Secretary'] if sec_row else None
-        if secretary_name:
-            cur.execute("SELECT Email FROM Players WHERE Player=?", (secretary_name,))
-            sec_email_row = cur.fetchone()
-            if sec_email_row:
-                secretary_email = sec_email_row['Email']
+        cur.execute("SELECT Email FROM Players WHERE Officer IN ('Secretary','President') AND Login='Y' AND Email IS NOT NULL AND Email != ''")
+        officer_emails = [r['Email'] for r in cur.fetchall()]
         conn.close()
     except Exception as e:
-        print(f'need_sub secretary lookup error: {e}')
+        print(f'need_sub officer lookup error: {e}')
 
     subject = f"Hugh's Golf League — Sub Needed for {date}"
     sent_count = 0
@@ -461,15 +461,16 @@ def need_sub():
                     msg = MIMEMultipart()
                     msg['From']    = gmail_user
                     msg['To']      = r['Email']
-                    if secretary_email and secretary_email != r['Email']:
-                        msg['Cc'] = secretary_email
+                    cc_list = [e for e in officer_emails if e != r['Email']]
+                    if cc_list:
+                        msg['Cc'] = ', '.join(cc_list)
                     msg['Subject'] = subject
                     msg.attach(MIMEText(message, 'plain'))
                     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
                         server.login(gmail_user, gmail_pw)
-                        recipients_list = [r['Email']]
-                        if secretary_email and secretary_email != r['Email']:
-                            recipients_list.append(secretary_email)
+                        recipients_list = [r['Email']] + cc_list
+                        if developer_email and developer_email not in recipients_list:
+                            recipients_list.append(developer_email)
                         server.sendmail(gmail_user, recipients_list, msg.as_string())
                     sent_this_one = True
                     email_count += 1
