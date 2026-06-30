@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.14</span>
+    <span id="appVersionDisplay">v20260627.15</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -4743,14 +4743,26 @@ async function checkServerVersion() {
     const { version } = await resp.json();
     const currentVersion = document.getElementById('appVersionDisplay')?.textContent?.trim();
     if (version && currentVersion && version !== currentVersion) {
-      let banner = document.getElementById('versionUpdateBanner');
-      if (!banner) {
-        banner = document.createElement('div');
-        banner.id = 'versionUpdateBanner';
-        banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#1a472a;color:white;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;z-index:9999;font-size:13px;box-shadow:0 -2px 8px rgba(0,0,0,0.3)';
-        banner.innerHTML = `<span>🔄 A new version (${version}) is available. Reload to get the latest.</span>
-          <button onclick="location.reload(true)" style="padding:6px 16px;background:white;color:#1a472a;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">Reload Now</button>`;
-        document.body.appendChild(banner);
+      // Remove subtle banner if it exists
+      const oldBanner = document.getElementById('versionUpdateBanner');
+      if (oldBanner) oldBanner.remove();
+
+      // Show blocking modal
+      let modal = document.getElementById('versionUpdateModal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'versionUpdateModal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:99999;display:flex;align-items:center;justify-content:center';
+        modal.innerHTML = `
+          <div style="background:white;border-radius:12px;padding:32px;max-width:400px;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,0.4)">
+            <div style="font-size:40px;margin-bottom:12px">🔄</div>
+            <div style="font-family:'Bebas Neue',cursive;font-size:26px;color:#1a472a;margin-bottom:8px">Update Required</div>
+            <div style="font-size:14px;color:#444;margin-bottom:8px">A newer version of Hugh's Golf League is available.</div>
+            <div style="font-size:12px;color:#888;margin-bottom:24px">Your version: <strong>${currentVersion}</strong> → New version: <strong>v${version}</strong></div>
+            <div style="font-size:12px;color:#c62828;margin-bottom:20px;font-weight:600">⚠ Please reload now to avoid issues with stale data or features.</div>
+            <button onclick="location.reload(true)" style="width:100%;padding:12px;background:#1a472a;color:white;border:none;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">Reload Now</button>
+          </div>`;
+        document.body.appendChild(modal);
       }
     }
   } catch(e) { /* ignore network errors */ }

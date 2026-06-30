@@ -29,7 +29,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260627.7'
+VERSION    = '20260627.8'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -108,7 +108,15 @@ def index():
 
 @app.route('/version')
 def version():
-    return jsonify({'version': VERSION})
+    try:
+        import re
+        with open(os.path.join(BASE_DIR, 'HughsGolf.html'), 'r') as f:
+            content = f.read(2000)  # only need the top of the file
+        match = re.search(r'v(2026\d+\.\d+)', content)
+        html_version = match.group(1) if match else VERSION
+    except Exception:
+        html_version = VERSION
+    return jsonify({'version': html_version})
 
 
 @app.route('/HughsGolf.html')
