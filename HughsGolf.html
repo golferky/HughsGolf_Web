@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260627.18</span>
+    <span id="appVersionDisplay">v20260627.20</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -627,7 +627,6 @@
     <div class="half-tabs" id="halfTabs" style="display:none">
       <div class="half-tab active" data-half="1">1st Half</div>
       <div class="half-tab" data-half="2">2nd Half</div>
-      <div class="half-tab" data-half="full">Full Season</div>
     </div>
     <div class="card">
       <div class="card-header">
@@ -2433,6 +2432,22 @@ function loadStandings() {
   const isSplit = lp?.SplitSeason === 'Y';
   document.getElementById('halfTabs').style.display = isSplit ? 'flex' : 'none';
 
+  // Auto-detect current half based on today's date vs midpoint
+  if (isSplit && year == new Date().getFullYear()) {
+    const todayInt2 = (() => { const d = new Date(); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); })();
+    const sched2 = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= '${year}0101' AND Date < '${parseInt(year)+1}0101' ORDER BY Date`);
+    const mid2 = sched2.length ? parseInt(sched2[Math.floor(sched2.length/2)].sDate) : null;
+    if (mid2) {
+      const detectedHalf = todayInt2 < mid2 ? '1' : '2';
+      if (currentHalf !== detectedHalf) {
+        currentHalf = detectedHalf;
+        document.querySelectorAll('.half-tab').forEach(t => {
+          t.classList.toggle('active', t.dataset.half === currentHalf);
+        });
+      }
+    }
+  }
+
   // Get schedule dates for this year to determine split point
   const schedDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= '${year}0101' AND Date < '${parseInt(year)+1}0101' ORDER BY Date`);
   const midDate = schedDates.length ? schedDates[Math.floor(schedDates.length/2)].sDate : null;
@@ -2447,7 +2462,7 @@ function loadStandings() {
 
   document.getElementById('standTitle').textContent = view === 'team' ? 'Team Standings' : 'Individual Standings';
   makeSortable('standTable');
-  document.getElementById('standSubtitle').textContent = year + (isSplit ? ` · ${currentHalf === 'full' ? 'Full Season' : currentHalf==='1' ? '1st Half' : '2nd Half'}` : '') + (asOf ? ` · As of ${fmtDate(asOf)}` : '');
+  document.getElementById('standSubtitle').textContent = year + (isSplit ? ` · ${currentHalf==='1' ? '1st Half' : '2nd Half'}` : '') + (asOf ? ` · As of ${fmtDate(asOf)}` : '');
 
   const tb = tbody('standTable');
 
@@ -3087,10 +3102,10 @@ function loadMatchesTab() {
 
 // ── STABLEFORD ──
 // ── LEADERS ──────────────────────────────────────────────────────────────────
-function leaderCard(cardId, title, rows, valueKey, valueFmt, unit='', clickable=false) {
+function leaderCard(cardId, title, rows, valueKey, valueFmt, unit='', clickable=false, defaultSortDir='desc') {
   // Store raw rows + render config for re-sorting on header click
   window._leaderCardData = window._leaderCardData || {};
-  window._leaderCardData[cardId] = { rows, valueKey, valueFmt, unit, clickable, sortDir: window._leaderCardData?.[cardId]?.sortDir || 'desc', sortBy: window._leaderCardData?.[cardId]?.sortBy || 'value' };
+  window._leaderCardData[cardId] = { rows, valueKey, valueFmt, unit, clickable, sortDir: window._leaderCardData?.[cardId]?.sortDir || defaultSortDir, sortBy: window._leaderCardData?.[cardId]?.sortBy || 'value' };
 
   return `
     <div class="card">
@@ -3288,18 +3303,18 @@ function loadLeaders() {
   grid.innerHTML = [
     leaderCard('rounds', 'Rounds Played', filterRegulars(roundsRows), 'cnt', v => v),
     leaderCard('points', 'Points', filterRegulars(pointsRows), 'total', v => parseFloat(v).toFixed(1)),
-    leaderCard('f9', 'F9 Avg', filterRegulars(f9Rows), 'avg', v => parseFloat(v).toFixed(1)),
-    leaderCard('b9', 'B9 Avg', filterRegulars(b9Rows), 'avg', v => parseFloat(v).toFixed(1)),
-    leaderCard('avggross', 'Avg Gross', filterRegulars(avgGrossRows), 'avg', v => parseFloat(v).toFixed(1)),
+    leaderCard('f9', 'F9 Avg', filterRegulars(f9Rows), 'avg', v => parseFloat(v).toFixed(1), '', false, 'asc'),
+    leaderCard('b9', 'B9 Avg', filterRegulars(b9Rows), 'avg', v => parseFloat(v).toFixed(1), '', false, 'asc'),
+    leaderCard('avggross', 'Avg Gross', filterRegulars(avgGrossRows), 'avg', v => parseFloat(v).toFixed(1), '', false, 'asc'),
     leaderCard('totalmoney', 'Total $ Earned', filterRegulars(totalMoneyRows), 'total', v => '$'+parseFloat(v).toFixed(0)),
     leaderCard('skinswon', 'Skins Won', filterRegulars(skinsWonRows), 'cnt', v => v),
     leaderCard('ctpswon', 'CTPs Won', filterRegulars(ctpsWonRows), 'cnt', v => v),
     leaderCard('eagles', 'Eagles', filterRegulars(holeStatRows('eagle')), 'cnt', v => v),
     leaderCard('birdies', 'Birdies', filterRegulars(holeStatRows('birdie')), 'cnt', v => v),
     leaderCard('pars', 'Pars', filterRegulars(holeStatRows('par')), 'cnt', v => v),
-    leaderCard('bogeys', 'Bogeys', filterRegulars(holeStatRows('bogey')), 'cnt', v => v),
-    leaderCard('dbogeys', 'DoubleBogeys', filterRegulars(holeStatRows('dbogey')), 'cnt', v => v),
-    leaderCard('others', 'Others', filterRegulars(holeStatRows('other')), 'cnt', v => v),
+    leaderCard('bogeys', 'Bogeys', filterRegulars(holeStatRows('bogey')), 'cnt', v => v, '', false, 'asc'),
+    leaderCard('dbogeys', 'DoubleBogeys', filterRegulars(holeStatRows('dbogey')), 'cnt', v => v, '', false, 'asc'),
+    leaderCard('others', 'Others', filterRegulars(holeStatRows('other')), 'cnt', v => v, '', false, 'asc'),
     leaderCard('noshows', 'No Shows', filterRegulars(noShowRows), 'cnt', v => v, '', true),
   ].join('');
 }
@@ -6464,6 +6479,7 @@ async function loginSuccess(player) {
 
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('loggedInUser').textContent = `👤 ${currentUser.name}`;
+  document.title = `Hugh's Golf League — ${currentUser.name}`;
   document.getElementById('loggedInUser').style.display = '';
   document.getElementById('logoutBtn').style.display = '';
   document.getElementById('changePwBtn').style.display = '';
@@ -6597,6 +6613,7 @@ async function doChangePw() {
 }
 
 function logoutUser(reason) {
+  document.title = "Hugh's Golf League";
   // Log the logout/timeout event before clearing currentUser
   if (currentUser) {
     try {
