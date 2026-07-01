@@ -355,21 +355,27 @@ def verify_reset():
 
 @app.route('/notify-login', methods=['POST'])
 def notify_login():
-    """Email the developer whenever someone logs in, with their version."""
+    """Email the developer whenever someone logs in. On a player's first-ever
+    login, also send a distinct email subject and a text via the developer's
+    carrier SMS gateway."""
     body = request.get_json() or {}
-    player  = body.get('player', 'Unknown')
-    role    = body.get('role', 'unknown')
-    version = body.get('version', 'unknown')
-    ip      = body.get('ip', 'unknown')
+    player      = body.get('player', 'Unknown')
+    role        = body.get('role', 'unknown')
+    version     = body.get('version', 'unknown')
+    ip          = body.get('ip', 'unknown')
+    first_login = bool(body.get('firstLogin', False))
 
     gmail_user, gmail_pw = get_gmail_creds()
     if not gmail_user or not gmail_pw:
         return jsonify({'ok': False, 'error': 'Email not configured'}), 500
 
     dev_email = 'garyrscudder@gmail.com'
-    subject = f"HughsGolf activity log"
+    subject = f"🎉 First login: {player}" if first_login else "HughsGolf activity log"
     body_text = f"""{player} ({role}) logged in — v{version}, ip={ip}, {datetime.datetime.now():%Y-%m-%d %H:%M:%S}
 """
+    sent_to = []
+    errors = []
+
     try:
         msg = MIMEText(body_text)
         msg['From'] = gmail_user
@@ -378,10 +384,45 @@ def notify_login():
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(gmail_user, gmail_pw)
             server.send_message(msg)
-        return jsonify({'ok': True})
+        sent_to.append('email')
     except Exception as e:
-        print(f'notify_login error: {e}')
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        print(f'notify_login email error: {e}')
+        errors.append(f'Email failed: {e}')
+
+    if first_login:
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute("SELECT Phone, CellCarrier FROM Players WHERE Officer='Developer' LIMIT 1")
+            dev_row = cur.fetchone()
+            conn.close()
+        except Exception as e:
+            dev_row = None
+            errors.append(f'Developer lookup failed: {e}')
+
+        if dev_row and dev_row['Phone'] and dev_row['CellCarrier']:
+            addr, err = sms_address(dev_row['Phone'], dev_row['CellCarrier'])
+            if addr:
+                try:
+                    sms_body = f"HughsGolf: {player} ({role}) just logged in for the first time!"
+                    sms_msg = MIMEText(sms_body)
+                    sms_msg['From'] = gmail_user
+                    sms_msg['To'] = addr
+                    sms_msg['Subject'] = "HughsGolf"
+                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                        server.login(gmail_user, gmail_pw)
+                        server.send_message(sms_msg)
+                    sent_to.append('sms')
+                except Exception as e:
+                    print(f'notify_login sms error: {e}')
+                    errors.append(f'SMS failed: {e}')
+            else:
+                errors.append(err)
+        else:
+            errors.append('Developer phone/carrier not set in Players table')
+
+    return jsonify({'ok': len(errors) == 0, 'sentTo': sent_to, 'errors': errors})
 
 
 @app.route('/flask-log')

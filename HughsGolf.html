@@ -946,19 +946,28 @@
   <!-- SQL -->
   <!-- ADMIN -->
   <div class="section" id="tab-admin">
-    <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;position:sticky;top:0;background:var(--cream);z-index:50;padding:10px 0">
+    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center;position:sticky;top:0;background:var(--cream);z-index:50;padding:10px 0">
       <button onclick="showAdminSection('players')" id="adminBtnPlayers" class="admin-btn active-admin-btn">👤 Players</button>
       <button onclick="showAdminSection('teams')" id="adminBtnTeams" class="admin-btn">⛳ Teams</button>
       <button onclick="showAdminSection('subs')" id="adminBtnSubs" class="admin-btn">🔄 Subs</button>
-      <button onclick="showAdminSection('sql')" id="adminBtnSql" class="admin-btn">🔍 SQL</button>
-      <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
-      <button onclick="showAdminSection('serverlog')" id="adminBtnServerlog" class="admin-btn">📋 Server Log</button>
-      <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">Backups</button>
-      <button onclick="triggerRedeploy()" id="adminBtnRedeploy" class="admin-btn dev-only" style="background:#e65100;color:white">🚀 Redeploy</button>
-      <button onclick="showAdminSection('loginactivity')" id="adminBtnLoginactivity" class="admin-btn">🔑 Login Activity</button>
-      <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-btn">⚙ League Settings</button>
       <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
+
+      <span style="width:1px;align-self:stretch;background:#ddd;margin:0 6px"></span>
+
+      <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
+      <button onclick="showAdminSection('sql')" id="adminBtnSql" class="admin-btn">🔍 SQL</button>
       <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
+
+      <span style="width:1px;align-self:stretch;background:#ddd;margin:0 6px"></span>
+
+      <button onclick="showAdminSection('loginactivity')" id="adminBtnLoginactivity" class="admin-btn">🔑 Login Activity</button>
+      <button onclick="showAdminSection('serverlog')" id="adminBtnServerlog" class="admin-btn">📋 Server Log</button>
+      <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">💾 Backups</button>
+
+      <span style="width:1px;align-self:stretch;background:#ddd;margin:0 6px"></span>
+
+      <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-btn">⚙ League Settings</button>
+      <button onclick="triggerRedeploy()" id="adminBtnRedeploy" class="admin-btn dev-only" style="background:#e65100;color:white">🚀 Redeploy</button>
     </div>
 
     <!-- PLAYERS SECTION -->
@@ -1302,10 +1311,11 @@
           </select>
         </div>
       </div>
-      <div style="display:flex;gap:20px;margin-bottom:16px">
+      <div style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="pmEmailStats" checked> Email Stats</label>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="pmTextStats"> Text Stats</label>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="pmLogin"> Login Access</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="pmBlockSubs"> 🚫 Don't ask to sub</label>
       </div>
       <div id="pmPasswordSection" style="margin-bottom:16px;padding:12px;background:#f5f0e8;border-radius:6px">
         <label style="font-size:11px;font-weight:600;color:var(--gray)">SET/RESET PASSWORD <span style="font-weight:400;color:#999">(leave blank to keep existing)</span></label>
@@ -5069,6 +5079,7 @@ function showNeedSub() {
       (SELECT COUNT(*) FROM Scores s WHERE s.Player = p.Player AND s.League="Hugh's" AND s.Date >= ${season}0101) as PlayedCount
     FROM Players p
     WHERE p.Player NOT IN (SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season})
+      AND COALESCE(p.BlockSubs,'N') != 'Y'
     ORDER BY PlayedCount DESC, p.Player
   `);
   const listEl = document.getElementById('needSubList');
@@ -6498,6 +6509,17 @@ async function loginSuccess(player) {
   const deviceInfo = detectDevice();
   let loginIp = 'unknown';
   try { loginIp = (await (await fetch('/get-ip')).json()).ip || 'unknown'; } catch(e) { /* ignore */ }
+
+  // Check for first-ever login before we touch anything else
+  let isFirstLogin = false;
+  try {
+    const flCheck = query(`SELECT FirstLoginAt FROM Players WHERE Player = ?`, [player.Player]);
+    isFirstLogin = !flCheck.length || !flCheck[0].FirstLoginAt;
+    if (isFirstLogin) {
+      serverRun(`UPDATE Players SET FirstLoginAt = ? WHERE Player = ?`, [now, player.Player]);
+    }
+  } catch(e) { console.warn('First-login check failed:', e); }
+
   try {
     serverRun(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
       [now, 'INFO', 'login', 'HughsGolf', `${player.Player} logged in`, `role=${currentUser.role} version=${appVersion} ip=${loginIp} device=${deviceInfo}`, now]);
@@ -6509,7 +6531,7 @@ async function loginSuccess(player) {
     fetch('/notify-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ player: player.Player, role: currentUser.role, version: appVersion, ip: loginIp })
+      body: JSON.stringify({ player: player.Player, role: currentUser.role, version: appVersion, ip: loginIp, firstLogin: isFirstLogin })
     }).catch(() => {});
   }
 
@@ -7156,6 +7178,7 @@ function openPlayerModal(name) {
   document.getElementById('pmEmailStats').checked = true;
   document.getElementById('pmTextStats').checked = false;
   document.getElementById('pmLogin').checked = true;
+  document.getElementById('pmBlockSubs').checked = false;
   document.getElementById('pmPassword1').value = '';
   document.getElementById('pmPassword2').value = '';
   document.getElementById('pmPasswordHasOne').textContent = '';
@@ -7196,6 +7219,7 @@ function editPlayer(name) {
   document.getElementById('pmEmailStats').checked = r.EmailStats==='Y';
   document.getElementById('pmTextStats').checked = r.TextStats==='Y';
   document.getElementById('pmLogin').checked = r.Login==='Y';
+  document.getElementById('pmBlockSubs').checked = r.BlockSubs==='Y';
   document.getElementById('pmPassword1').value = '';
   document.getElementById('pmPassword2').value = '';
   const hasPw = r.Password ? true : false;
@@ -7395,6 +7419,7 @@ async function savePlayer() {
   const emailStats= document.getElementById('pmEmailStats').checked ? 'Y' : 'N';
   const textStats = document.getElementById('pmTextStats').checked ? 'Y' : 'N';
   const loginAccess = document.getElementById('pmLogin').checked ? 'Y' : 'N';
+  const blockSubs = document.getElementById('pmBlockSubs').checked ? 'Y' : 'N';
   const fullName  = `${firstName} ${lastName}`.trim();
   const pw1 = document.getElementById('pmPassword1').value;
   const pw2 = document.getElementById('pmPassword2').value;
@@ -7419,6 +7444,7 @@ async function savePlayer() {
       'Email Stats': o.EmailStats,
       'Text Stats': o.TextStats,
       'Login Access': o.Login,
+      "Don't Ask to Sub": o.BlockSubs,
     }, {
       'First Name': firstName,
       'Last Name': lastName,
@@ -7429,6 +7455,7 @@ async function savePlayer() {
       'Email Stats': emailStats,
       'Text Stats': textStats,
       'Login Access': loginAccess,
+      "Don't Ask to Sub": blockSubs,
     });
     if (!proceed) return;
   }
@@ -7449,10 +7476,10 @@ async function savePlayer() {
           em = email.replace(/'/g,"''"), ph = phone.replace(/'/g,"''"),
           ca = carrier.replace(/'/g,"''"), on = originalName.replace(/'/g,"''"),
           fu = fullName.replace(/'/g,"''");
-    await runSqlPlayer(`UPDATE Players SET FirstName='${fn}',LastName='${ln}',Player='${fu}',Email='${em}',Phone='${ph}',CellCarrier='${ca}',EmailStats='${emailStats}',TextStats='${textStats}',Login='${loginAccess}' WHERE Player='${on}'`);
+    await runSqlPlayer(`UPDATE Players SET FirstName='${fn}',LastName='${ln}',Player='${fu}',Email='${em}',Phone='${ph}',CellCarrier='${ca}',EmailStats='${emailStats}',TextStats='${textStats}',Login='${loginAccess}',BlockSubs='${blockSubs}' WHERE Player='${on}'`);
     // Also update local memory for immediate UI
-    serverRun(`UPDATE Players SET FirstName=?,LastName=?,Player=?,Email=?,Phone=?,CellCarrier=?,EmailStats=?,TextStats=?,Login=? WHERE Player=?`,
-      [firstName,lastName,fullName,email,phone,carrier,emailStats,textStats,loginAccess,originalName]);
+    serverRun(`UPDATE Players SET FirstName=?,LastName=?,Player=?,Email=?,Phone=?,CellCarrier=?,EmailStats=?,TextStats=?,Login=?,BlockSubs=? WHERE Player=?`,
+      [firstName,lastName,fullName,email,phone,carrier,emailStats,textStats,loginAccess,blockSubs,originalName]);
     // Update password if provided
     if (pw1) {
       const hash = await hashPassword(pw1);
@@ -7500,9 +7527,9 @@ async function savePlayer() {
     const fn = firstName.replace(/'/g,"''"), ln = lastName.replace(/'/g,"''"),
           em = email.replace(/'/g,"''"), ph = phone.replace(/'/g,"''"),
           ca = carrier.replace(/'/g,"''"), fu = fullName.replace(/'/g,"''");
-    await runSqlPlayer(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login) VALUES ('${fn}','${ln}','${fu}','${em}','${ph}','${ca}','${emailStats}','${textStats}','${loginAccess}')`);
-    serverRun(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login) VALUES (?,?,?,?,?,?,?,?,?)`,
-      [firstName,lastName,fullName,email,phone,carrier,emailStats,textStats,loginAccess]);
+    await runSqlPlayer(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login,BlockSubs) VALUES ('${fn}','${ln}','${fu}','${em}','${ph}','${ca}','${emailStats}','${textStats}','${loginAccess}','${blockSubs}')`);
+    serverRun(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login,BlockSubs) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [firstName,lastName,fullName,email,phone,carrier,emailStats,textStats,loginAccess,blockSubs]);
     if (pw1) {
       const hash = await hashPassword(pw1);
       const hashEsc = hash.replace(/'/g,"''");
