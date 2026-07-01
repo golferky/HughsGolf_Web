@@ -29,7 +29,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260627.11'
+VERSION    = '20260701.1'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
