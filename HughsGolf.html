@@ -456,11 +456,12 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260701.1</span>
+    <span id="appVersionDisplay">v20260701.2</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
+  <span id="profileAlertBadge" onclick="showProfileAlertList()" style="display:none;font-size:12px;color:#ffcc80;background:#4a2f00;border:1px solid #ffcc80;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px;cursor:pointer">⚠ 0 players need info</span>
   <div class="header-right">
     <span id="loggedInUser" onclick="showMyProfile()" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px;cursor:pointer;text-decoration:underline" title="View my profile"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -470,6 +471,16 @@
     <input type="file" id="fileInput" accept=".db,.sqlite,.sqlite3">
   </div>
 </header>
+
+<!-- PROFILE ALERT MODAL -->
+<div id="profileAlertModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9500;align-items:center;justify-content:center">
+  <div style="background:white;border-radius:12px;padding:24px;max-width:420px;width:90%;max-height:70vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.4)">
+    <div style="font-family:'Bebas Neue',cursive;font-size:22px;color:#1a472a;margin-bottom:4px">Players Needing Info</div>
+    <div style="font-size:12px;color:#888;margin-bottom:14px">Flagged during this session — click Edit to fix.</div>
+    <div id="profileAlertList"></div>
+    <button onclick="document.getElementById('profileAlertModal').style.display='none'" style="width:100%;margin-top:14px;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Close</button>
+  </div>
+</div>
 
 <!-- CHANGE PASSWORD MODAL -->
 <div id="changePwModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
@@ -498,7 +509,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260701.1</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260701.2</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -7539,6 +7550,7 @@ async function savePlayer() {
   }
   closePlayerModal();
   loadAdminPlayers();
+  clearProfileAlertIfComplete(fullName);
   saveDBToServer();
 }
 
@@ -9302,6 +9314,7 @@ function onScoreInput(e) {
 
 // ── Player Profile Completion Check ──────────────────────────────────────────
 const _profileCheckedThisSession = new Set();
+const _incompleteProfiles = new Map(); // playerName -> { missingContact: [], neverLoggedIn: bool }
 
 function checkPlayerProfileCompletion(playerName) {
   // Only for admin/officer roles
@@ -9322,21 +9335,54 @@ function checkPlayerProfileCompletion(playerName) {
   const logins = query(`SELECT COUNT(*) as cnt FROM LogTable WHERE method='login' AND text LIKE ?`, [playerName + '%'])[0];
   const neverLoggedIn = !logins || logins.cnt === 0;
 
-  // Case 1: Missing contact info -> prompt to edit
-  if (missingContact.length) {
-    const msg = `${playerName} is missing some contact info:\n\n` +
-      missingContact.join('\n') +
-      (neverLoggedIn ? '\n🔑 Has never logged into the website' : '') +
-      '\n\nWould you like to update their profile now?';
-    if (confirm(msg)) {
-      editPlayer(playerName);
-    }
-    return;
+  if (missingContact.length || neverLoggedIn) {
+    _incompleteProfiles.set(playerName, { missingContact, neverLoggedIn });
+    updateProfileAlertBadge();
   }
+}
 
-  // Case 2: Contact info complete but never logged in -> just a reminder
-  if (neverLoggedIn) {
-    alert(`Reminder: ${playerName} has never logged into the HughsGolf website.\n\nYou may want to remind them to set up their login when you get a chance.`);
+function updateProfileAlertBadge() {
+  const badge = document.getElementById('profileAlertBadge');
+  if (!badge) return;
+  const count = _incompleteProfiles.size;
+  if (count > 0) {
+    badge.textContent = `⚠ ${count} player${count===1?'':'s'} need${count===1?'s':''} info`;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function showProfileAlertList() {
+  const listEl = document.getElementById('profileAlertList');
+  if (!_incompleteProfiles.size) {
+    listEl.innerHTML = '<div style="color:#999;font-size:13px">All clear.</div>';
+  } else {
+    let html = '';
+    for (const [name, info] of _incompleteProfiles) {
+      const reasons = [...info.missingContact];
+      if (info.neverLoggedIn) reasons.push('🔑 Never logged in');
+      html += `
+        <div style="border-bottom:1px solid #eee;padding:10px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div>
+            <div style="font-weight:600;font-size:13px">${name}</div>
+            <div style="font-size:11px;color:#888;line-height:1.6">${reasons.join('<br>')}</div>
+          </div>
+          <button onclick="document.getElementById('profileAlertModal').style.display='none';editPlayer('${name.replace(/'/g,"\\'")}')" style="padding:5px 12px;background:#1565c0;color:white;border:none;border-radius:5px;cursor:pointer;font-size:11px;white-space:nowrap">Edit</button>
+        </div>`;
+    }
+    listEl.innerHTML = html;
+  }
+  document.getElementById('profileAlertModal').style.display = 'flex';
+}
+
+// Remove a player from the alert list once their profile is saved complete
+function clearProfileAlertIfComplete(playerName) {
+  if (!_incompleteProfiles.has(playerName)) return;
+  const p = query(`SELECT Email, Phone, CellCarrier FROM Players WHERE Player=?`, [playerName])[0];
+  if (p && p.Email && p.Phone && p.CellCarrier) {
+    _incompleteProfiles.delete(playerName);
+    updateProfileAlertBadge();
   }
 }
 
