@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260701.5</span>
+    <span id="appVersionDisplay">v20260701.6</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -509,7 +509,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260701.5</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260701.6</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1814,11 +1814,13 @@ async function serverRun(sql, params=[]) {
   try { db.run(sql, params); } catch(e) { console.warn('serverRun local failed:', e); }
   const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || '';
   if (sessionToken) {
-    fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ sql: serverSql, sessionToken }) })
-      .then(r => r.json())
-      .then(j => { if (!j.ok) console.warn('serverRun server failed:', serverSql, j.error); })
-      .catch(e => console.warn('serverRun server error:', e));
+    ensureSaveToken().then(token => {
+      fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':token},
+        body: JSON.stringify({ sql: serverSql, sessionToken }) })
+        .then(r => r.json())
+        .then(j => { if (!j.ok) console.warn('serverRun server failed:', serverSql, j.error); })
+        .catch(e => console.warn('serverRun server error:', e));
+    }).catch(e => console.warn('serverRun token error:', e));
   }
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3000,7 +3002,7 @@ async function calcMatchesForDate(date) {
   const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || '';
   async function runSql(sql) {
     try {
-      const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ sql, sessionToken }) });
+      const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':SAVE_TOKEN}, body: JSON.stringify({ sql, sessionToken }) });
       const json = await resp.json();
       if (!json.ok) console.warn('calcMatches runSql failed:', json.error);
     } catch(e) { console.warn('calcMatches runSql error:', e); }
@@ -5200,7 +5202,7 @@ async function doNeedSub() {
       const logSql = `INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES ('${logTime}','INFO','needSub','HughsGolf','${(currentUser.name + ' requested a sub for ' + forPlayer + ' on ' + date).replace(/'/g,"''")}','recipients=${selected.join(',').replace(/'/g,"''")} sent=${json.sent_count}','${logTime}')`;
       const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || '';
       try {
-        await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ sql: logSql, sessionToken }) });
+        await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':SAVE_TOKEN}, body: JSON.stringify({ sql: logSql, sessionToken }) });
       } catch(e) {
         // Fallback to local write
         serverRun(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
@@ -7526,7 +7528,7 @@ async function savePlayer() {
   const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || '';
   async function runSqlPlayer(sql) {
     try {
-      const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ sql, sessionToken }) });
+      const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':SAVE_TOKEN}, body: JSON.stringify({ sql, sessionToken }) });
       const json = await resp.json();
       if (!json.ok) console.warn('runSqlPlayer failed:', sql, json.error);
       return json.ok;
@@ -7573,7 +7575,7 @@ async function savePlayer() {
       let allOk = true;
       for (const sql of cascadeStatements) {
         try {
-          const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ sql, sessionToken }) });
+          const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':SAVE_TOKEN}, body: JSON.stringify({ sql, sessionToken }) });
           const json = await resp.json();
           if (!json.ok) { console.warn('Cascade SQL failed:', sql, json.error); allOk = false; }
         } catch(e) { console.warn('Cascade SQL error:', e); allOk = false; }
@@ -7825,8 +7827,8 @@ document.getElementById('sqlRun').addEventListener('click', () => {
       const logUser = window._currentPlayer || 'Admin';
       const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
       const sqlPreview = sql.length > 200 ? sql.substring(0,200) + '…' : sql;
-      serverRun(`INSERT INTO LogTable (log_time, method, player, text) VALUES (?, 'admin-sql', ?, ?)`,
-        [logTime, logUser, sqlPreview]);
+      serverRun(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?, 'INFO', 'admin-sql', 'SQLExplorer', ?, ?, ?)`,
+        [logTime, logUser, sqlPreview, logTime]);
     } catch(_) {}
     if (!results.length) { document.getElementById('sqlResults').innerHTML = '<div class="empty">No results</div>'; return; }
     const {columns, values} = results[0];
@@ -9116,7 +9118,7 @@ async function saveSkinWinnersForDate(date) {
   const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || '';
   async function runSql(sql) {
     try {
-      const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ sql, sessionToken }) });
+      const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':SAVE_TOKEN}, body: JSON.stringify({ sql, sessionToken }) });
       const json = await resp.json();
       if (!json.ok) console.warn('saveSkins runSql failed:', json.error);
     } catch(e) { console.warn('saveSkins runSql error:', e); }
@@ -9448,7 +9450,7 @@ async function savePlayerScoreNow(key, gross, net) {
 
   async function runSql(sql) {
     try {
-      const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ sql, sessionToken }) });
+      const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':SAVE_TOKEN}, body: JSON.stringify({ sql, sessionToken }) });
       const json = await resp.json();
       if (!json.ok) console.warn('runSql failed:', sql, json.error);
       return json.ok;
