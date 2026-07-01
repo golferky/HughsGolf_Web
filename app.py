@@ -17,9 +17,16 @@ import sys
 import threading
 import time
 import urllib.request
+from zoneinfo import ZoneInfo
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask import Flask, send_from_directory, request, jsonify
+
+EASTERN = ZoneInfo('America/New_York')
+
+def now_local():
+    """Current time in Eastern (handles EST/EDT automatically) — QNAP/server clocks run UTC."""
+    return datetime.datetime.now(EASTERN)
 
 app = Flask(__name__)
 
@@ -29,7 +36,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260701.1'
+VERSION    = '20260701.2'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -171,7 +178,7 @@ def redeploy():
             os.remove(sha_file)
         subprocess.run(['/share/CACHEDEV2_DATA/Web/auto_deploy.sh'], check=False)
     threading.Thread(target=do_deploy, daemon=True).start()
-    print(f'[{datetime.datetime.now():%H:%M:%S}] Manual redeploy triggered')
+    print(f'[{now_local():%H:%M:%S}] Manual redeploy triggered')
     return jsonify({'ok': True, 'message': 'Deploy triggered'})
 
 
@@ -193,7 +200,7 @@ def webhook():
         subprocess.run(['/share/CACHEDEV2_DATA/Web/auto_deploy.sh'], check=False)
 
     threading.Thread(target=do_deploy, daemon=True).start()
-    print(f'[{datetime.datetime.now():%H:%M:%S}] Webhook received — deploying...')
+    print(f'[{now_local():%H:%M:%S}] Webhook received — deploying...')
     return jsonify({'ok': True, 'message': 'Deploy triggered'})
 
 
@@ -248,7 +255,7 @@ def save_db():
             pass
 
     if os.path.exists(DB_PATH):
-        ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        ts = now_local().strftime('%Y%m%d_%H%M%S')
         backup = os.path.join(BACKUP_DIR, f'HughsGolf_{ts}.db')
         shutil.copy2(DB_PATH, backup)
         backups = sorted(
@@ -263,7 +270,7 @@ def save_db():
         f.write(data)
     os.replace(tmp, DB_PATH)
 
-    print(f'[{datetime.datetime.now():%H:%M:%S}] DB saved — {len(data):,} bytes')
+    print(f'[{now_local():%H:%M:%S}] DB saved — {len(data):,} bytes')
     return jsonify({'ok': True, 'bytes': len(data)})
 
 
@@ -293,7 +300,7 @@ def send_reset():
 
     # Generate 6-digit token
     token = ''.join(random.choices(string.digits, k=6))
-    expires = datetime.datetime.now() + datetime.timedelta(hours=1)
+    expires = now_local() + datetime.timedelta(hours=1)
     reset_tokens[player] = {'token': token, 'expires': expires}
 
     # Send email
@@ -324,7 +331,7 @@ If you did not request this, please ignore this email.
             server.login(gmail_user, gmail_pw)
             server.send_message(msg)
 
-        print(f'[{datetime.datetime.now():%H:%M:%S}] Reset email sent to {player_email} for {player}')
+        print(f'[{now_local():%H:%M:%S}] Reset email sent to {player_email} for {player}')
         return jsonify({'ok': True, 'email': player_email[:3] + '***' + player_email[player_email.index('@'):]})
 
     except Exception as e:
@@ -342,7 +349,7 @@ def verify_reset():
     entry = reset_tokens.get(player)
     if not entry:
         return jsonify({'ok': False, 'error': 'No reset request found. Please request a new code.'}), 400
-    if datetime.datetime.now() > entry['expires']:
+    if now_local() > entry['expires']:
         del reset_tokens[player]
         return jsonify({'ok': False, 'error': 'Code expired. Please request a new one.'}), 400
     if entry['token'] != token:
@@ -371,7 +378,7 @@ def notify_login():
 
     dev_email = 'garyrscudder@gmail.com'
     subject = f"🎉 First login: {player}" if first_login else "HughsGolf activity log"
-    body_text = f"""{player} ({role}) logged in — v{version}, ip={ip}, {datetime.datetime.now():%Y-%m-%d %H:%M:%S}
+    body_text = f"""{player} ({role}) logged in — v{version}, ip={ip}, {now_local():%Y-%m-%d %H:%M:%S}
 """
     sent_to = []
     errors = []
@@ -580,7 +587,7 @@ def need_sub():
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
-    print(f'[{datetime.datetime.now():%H:%M:%S}] Sub request from {player} for {date}: sent to {sent_count}/{len(recipients)} ({email_count} email, {sms_count} text)')
+    print(f'[{now_local():%H:%M:%S}] Sub request from {player} for {date}: sent to {sent_count}/{len(recipients)} ({email_count} email, {sms_count} text)')
     return jsonify({'ok': True, 'sent_count': sent_count, 'email_count': email_count, 'sms_count': sms_count, 'failed': failed, 'errors': errors})
 
 
@@ -683,7 +690,7 @@ You've received a payout of ${amount:.2f} from the {source}.
     if not sent_to:
         return jsonify({'ok': False, 'error': '; '.join(errors) or 'No email or phone on file'}), 404
 
-    print(f'[{datetime.datetime.now():%H:%M:%S}] Payout notification sent to {player} via {", ".join(sent_to)}')
+    print(f'[{now_local():%H:%M:%S}] Payout notification sent to {player} via {", ".join(sent_to)}')
     return jsonify({'ok': True, 'sent_to': sent_to, 'errors': errors})
 
 
@@ -783,7 +790,7 @@ def fetch_gallus():
         nine = nine[:9]
         result_players.append({'name': p['name'], 'scores': nine})
 
-    print(f'[{datetime.datetime.now():%H:%M:%S}] Gallus import: {len(result_players)} players, {front_back}')
+    print(f'[{now_local():%H:%M:%S}] Gallus import: {len(result_players)} players, {front_back}')
     return jsonify({'ok': True, 'players': result_players, 'frontBack': front_back})
 
 
@@ -814,7 +821,7 @@ def run_sql():
             conn.commit()
             rc = cur.rowcount
             conn.close()
-            print(f'[{datetime.datetime.now():%H:%M:%S}] run-sql: {sql[:80]} — {rc} row(s) affected')
+            print(f'[{now_local():%H:%M:%S}] run-sql: {sql[:80]} — {rc} row(s) affected')
             return jsonify({'ok': True, 'rowcount': rc})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
@@ -838,11 +845,11 @@ def update_duckdns():
                 url = f'https://www.duckdns.org/update?domains={domain}&token={token}&ip='
                 with urllib.request.urlopen(url, timeout=10) as resp:
                     result = resp.read().decode().strip()
-                    print(f'[{datetime.datetime.now():%H:%M:%S}] DuckDNS update ({domain}.duckdns.org): {result}')
+                    print(f'[{now_local():%H:%M:%S}] DuckDNS update ({domain}.duckdns.org): {result}')
             else:
-                print(f'[{datetime.datetime.now():%H:%M:%S}] DuckDNS not configured (no token/domain in LeagueParms)')
+                print(f'[{now_local():%H:%M:%S}] DuckDNS not configured (no token/domain in LeagueParms)')
         except Exception as e:
-            print(f'[{datetime.datetime.now():%H:%M:%S}] DuckDNS update error: {e}')
+            print(f'[{now_local():%H:%M:%S}] DuckDNS update error: {e}')
 
         time.sleep(300)  # every 5 minutes
 
@@ -872,9 +879,9 @@ def clear_stale_sessions():
             conn.commit()
             conn.close()
             if cleared > 0:
-                print(f'[{datetime.datetime.now():%H:%M:%S}] Cleared {cleared} stale session(s)')
+                print(f'[{now_local():%H:%M:%S}] Cleared {cleared} stale session(s)')
         except Exception as e:
-            print(f'[{datetime.datetime.now():%H:%M:%S}] Session cleanup error: {e}')
+            print(f'[{now_local():%H:%M:%S}] Session cleanup error: {e}')
 def run_server():
     print(f'HughsGolf server v{VERSION} starting on port {PORT}')
     print(f'DB path: {DB_PATH}')
