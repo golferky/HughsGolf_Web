@@ -36,7 +36,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260701.2'
+VERSION    = '20260701.3'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -272,6 +272,111 @@ def save_db():
 
     print(f'[{now_local():%H:%M:%S}] DB saved — {len(data):,} bytes')
     return jsonify({'ok': True, 'bytes': len(data)})
+
+
+@app.route('/backup-list')
+def backup_list():
+    """List available DB backups with per-date row counts across key tables."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    try:
+        limit = int(request.args.get('limit', 40))
+    except ValueError:
+        limit = 40
+
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        files = [f for f in os.listdir(BACKUP_DIR) if f.endswith('.db')]
+        files_full = [(f, os.path.join(BACKUP_DIR, f)) for f in files]
+        files_full.sort(key=lambda x: os.path.getmtime(x[1]), reverse=True)
+        files_full = files_full[:limit]
+
+        backups = []
+        for fname, fpath in files_full:
+            entry = {
+                'filename': fname,
+                'modified': datetime.datetime.fromtimestamp(os.path.getmtime(fpath), EASTERN).strftime('%Y-%m-%d %I:%M %p'),
+                'size': os.path.getsize(fpath),
+            }
+            try:
+                bconn = sqlite3.connect(fpath)
+                bconn.row_factory = sqlite3.Row
+                bcur = bconn.cursor()
+                bcur.execute("SELECT DISTINCT Date FROM Scores ORDER BY Date DESC LIMIT 3")
+                recent_dates = [r['Date'] for r in bcur.fetchall()]
+                dates = []
+                for d in recent_dates:
+                    counts = {'Date': d}
+                    for tbl, key in [('Scores','scores'),('Matches','matches'),('Payments','payments'),('Subs','subs'),('Handicaps','handicaps')]:
+                        try:
+                            bcur.execute(f"SELECT COUNT(*) as c FROM {tbl} WHERE Date=?", (d,))
+                            counts[key] = bcur.fetchone()['c']
+                        except Exception:
+                            counts[key] = 0
+                    dates.append(counts)
+                entry['dates'] = dates
+                bconn.close()
+            except Exception as e:
+                entry['error'] = f'Could not read: {e}'
+            backups.append(entry)
+
+        return jsonify({'ok': True, 'backups': backups})
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] backup_list error: {e}')
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/restore-backup', methods=['POST'])
+def restore_backup():
+    """Restore a backup file over the live DB, saving the current live DB first."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body = request.get_json() or {}
+    filename = os.path.basename(body.get('filename', ''))
+    if not filename:
+        return jsonify({'ok': False, 'error': 'No filename provided'}), 400
+    src = os.path.join(BACKUP_DIR, filename)
+    if not os.path.isfile(src):
+        return jsonify({'ok': False, 'error': 'Backup not found'}), 404
+
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        ts = now_local().strftime('%Y%m%d_%H%M%S')
+        safety_name = f'HughsGolf_{ts}_pre-restore.db'
+        safety_path = os.path.join(BACKUP_DIR, safety_name)
+        if os.path.exists(DB_PATH):
+            shutil.copy2(DB_PATH, safety_path)
+        shutil.copy2(src, DB_PATH)
+        print(f'[{now_local():%H:%M:%S}] Restored backup {filename} (safety copy: {safety_name})')
+        return jsonify({'ok': True, 'restored': filename, 'safetyBackup': safety_name})
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] restore_backup error: {e}')
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/delete-backup', methods=['POST'])
+def delete_backup():
+    """Permanently delete a backup file."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body = request.get_json() or {}
+    filename = os.path.basename(body.get('filename', ''))
+    if not filename:
+        return jsonify({'ok': False, 'error': 'No filename provided'}), 400
+    path = os.path.join(BACKUP_DIR, filename)
+    if not os.path.isfile(path):
+        return jsonify({'ok': False, 'error': 'Backup not found'}), 404
+
+    try:
+        os.remove(path)
+        print(f'[{now_local():%H:%M:%S}] Deleted backup {filename}')
+        return jsonify({'ok': True, 'deleted': filename})
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] delete_backup error: {e}')
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @app.route('/send-reset', methods=['POST'])
@@ -882,9 +987,32 @@ def clear_stale_sessions():
                 print(f'[{now_local():%H:%M:%S}] Cleared {cleared} stale session(s)')
         except Exception as e:
             print(f'[{now_local():%H:%M:%S}] Session cleanup error: {e}')
+def ensure_schema():
+    """One-time startup check: add columns that may be missing if the live DB
+    was ever replaced by an older backup (prevents silent recurring errors)."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(Players)")
+        cols = {row[1] for row in cur.fetchall()}
+        if 'ActiveSession' not in cols:
+            cur.execute("ALTER TABLE Players ADD COLUMN ActiveSession TEXT")
+            print(f'[{now_local():%H:%M:%S}] Schema check: added missing Players.ActiveSession column')
+        if 'FirstLoginAt' not in cols:
+            cur.execute("ALTER TABLE Players ADD COLUMN FirstLoginAt TEXT")
+            print(f'[{now_local():%H:%M:%S}] Schema check: added missing Players.FirstLoginAt column')
+        if 'BlockSubs' not in cols:
+            cur.execute("ALTER TABLE Players ADD COLUMN BlockSubs TEXT DEFAULT 'N'")
+            print(f'[{now_local():%H:%M:%S}] Schema check: added missing Players.BlockSubs column')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] Schema check error: {e}')
+
 def run_server():
     print(f'HughsGolf server v{VERSION} starting on port {PORT}')
     print(f'DB path: {DB_PATH}')
+    ensure_schema()
     threading.Thread(target=update_duckdns, daemon=True).start()
     threading.Thread(target=clear_stale_sessions, daemon=True).start()
     app.run(host='0.0.0.0', port=PORT, debug=False)
