@@ -456,7 +456,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260701.3</span>
+    <span id="appVersionDisplay">v20260701.5</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -509,7 +509,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260701.3</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260701.5</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1190,6 +1190,25 @@
       </div>
     </div>
     <div id="adminLoginactivity" style="display:none">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">📊 Login Counts</div>
+        <div style="padding:16px">
+          <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:4px;cursor:pointer;margin-bottom:10px">
+            <input type="checkbox" id="loginCountsShowDev" onchange="loadLoginActivity()" style="width:14px;height:14px">
+            Show Developer logins
+          </label>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr>
+              <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Player</th>
+              <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:right">Total Logins</th>
+              <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:right">Failed Logins</th>
+              <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:right">Timeouts</th>
+              <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Last Login</th>
+            </tr></thead>
+            <tbody id="loginCountsBody"></tbody>
+          </table>
+        </div>
+      </div>
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">🟢 Currently Logged In</div>
         <div style="padding:16px">
@@ -5297,6 +5316,39 @@ async function doKittyPayout() {
 // ── Server Log Viewer ─────────────────────────────────────────────────────────
 function loadLoginActivity() {
   if (!db) return;
+
+  // ── Login Counts (all-time, per player) ──────────────────────────────────
+  const countsShowDev = document.getElementById('loginCountsShowDev')?.checked;
+  const devDeveloperNames = countsShowDev ? [] : query(`SELECT Player FROM Players WHERE Officer='Developer'`).map(r => r.Player);
+  const loginCounts = query(`
+    SELECT REPLACE(text,' logged in','') as Player, COUNT(*) as cnt, MAX(log_time) as lastLogin
+    FROM LogTable WHERE method='login'
+    GROUP BY REPLACE(text,' logged in','')
+    ORDER BY lastLogin DESC
+  `).filter(r => countsShowDev || !devDeveloperNames.includes(r.Player));
+  const failedCountsByPlayer = {};
+  query(`SELECT text, COUNT(*) as cnt FROM LogTable WHERE method='login_failed' GROUP BY text`).forEach(r => {
+    failedCountsByPlayer[r.text] = r.cnt;
+  });
+  const timeoutCountsByPlayer = {};
+  query(`SELECT REPLACE(text,' session timed out','') as Player, COUNT(*) as cnt FROM LogTable WHERE method='session_timeout' GROUP BY REPLACE(text,' session timed out','')`).forEach(r => {
+    timeoutCountsByPlayer[r.Player] = r.cnt;
+  });
+  const countsEl = document.getElementById('loginCountsBody');
+  if (countsEl) {
+    if (!loginCounts.length) {
+      countsEl.innerHTML = '<tr><td colspan="5" style="padding:8px;color:#999;text-align:center;font-size:12px">No login history yet</td></tr>';
+    } else {
+      countsEl.innerHTML = loginCounts.map((r,i) => `
+        <tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
+          <td style="padding:6px 12px;font-weight:600">${r.Player}</td>
+          <td style="padding:6px 12px;text-align:right">${r.cnt}</td>
+          <td style="padding:6px 12px;text-align:right${(failedCountsByPlayer[r.Player]||0)>0?';color:#c62828':''}">${failedCountsByPlayer[r.Player] || 0}</td>
+          <td style="padding:6px 12px;text-align:right${(timeoutCountsByPlayer[r.Player]||0)>0?';color:#e65100':''}">${timeoutCountsByPlayer[r.Player] || 0}</td>
+          <td style="padding:6px 12px">${r.lastLogin || '—'}</td>
+        </tr>`).join('');
+    }
+  }
 
   // ── Currently Logged In ──────────────────────────────────────────────────
   const sessionsAvailable = activeSessionsEnabled();
