@@ -456,12 +456,13 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260701.6</span>
+    <span id="appVersionDisplay">v20260701.8</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
   <span id="profileAlertBadge" onclick="showProfileAlertList()" style="display:none;font-size:12px;color:#ffcc80;background:#4a2f00;border:1px solid #ffcc80;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px;cursor:pointer">⚠ 0 players need info</span>
+  <span id="syncFailBadge" style="display:none;font-size:12px;color:#fff;background:#c62828;border:1px solid #ff8a80;padding:5px 12px;border-radius:6px;font-weight:700;margin-left:12px"></span>
   <div class="header-right">
     <span id="loggedInUser" onclick="showMyProfile()" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px;cursor:pointer;text-decoration:underline" title="View my profile"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
@@ -509,7 +510,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260701.6</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260701.8</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1818,9 +1819,42 @@ async function serverRun(sql, params=[]) {
       fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':token},
         body: JSON.stringify({ sql: serverSql, sessionToken }) })
         .then(r => r.json())
-        .then(j => { if (!j.ok) console.warn('serverRun server failed:', serverSql, j.error); })
-        .catch(e => console.warn('serverRun server error:', e));
+        .then(j => { if (!j.ok) { console.warn('serverRun server failed:', serverSql, j.error); reportSyncFailure(serverSql, j.error); } })
+        .catch(e => { console.warn('serverRun server error:', e); reportSyncFailure(serverSql, String(e)); });
     }).catch(e => console.warn('serverRun token error:', e));
+  }
+}
+
+// ── Visible sync-failure indicator ────────────────────────────────────────
+// Unlike a console warning (which nobody sees), this stays on screen so a
+// failed save to the server can never happen invisibly to the person using it.
+let SYNC_FAILURES = 0;
+
+function esc(v) {
+  if (v === null || v === undefined) return 'NULL';
+  return `'${String(v).replace(/'/g,"''")}'`;
+}
+
+function reportSyncFailure(context, errMsg) {
+  SYNC_FAILURES++;
+  updateSyncFailBadge();
+  // Best-effort audit log so developers can review failures across all users later,
+  // even if this particular user never reports it themselves.
+  const now = new Date().toISOString().replace('T',' ').substring(0,19);
+  const sql = `INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (${esc(now)}, 'ERROR', 'sync_failed', ${esc(currentUser?.name || 'unknown')}, ${esc(String(context).substring(0,200))}, ${esc(String(errMsg).substring(0,300))}, ${esc(now)})`;
+  ensureSaveToken().then(token => {
+    fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':token}, body: JSON.stringify({ sql }) }).catch(()=>{});
+  }).catch(()=>{});
+}
+
+function updateSyncFailBadge() {
+  const badge = document.getElementById('syncFailBadge');
+  if (!badge) return;
+  if (SYNC_FAILURES > 0) {
+    badge.textContent = `⚠ ${SYNC_FAILURES} change${SYNC_FAILURES===1?'':'s'} failed to save — screenshot this and tell your league admin`;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
   }
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4851,16 +4885,43 @@ function showVersionUpdateModal(serverVersion, flaskVersion) {
   document.body.appendChild(modal);
 }
 
+let SERVER_DB_MODIFIED = null;
+
 async function checkServerVersion() {
   try {
     const resp = await fetch('/version?t=' + Date.now());
     if (!resp.ok) return;
-    const { version, flaskVersion } = await resp.json();
+    const { version, flaskVersion, dbModified } = await resp.json();
     const currentVersion = document.getElementById('appVersionDisplay')?.textContent?.trim();
     if (version && currentVersion && version !== currentVersion.replace(/^v/,'')) {
       showVersionUpdateModal(version, flaskVersion);
+      return;
+    }
+    if (dbModified) {
+      if (SERVER_DB_MODIFIED === null) {
+        SERVER_DB_MODIFIED = dbModified; // establish baseline on first check
+      } else if (dbModified > SERVER_DB_MODIFIED) {
+        SERVER_DB_MODIFIED = dbModified;
+        showDbUpdateModal();
+      }
     }
   } catch(e) { /* ignore network errors */ }
+}
+
+function showDbUpdateModal() {
+  if (document.getElementById('versionUpdateModal') || document.getElementById('dbUpdateModal')) return;
+  const modal = document.createElement('div');
+  modal.id = 'dbUpdateModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:99999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:12px;padding:32px;max-width:400px;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,0.4)">
+      <div style="font-size:40px;margin-bottom:12px">📥</div>
+      <div style="font-family:'Bebas Neue',cursive;font-size:26px;color:#1a472a;margin-bottom:8px">New Data Available</div>
+      <div style="font-size:14px;color:#444;margin-bottom:20px">Someone just saved changes to the database — new scores, standings, or other updates. Reload to see the latest.</div>
+      <button onclick="location.reload(true)" style="width:100%;padding:12px;background:#1a472a;color:white;border:none;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">Reload Now</button>
+      <button onclick="document.getElementById('dbUpdateModal').remove()" style="width:100%;margin-top:8px;padding:10px;background:white;color:#666;border:1px solid #ccc;border-radius:8px;font-size:13px;cursor:pointer">Dismiss — I'll reload later</button>
+    </div>`;
+  document.body.appendChild(modal);
 }
 
 // Check every 5 minutes

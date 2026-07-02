@@ -36,7 +36,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
-VERSION    = '20260701.3'
+VERSION    = '20260701.4'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -123,7 +123,11 @@ def version():
         html_version = match.group(1) if match else VERSION
     except Exception:
         html_version = VERSION
-    return jsonify({'version': html_version, 'flaskVersion': VERSION})
+    try:
+        db_modified = os.path.getmtime(DB_PATH) if os.path.exists(DB_PATH) else 0
+    except Exception:
+        db_modified = 0
+    return jsonify({'version': html_version, 'flaskVersion': VERSION, 'dbModified': db_modified})
 
 
 @app.route('/HughsGolf.html')
