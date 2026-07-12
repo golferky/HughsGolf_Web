@@ -1851,6 +1851,17 @@ function esc(v) {
   return `'${String(v).replace(/'/g,"''")}'`;
 }
 
+function parseUtcSqlTimestamp(value) {
+  if (!value) return null;
+  const d = new Date(String(value).replace(' ', 'T') + 'Z');
+  return isNaN(d) ? null : d;
+}
+
+function formatUtcSqlTimestamp(value) {
+  const d = parseUtcSqlTimestamp(value);
+  return d ? d.toLocaleString() : (value || '');
+}
+
 function reportSyncFailure(context, errMsg) {
   SYNC_FAILURES++;
   updateSyncFailBadge();
@@ -5457,7 +5468,7 @@ function loadLoginActivity() {
           <td style="padding:6px 12px;text-align:right">${r.cnt}</td>
           <td style="padding:6px 12px;text-align:right${(failedCountsByPlayer[r.Player]||0)>0?';color:#c62828':''}">${failedCountsByPlayer[r.Player] || 0}</td>
           <td style="padding:6px 12px;text-align:right${(timeoutCountsByPlayer[r.Player]||0)>0?';color:#e65100':''}">${timeoutCountsByPlayer[r.Player] || 0}</td>
-          <td style="padding:6px 12px">${r.lastLogin || '—'}</td>
+          <td style="padding:6px 12px">${r.lastLogin ? formatUtcSqlTimestamp(r.lastLogin) : '—'}</td>
         </tr>`).join('');
     }
   }
@@ -5476,7 +5487,8 @@ function loadLoginActivity() {
     } else {
       activeEl.innerHTML = activeSessions.map((r,i) => {
         const lastLogin = query(`SELECT log_time FROM LogTable WHERE method='login' AND text=? ORDER BY log_time DESC LIMIT 1`, [`${r.Player} logged in`])[0]?.log_time;
-        const sinceMin = lastLogin ? Math.round((Date.now() - new Date(lastLogin.replace(' ','T')+'Z').getTime()) / 60000) : null;
+        const parsedLastLogin = parseUtcSqlTimestamp(lastLogin);
+        const sinceMin = parsedLastLogin ? Math.round((Date.now() - parsedLastLogin.getTime()) / 60000) : null;
         const likelyTimedOut = isSessionTokenStale(r.ActiveSession);
         const ageText = sinceMin !== null ? `${sinceMin}m ago` : 'unknown age';
         const statusBadge = likelyTimedOut
@@ -5537,7 +5549,7 @@ function loadLoginActivity() {
     const attemptMatch = r.details?.match(/attempt=(\d+\/\d+)/);
     const sentMatch = r.details?.match(/sent=(\d+)/);
     const forMatch = r.text?.match(/for (.+) on/);
-    const localTime = new Date(r.log_time.replace(' ','T')+'Z').toLocaleString();
+    const localTime = formatUtcSqlTimestamp(r.log_time);
     const eventLabel = r.method === 'login' ? '<span style="color:#2e7d32">→ Login</span>'
       : r.method === 'session_timeout' ? '<span style="color:#e65100">⏱ Timeout</span>'
       : r.method === 'login_failed' ? `<span style="color:#c62828">✗ Failed${attemptMatch?` (${attemptMatch[1]})`:''}</span>`
@@ -7333,7 +7345,7 @@ function loadAdminPlayers() {
       <td style="padding:7px 12px;font-size:12px">${r.CellCarrier||''}</td>
       <td style="padding:7px 12px;text-align:center">${r.EmailStats==='Y'?'✓':''}</td>
       <td style="padding:7px 12px;text-align:center">${r.TextStats==='Y'?'✓':''}</td>
-      <td style="padding:7px 12px;font-size:11px;color:${lastLogin?'#333':'#bbb'}">${lastLogin ? new Date(lastLogin.replace(' ','T')+'Z').toLocaleString() : 'Never'}</td>
+      <td style="padding:7px 12px;font-size:11px;color:${lastLogin?'#333':'#bbb'}">${lastLogin ? formatUtcSqlTimestamp(lastLogin) : 'Never'}</td>
       <td style="padding:7px 12px;text-align:center">
         <button onclick="editPlayer('${(r.Player||'').replace(/'/g,"\\'")}')" style="padding:3px 10px;border:1px solid #ddd;border-radius:4px;background:white;cursor:pointer;font-size:11px;margin-right:4px">Edit</button>
         <button onclick="deletePlayer('${(r.Player||'').replace(/'/g,"\\'")}')" style="padding:3px 10px;border:1px solid #ffcccc;border-radius:4px;background:#fff5f5;cursor:pointer;font-size:11px;color:#c62828">Delete</button>
