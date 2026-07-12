@@ -38,6 +38,8 @@ SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = 8445
 VERSION    = '20260701.4'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
+DB_TIMEOUT_SECONDS = 15
+DB_WRITE_LOCK = threading.RLock()
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -258,21 +260,22 @@ def save_db():
         except Exception:
             pass
 
-    if os.path.exists(DB_PATH):
-        ts = now_local().strftime('%Y%m%d_%H%M%S')
-        backup = os.path.join(BACKUP_DIR, f'HughsGolf_{ts}.db')
-        shutil.copy2(DB_PATH, backup)
-        backups = sorted(
-            [f for f in os.listdir(BACKUP_DIR) if f.endswith('.db')],
-            reverse=True
-        )
-        for old in backups[20:]:
-            os.remove(os.path.join(BACKUP_DIR, old))
+    with DB_WRITE_LOCK:
+        if os.path.exists(DB_PATH):
+            ts = now_local().strftime('%Y%m%d_%H%M%S')
+            backup = os.path.join(BACKUP_DIR, f'HughsGolf_{ts}.db')
+            shutil.copy2(DB_PATH, backup)
+            backups = sorted(
+                [f for f in os.listdir(BACKUP_DIR) if f.endswith('.db')],
+                reverse=True
+            )
+            for old in backups[20:]:
+                os.remove(os.path.join(BACKUP_DIR, old))
 
-    tmp = DB_PATH + '.tmp'
-    with open(tmp, 'wb') as f:
-        f.write(data)
-    os.replace(tmp, DB_PATH)
+        tmp = DB_PATH + '.tmp'
+        with open(tmp, 'wb') as f:
+            f.write(data)
+        os.replace(tmp, DB_PATH)
 
     print(f'[{now_local():%H:%M:%S}] DB saved — {len(data):,} bytes')
     return jsonify({'ok': True, 'bytes': len(data)})
@@ -346,13 +349,14 @@ def restore_backup():
         return jsonify({'ok': False, 'error': 'Backup not found'}), 404
 
     try:
-        os.makedirs(BACKUP_DIR, exist_ok=True)
-        ts = now_local().strftime('%Y%m%d_%H%M%S')
-        safety_name = f'HughsGolf_{ts}_pre-restore.db'
-        safety_path = os.path.join(BACKUP_DIR, safety_name)
-        if os.path.exists(DB_PATH):
-            shutil.copy2(DB_PATH, safety_path)
-        shutil.copy2(src, DB_PATH)
+        with DB_WRITE_LOCK:
+            os.makedirs(BACKUP_DIR, exist_ok=True)
+            ts = now_local().strftime('%Y%m%d_%H%M%S')
+            safety_name = f'HughsGolf_{ts}_pre-restore.db'
+            safety_path = os.path.join(BACKUP_DIR, safety_name)
+            if os.path.exists(DB_PATH):
+                shutil.copy2(DB_PATH, safety_path)
+            shutil.copy2(src, DB_PATH)
         print(f'[{now_local():%H:%M:%S}] Restored backup {filename} (safety copy: {safety_name})')
         return jsonify({'ok': True, 'restored': filename, 'safetyBackup': safety_name})
     except Exception as e:
@@ -917,22 +921,25 @@ def run_sql():
         return jsonify({'ok': False, 'error': 'No SQL provided'}), 400
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cur  = conn.cursor()
-        cur.execute(sql)
-        if sql.upper().startswith('SELECT'):
-            rows = [dict(r) for r in cur.fetchall()]
-            cols = [d[0] for d in cur.description] if cur.description else []
-            conn.close()
-            return jsonify({'ok': True, 'rows': rows, 'columns': cols, 'rowcount': len(rows)})
-        else:
-            conn.commit()
-            rc = cur.rowcount
-            conn.close()
-            print(f'[{now_local():%H:%M:%S}] run-sql: {sql[:80]} — {rc} row(s) affected')
-            return jsonify({'ok': True, 'rowcount': rc})
+        with DB_WRITE_LOCK:
+            conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            conn.row_factory = sqlite3.Row
+            cur  = conn.cursor()
+            cur.execute(f'PRAGMA busy_timeout={DB_TIMEOUT_SECONDS * 1000}')
+            cur.execute(sql)
+            if sql.upper().startswith('SELECT'):
+                rows = [dict(r) for r in cur.fetchall()]
+                cols = [d[0] for d in cur.description] if cur.description else []
+                conn.close()
+                return jsonify({'ok': True, 'rows': rows, 'columns': cols, 'rowcount': len(rows)})
+            else:
+                conn.commit()
+                rc = cur.rowcount
+                conn.close()
+                print(f'[{now_local():%H:%M:%S}] run-sql: {sql[:80]} — {rc} row(s) affected')
+                return jsonify({'ok': True, 'rowcount': rc})
     except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] run-sql error: {e}; sql={sql[:200]}')
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 

@@ -1801,6 +1801,21 @@ document.querySelectorAll('.tab').forEach(t => {
 
 // ── Helpers ──
 // ── serverRun: write to local memory AND server simultaneously ───────────────
+let SERVER_RUN_QUEUE = Promise.resolve();
+
+async function sendServerSql(serverSql, sessionToken) {
+  const token = await ensureSaveToken();
+  const resp = await fetch('/run-sql', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','X-Save-Token':token},
+    body: JSON.stringify({ sql: serverSql, sessionToken })
+  });
+  const json = await resp.json();
+  if (!json.ok) throw new Error(json.error || `HTTP ${resp.status}`);
+  SERVER_DB_MODIFIED = Date.now() / 1000; // this tab's own write — don't flag it as "someone else"
+  return json;
+}
+
 async function serverRun(sql, params=[]) {
   let serverSql = sql;
   if (params.length) {
@@ -1815,16 +1830,12 @@ async function serverRun(sql, params=[]) {
   try { db.run(sql, params); } catch(e) { console.warn('serverRun local failed:', e); }
   const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || '';
   if (sessionToken) {
-    ensureSaveToken().then(token => {
-      fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':token},
-        body: JSON.stringify({ sql: serverSql, sessionToken }) })
-        .then(r => r.json())
-        .then(j => {
-          if (!j.ok) { console.warn('serverRun server failed:', serverSql, j.error); reportSyncFailure(serverSql, j.error); }
-          else { SERVER_DB_MODIFIED = Date.now() / 1000; } // this tab's own write — don't flag it as "someone else"
-        })
-        .catch(e => { console.warn('serverRun server error:', e); reportSyncFailure(serverSql, String(e)); });
-    }).catch(e => console.warn('serverRun token error:', e));
+    SERVER_RUN_QUEUE = SERVER_RUN_QUEUE
+      .then(() => sendServerSql(serverSql, sessionToken))
+      .catch(e => {
+        console.warn('serverRun server error:', serverSql, e);
+        reportSyncFailure(serverSql, String(e.message || e));
+      });
   }
 }
 
