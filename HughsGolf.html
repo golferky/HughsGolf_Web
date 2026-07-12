@@ -361,6 +361,9 @@
   .eg-cell { padding: 2px 2px; text-align: center; border: 1px solid #e8e0d0; width: 44px; max-width: 44px; }
   .admin-btn { padding:8px 20px;border:2px solid var(--border);border-radius:6px;background:white;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:var(--gray); }
   .active-admin-btn { background:var(--green);color:white;border-color:var(--green); }
+  .admin-nav { display:flex;gap:8px;flex-wrap:wrap;align-items:center;position:sticky;top:0;background:var(--cream);z-index:50;padding:10px 0 8px;margin-bottom:8px; }
+  .admin-subnav { display:none;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 20px;padding:0 0 10px;border-bottom:1px solid var(--border); }
+  .admin-subnav.active-admin-subnav { display:flex; }
   .eg-input {
     width: 38px; height: 28px;
     border: 1px solid #c8c0b0;
@@ -958,28 +961,27 @@
   <!-- SQL -->
   <!-- ADMIN -->
   <div class="section" id="tab-admin">
-    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center;position:sticky;top:0;background:var(--cream);z-index:50;padding:10px 0">
-      <button onclick="showAdminSection('players')" id="adminBtnPlayers" class="admin-btn active-admin-btn">👤 Players</button>
+    <div class="admin-nav">
+      <button onclick="showAdminSection('sql')" id="adminGroupSql" class="admin-btn active-admin-btn">🔍 SQL</button>
+      <button onclick="showAdminSection('players')" id="adminGroupTables" class="admin-btn">Table Maintenance</button>
+      <button onclick="showAdminSection('loginactivity')" id="adminGroupLogging" class="admin-btn">Logging</button>
+      <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
+      <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
+      <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">💾 Backups</button>
+      <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
+      <button onclick="triggerRedeploy()" id="adminBtnRedeploy" class="admin-btn dev-only" style="background:#e65100;color:white">🚀 Redeploy</button>
+    </div>
+
+    <div id="adminSubnavTables" class="admin-subnav">
+      <button onclick="showAdminSection('players')" id="adminBtnPlayers" class="admin-btn">👤 Players</button>
       <button onclick="showAdminSection('teams')" id="adminBtnTeams" class="admin-btn">⛳ Teams</button>
       <button onclick="showAdminSection('subs')" id="adminBtnSubs" class="admin-btn">🔄 Subs</button>
-      <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
+      <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-btn">⚙ League Settings</button>
+    </div>
 
-      <span style="width:1px;align-self:stretch;background:#ddd;margin:0 6px"></span>
-
-      <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
-      <button onclick="showAdminSection('sql')" id="adminBtnSql" class="admin-btn">🔍 SQL</button>
-      <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
-
-      <span style="width:1px;align-self:stretch;background:#ddd;margin:0 6px"></span>
-
+    <div id="adminSubnavLogging" class="admin-subnav">
       <button onclick="showAdminSection('loginactivity')" id="adminBtnLoginactivity" class="admin-btn">🔑 Login Activity</button>
       <button onclick="showAdminSection('serverlog')" id="adminBtnServerlog" class="admin-btn">📋 Server Log</button>
-      <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">💾 Backups</button>
-
-      <span style="width:1px;align-self:stretch;background:#ddd;margin:0 6px"></span>
-
-      <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-btn">⚙ League Settings</button>
-      <button onclick="triggerRedeploy()" id="adminBtnRedeploy" class="admin-btn dev-only" style="background:#e65100;color:white">🚀 Redeploy</button>
     </div>
 
     <!-- PLAYERS SECTION -->
@@ -4801,11 +4803,43 @@ function loadSchedule() {
 }
 
 // ── ADMIN TAB ──
+const ADMIN_SECTIONS = ['players','teams','subs','sql','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity'];
+const ADMIN_GROUPS = {
+  tables: ['players','teams','subs','leaguesettings'],
+  logging: ['loginactivity','serverlog']
+};
+
+function adminIdSuffix(section) {
+  return section.charAt(0).toUpperCase() + section.slice(1);
+}
+
+function adminGroupForSection(section) {
+  if (ADMIN_GROUPS.tables.includes(section)) return 'tables';
+  if (ADMIN_GROUPS.logging.includes(section)) return 'logging';
+  return section;
+}
+
 function showAdminSection(section) {
-  ['players','teams','subs','sql','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity'].forEach(s => {
-    document.getElementById(`admin${s.charAt(0).toUpperCase()+s.slice(1)}`).style.display = s===section?'block':'none';
-    document.getElementById(`adminBtn${s.charAt(0).toUpperCase()+s.slice(1)}`).className = 'admin-btn' + (s===section?' active-admin-btn':'');
+  const group = adminGroupForSection(section);
+
+  ADMIN_SECTIONS.forEach(s => {
+    document.getElementById(`admin${adminIdSuffix(s)}`).style.display = s===section?'block':'none';
+    const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
+    if (btn) btn.className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
+
+  document.getElementById('adminSubnavTables')?.classList.toggle('active-admin-subnav', group === 'tables');
+  document.getElementById('adminSubnavLogging')?.classList.toggle('active-admin-subnav', group === 'logging');
+
+  ['Sql','Tables','Logging'].forEach(g => {
+    const btn = document.getElementById(`adminGroup${g}`);
+    if (btn) btn.className = 'admin-btn' + (group === g.toLowerCase() || (g === 'Sql' && section === 'sql') ? ' active-admin-btn' : '');
+  });
+  ['rainout','sync','gallus','backups'].forEach(s => {
+    const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
+    if (btn) btn.className = 'admin-btn' + (s===section?' active-admin-btn':'');
+  });
+
   if (section==='players') loadAdminPlayers();
   if (section==='teams')   loadAdminTeams();
   if (section==='subs')    loadAdminSubs();
@@ -4821,7 +4855,7 @@ function showAdminSection(section) {
 
 function loadAdminTab() {
   if (!db) return;
-  showAdminSection('players');
+  showAdminSection(currentUser?.role === 'developer' ? 'sql' : 'players');
   document.getElementById('playerSearch').addEventListener('input', loadAdminPlayers);
 }
 
@@ -6724,6 +6758,8 @@ function applyRoleAccess() {
   if (lsBtn) lsBtn.style.display = role === 'developer' ? '' : 'none';
   const laBtn = document.getElementById('adminBtnLoginactivity');
   if (laBtn) laBtn.style.display = (role === 'developer' || role === 'officer') ? '' : 'none';
+  const loggingGroupBtn = document.getElementById('adminGroupLogging');
+  if (loggingGroupBtn) loggingGroupBtn.style.display = (role === 'developer' || role === 'officer') ? '' : 'none';
   const backupBtn = document.getElementById('adminBtnBackups');
   if (backupBtn) backupBtn.style.display = role === 'developer' ? '' : 'none';
 
@@ -6754,7 +6790,7 @@ function applyRoleAccess() {
   });
 
   // Hide SQL button for non-developers
-  const sqlBtn = document.getElementById('adminBtnSql');
+  const sqlBtn = document.getElementById('adminGroupSql');
   if (sqlBtn) sqlBtn.style.display = role === 'developer' ? '' : 'none';
 
   // Show/hide entry save/clear buttons based on role
