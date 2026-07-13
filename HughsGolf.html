@@ -10829,6 +10829,17 @@ function openPaymentModal(key) {
   const ctpAmt  = parseFloat(lp?.Closest || 1);
   const duesAmt = parseFloat(lp?.Cost || 45);
   const eoyAmt  = parseFloat(lp?.['EOY Skins'] || 20);
+  const psStatus = getPostSeasonPaymentStatus(player, date);
+
+  ['paySkinsCheck','payCtpCheck','payDuesCheck','payEoyCheck','payDuesAmt','payEoyAmt'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = false;
+  });
+  document.querySelectorAll('input[name="payEoyWk"]').forEach(r => {
+    r.disabled = false;
+    r.checked = false;
+    r.onchange = null;
+  });
 
   // Check existing payments for this player/date
   const existing = {};
