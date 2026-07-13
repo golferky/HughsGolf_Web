@@ -995,6 +995,7 @@
       <div class="card">
         <div class="card-header">PDF Reports</div>
         <div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+          <div id="pdfEmailSummary" style="grid-column:1/-1;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;font-size:12px;color:var(--gray)"></div>
           <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#faf8f2">
             <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Scores Date</label>
             <select id="pdfScoresDate" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
@@ -5042,6 +5043,63 @@ function setSelectValueIfPresent(selectId, value) {
   return true;
 }
 
+function getPdfEmailRecipients() {
+  if (!db) return [];
+  return query(`SELECT Player, Email FROM Players
+    WHERE EmailStats='Y'
+      AND Email IS NOT NULL
+      AND TRIM(Email) != ''
+    ORDER BY Player`);
+}
+
+function updatePdfEmailSummary() {
+  const el = document.getElementById('pdfEmailSummary');
+  if (!el) return;
+  const recipients = getPdfEmailRecipients();
+  if (!recipients.length) {
+    el.innerHTML = '<strong>Email PDF recipients:</strong> none found with Email Stats checked and an email address.';
+    return;
+  }
+  el.innerHTML = `<strong>Email PDF recipients:</strong> ${recipients.length} player(s) with Email Stats checked. `;
+  const names = document.createElement('span');
+  names.textContent = 'Hover here for names.';
+  names.title = recipients.map(r => `${r.Player} <${r.Email}>`).join('\n');
+  el.appendChild(names);
+}
+
+function reportTextFromSections(reports) {
+  return reports.map(r => {
+    const text = (r.source?.innerText || r.source?.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
+    return `${r.title}\n${r.subtitle || ''}\n\n${text}`;
+  }).join('\n\n\n');
+}
+
+function reportPdfFilename(kind, subtitle) {
+  const base = `hughs-golf-${kind}-${subtitle || new Date().toISOString().slice(0,10)}`;
+  return base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.pdf';
+}
+
+async function offerReportPdfEmail(payload) {
+  const recipients = getPdfEmailRecipients();
+  if (!recipients.length) return;
+  const names = recipients.slice(0, 12).map(r => r.Player).join('\n');
+  const more = recipients.length > 12 ? `\n...and ${recipients.length - 12} more` : '';
+  if (!confirm(`Ready to email this PDF report to ${recipients.length} player(s) with Email Stats checked?\n\n${names}${more}`)) return;
+
+  try {
+    const resp = await fetch('/send-report-pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const json = await resp.json();
+    if (!resp.ok || !json.ok) throw new Error(json.error || `HTTP ${resp.status}`);
+    alert(`PDF emailed to ${json.sent_count}/${json.recipient_count} player(s).${json.failed?.length ? `\n\nFailed: ${json.failed.map(f => f.player).join(', ')}` : ''}`);
+  } catch (e) {
+    alert(`PDF email failed: ${e.message}`);
+  }
+}
+
 function populatePdfControls() {
   copySelectOptions('scoresDate', 'pdfScoresDate', "SELECT DISTINCT Date as sDate FROM Scores ORDER BY Date DESC LIMIT 60");
   copySelectOptions('scoresDate', 'pdfCombinedDate', "SELECT DISTINCT Date as sDate FROM Scores ORDER BY Date DESC LIMIT 60");
@@ -5062,6 +5120,7 @@ function populatePdfControls() {
     matchesDate.value = previousMatchDate;
   }
   copySelectOptions('matchesDate', 'pdfMatchesDate');
+  updatePdfEmailSummary();
 }
 
 function applyCombinedPdfDate() {
@@ -5129,6 +5188,7 @@ function createReportPdf(kind) {
   } else if (kind === 'combined') {
     applyCombinedPdfDate();
     const reports = [prepareScoresPdfSection(), prepareStandingsPdfSection(), prepareMatchesPdfSection()];
+    const reportText = reportTextFromSections(reports);
     const bodyHtml = reports.map((r, i) => `
       <section style="${i ? 'break-before:page;page-break-before:always;' : ''}">
         <div class="pdf-title">${r.title}</div>
@@ -5137,6 +5197,12 @@ function createReportPdf(kind) {
       </section>
     `).join('');
     openReportPrintWindow("Hugh's Golf Reports", 'Combined report', bodyHtml);
+    setTimeout(() => offerReportPdfEmail({
+      title: "Hugh's Golf Reports",
+      subtitle: 'Combined report',
+      text: reportText,
+      filename: reportPdfFilename('combined', selectedOptionText('pdfCombinedDate'))
+    }), 1000);
     return;
   }
 
@@ -5145,6 +5211,12 @@ function createReportPdf(kind) {
     return;
   }
   openReportPrintWindow(title, subtitle, printableClone(source));
+  setTimeout(() => offerReportPdfEmail({
+    title,
+    subtitle,
+    text: reportTextFromSections([{ title, subtitle, source }]),
+    filename: reportPdfFilename(kind, subtitle)
+  }), 1000);
 }
 
 function loadAdminTab() {
@@ -5852,7 +5924,7 @@ function loadLoginActivity() {
 
 // ── Known legitimate app routes (anything else is "suspicious") ─────────────
 const KNOWN_ROUTES = ['/', '/HughsGolf.html', '/HughsGolf.db', '/db-info', '/save-token', '/save', '/send-reset', '/verify-reset',
-  '/notify-login', '/flask-log', '/backup-list', '/restore-backup', '/delete-backup', '/restart-server', '/need-sub', '/notify-payout', '/fetch-gallus', '/get-ip', '/favicon.ico'];
+  '/notify-login', '/flask-log', '/backup-list', '/restore-backup', '/delete-backup', '/restart-server', '/need-sub', '/send-report-pdf', '/notify-payout', '/fetch-gallus', '/get-ip', '/favicon.ico'];
 
 function parseLogLine(line) {
   // Typical format: IP - - [timestamp] "METHOD /path HTTP/1.1" STATUS -

@@ -20,6 +20,7 @@ import urllib.request
 from zoneinfo import ZoneInfo
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 from flask import Flask, send_from_directory, request, jsonify
 
 EASTERN = ZoneInfo('America/New_York')
@@ -702,6 +703,141 @@ def need_sub():
 
     print(f'[{now_local():%H:%M:%S}] Sub request from {player} for {date}: sent to {sent_count}/{len(recipients)} ({email_count} email, {sms_count} text)')
     return jsonify({'ok': True, 'sent_count': sent_count, 'email_count': email_count, 'sms_count': sms_count, 'failed': failed, 'errors': errors})
+
+
+def _pdf_escape(value):
+    return str(value).replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
+
+
+def build_text_pdf(title, subtitle, body_text):
+    """Build a simple dependency-free PDF attachment from report text."""
+    width, height = 792, 612  # letter landscape, points
+    margin_x, top_y = 36, 560
+    font_size, line_step = 9, 12
+    max_chars, max_lines = 118, 43
+
+    raw_lines = [title, subtitle, '', *str(body_text or '').splitlines()]
+    wrapped = []
+    for raw in raw_lines:
+        line = ' '.join(str(raw).replace('\t', '  ').split()) if raw.strip() else ''
+        if not line:
+            wrapped.append('')
+            continue
+        while len(line) > max_chars:
+            cut = line.rfind(' ', 0, max_chars)
+            if cut < 40:
+                cut = max_chars
+            wrapped.append(line[:cut].rstrip())
+            line = line[cut:].lstrip()
+        wrapped.append(line)
+
+    pages = [wrapped[i:i + max_lines] for i in range(0, len(wrapped), max_lines)] or [['']]
+    objects = {}
+    page_ids = []
+    next_id = 4
+
+    for page_lines in pages:
+        page_id, content_id = next_id, next_id + 1
+        next_id += 2
+        page_ids.append(page_id)
+        content_lines = [f'BT /F1 {font_size} Tf {margin_x} {top_y} Td {line_step} TL']
+        for line in page_lines:
+            content_lines.append(f'({_pdf_escape(line)}) Tj T*')
+        content_lines.append('ET')
+        stream = '\n'.join(content_lines).encode('latin-1', 'replace')
+        objects[content_id] = b'<< /Length ' + str(len(stream)).encode() + b' >>\nstream\n' + stream + b'\nendstream'
+        objects[page_id] = (
+            f'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] '
+            f'/Resources << /Font << /F1 3 0 R >> >> /Contents {content_id} 0 R >>'
+        ).encode()
+
+    objects[1] = b'<< /Type /Catalog /Pages 2 0 R >>'
+    objects[2] = f"<< /Type /Pages /Kids [{' '.join(f'{pid} 0 R' for pid in page_ids)}] /Count {len(page_ids)} >>".encode()
+    objects[3] = b'<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>'
+
+    output = bytearray(b'%PDF-1.4\n')
+    offsets = {0: 0}
+    for obj_id in sorted(objects):
+        offsets[obj_id] = len(output)
+        output.extend(f'{obj_id} 0 obj\n'.encode())
+        output.extend(objects[obj_id])
+        output.extend(b'\nendobj\n')
+    xref_at = len(output)
+    max_id = max(objects)
+    output.extend(f'xref\n0 {max_id + 1}\n'.encode())
+    output.extend(b'0000000000 65535 f \n')
+    for obj_id in range(1, max_id + 1):
+        output.extend(f'{offsets.get(obj_id, 0):010d} 00000 n \n'.encode())
+    output.extend(f'trailer\n<< /Size {max_id + 1} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n'.encode())
+    return bytes(output)
+
+
+@app.route('/send-report-pdf', methods=['POST'])
+def send_report_pdf():
+    """Email a generated report PDF to players opted into EmailStats."""
+    body = request.get_json() or {}
+    title = str(body.get('title') or "Hugh's Golf Report").strip()
+    subtitle = str(body.get('subtitle') or '').strip()
+    report_text = str(body.get('text') or '').strip()
+    filename = str(body.get('filename') or 'hughs-golf-report.pdf').strip().replace('/', '-').replace('\\', '-')
+    if not filename.lower().endswith('.pdf'):
+        filename += '.pdf'
+
+    if not report_text:
+        return jsonify({'ok': False, 'error': 'No report text to send'}), 400
+
+    gmail_user, gmail_pw = get_gmail_creds()
+    if not gmail_user or not gmail_pw:
+        return jsonify({'ok': False, 'error': 'Email not configured'}), 500
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT Player, Email FROM Players
+            WHERE EmailStats='Y'
+              AND Email IS NOT NULL
+              AND TRIM(Email) != ''
+            ORDER BY Player
+        """)
+        recipients = cur.fetchall()
+        conn.close()
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Recipient lookup failed: {e}'}), 500
+
+    if not recipients:
+        return jsonify({'ok': False, 'error': 'No players with EmailStats=Y and an email address'}), 404
+
+    pdf_bytes = build_text_pdf(title, subtitle, report_text)
+    subject = f"Hugh's Golf League - {title}"
+    body_text = f"{title}\n{subtitle}\n\nAttached is the latest Hugh's Golf report PDF."
+    sent_count = 0
+    failed = []
+
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(gmail_user, gmail_pw)
+            for r in recipients:
+                try:
+                    msg = MIMEMultipart()
+                    msg['From'] = gmail_user
+                    msg['To'] = r['Email']
+                    msg['Subject'] = subject
+                    msg.attach(MIMEText(body_text, 'plain'))
+                    part = MIMEApplication(pdf_bytes, _subtype='pdf')
+                    part.add_header('Content-Disposition', 'attachment', filename=filename)
+                    msg.attach(part)
+                    server.send_message(msg)
+                    sent_count += 1
+                except Exception as e:
+                    failed.append({'player': r['Player'], 'email': r['Email'], 'error': str(e)})
+                    print(f"send_report_pdf failed for {r['Player']} <{r['Email']}>: {e}")
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Email failed: {e}'}), 500
+
+    print(f'[{now_local():%H:%M:%S}] Report PDF "{title}" sent to {sent_count}/{len(recipients)} EmailStats player(s)')
+    return jsonify({'ok': True, 'sent_count': sent_count, 'recipient_count': len(recipients), 'failed': failed})
 
 
 @app.route('/notify-payout', methods=['POST'])
