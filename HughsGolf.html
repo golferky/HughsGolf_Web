@@ -988,10 +988,22 @@
     <div id="adminPdfs" style="display:none">
       <div class="card">
         <div class="card-header">PDF Reports</div>
-        <div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
-          <button onclick="createReportPdf('scores')" style="padding:12px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Scores PDF</button>
-          <button onclick="createReportPdf('standings')" style="padding:12px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Standings PDF</button>
-          <button onclick="createReportPdf('matches')" style="padding:12px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Matches PDF</button>
+        <div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+          <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#faf8f2">
+            <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Scores Date</label>
+            <select id="pdfScoresDate" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
+            <button onclick="createReportPdf('scores')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Scores PDF</button>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#faf8f2">
+            <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Standings As Of</label>
+            <select id="pdfStandAsOf" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
+            <button onclick="createReportPdf('standings')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Standings PDF</button>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#faf8f2">
+            <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Matches Week</label>
+            <select id="pdfMatchesDate" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
+            <button onclick="createReportPdf('matches')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Matches PDF</button>
+          </div>
         </div>
       </div>
     </div>
@@ -4874,6 +4886,7 @@ function showAdminSection(section) {
   if (section==='backups') loadBackups();
   if (section==='leaguesettings') loadLeagueSettings();
   if (section==='loginactivity') loadLoginActivity();
+  if (section==='pdfs') populatePdfControls();
 }
 
 function selectedOptionText(selectId) {
@@ -4938,6 +4951,40 @@ function openReportPrintWindow(title, subtitle, bodyHtml) {
   win.document.close();
 }
 
+function copySelectOptions(sourceId, targetId, fallbackSql=null) {
+  const source = document.getElementById(sourceId);
+  const target = document.getElementById(targetId);
+  if (!target) return;
+  if (source && source.options.length) {
+    target.innerHTML = source.innerHTML;
+    target.value = source.value;
+    return;
+  }
+  if (fallbackSql) {
+    const rows = query(fallbackSql);
+    target.innerHTML = rows.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
+  }
+}
+
+function populatePdfControls() {
+  copySelectOptions('scoresDate', 'pdfScoresDate', "SELECT DISTINCT Date as sDate FROM Scores ORDER BY Date DESC LIMIT 60");
+
+  const pdfStand = document.getElementById('pdfStandAsOf');
+  const standAsOf = document.getElementById('standAsOf');
+  if (pdfStand && standAsOf) {
+    pdfStand.innerHTML = standAsOf.innerHTML;
+    pdfStand.value = standAsOf.value;
+  }
+
+  const matchesDate = document.getElementById('matchesDate');
+  const previousMatchDate = matchesDate?.value;
+  if (!document.getElementById('matchesSeason')?.options.length) initMatchesDate();
+  if (previousMatchDate && Array.from(matchesDate.options).some(o => o.value === previousMatchDate)) {
+    matchesDate.value = previousMatchDate;
+  }
+  copySelectOptions('matchesDate', 'pdfMatchesDate');
+}
+
 function createReportPdf(kind) {
   if (!db) return;
   let title = '';
@@ -4945,17 +4992,23 @@ function createReportPdf(kind) {
   let source = null;
 
   if (kind === 'scores') {
+    const pdfDate = document.getElementById('pdfScoresDate')?.value;
+    if (pdfDate) document.getElementById('scoresDate').value = pdfDate;
     loadScores();
     title = 'Scores Screen';
     subtitle = selectedOptionText('scoresDate');
     source = document.getElementById('tab-scores');
   } else if (kind === 'standings') {
+    const pdfAsOf = document.getElementById('pdfStandAsOf')?.value;
+    if (document.getElementById('standAsOf')) document.getElementById('standAsOf').value = pdfAsOf || '';
     loadStandings();
     title = document.getElementById('standTitle')?.textContent || 'Standings Screen';
     subtitle = document.getElementById('standSubtitle')?.textContent || selectedOptionText('standSeason');
     source = document.getElementById('tab-standings');
   } else if (kind === 'matches') {
     if (!document.getElementById('matchesSeason')?.options.length) initMatchesDate();
+    const pdfDate = document.getElementById('pdfMatchesDate')?.value;
+    if (pdfDate) document.getElementById('matchesDate').value = pdfDate;
     document.getElementById('matchesTableView').checked = true;
     loadMatchesTable();
     title = 'Matches Screen';
