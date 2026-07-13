@@ -9248,6 +9248,10 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       tr.appendChild(grossTd); tr.appendChild(netTd);
       tr.appendChild(phdcpTd); tr.appendChild(hdcpTd);
     }
+    if (currentUser?.role !== 'player') {
+      tr.addEventListener('click', () => selectEntrySlot(key));
+      tr.addEventListener('focusin', () => selectEntrySlot(key));
+    }
     body.appendChild(tr);
   });
 }
