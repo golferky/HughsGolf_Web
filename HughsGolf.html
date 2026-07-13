@@ -1954,8 +1954,8 @@ function onDbLoaded() {
   populateSeasonDropdowns();
   snapshotDB();
   refreshTab('home');
-  // Show login screen
-  showLoginScreen();
+  // Re-enter automatically when this browser still owns the active session.
+  if (!tryTrustedAutoLogin()) showLoginScreen();
   refreshTab('standings');
   refreshTab('skins');
   refreshTab('handicaps');
@@ -6397,6 +6397,32 @@ function showLoginScreen() {
   document.getElementById('loginNameShadow').value = sel.value || '';
   document.getElementById('loginPassword').value = '';
   document.getElementById('loginError').style.display = 'none';
+}
+
+function tryTrustedAutoLogin() {
+  if (!activeSessionsEnabled()) return false;
+
+  const lastPlayer = localStorage.getItem('hg_last_player');
+  if (!lastPlayer) return false;
+
+  const rememberedToken = localStorage.getItem(`hg_session_${lastPlayer}`);
+  if (!rememberedToken || isSessionTokenStale(rememberedToken)) return false;
+
+  let player;
+  try {
+    player = query(`SELECT Player, Officer, ActiveSession FROM Players WHERE Player=? AND Login='Y'`, [lastPlayer])[0];
+  } catch(e) {
+    return false;
+  }
+
+  if (!player || player.ActiveSession !== rememberedToken) return false;
+
+  window._mySessionToken = rememberedToken;
+  loginSuccess(player).catch(e => {
+    console.warn('Trusted auto-login failed:', e);
+    showLoginScreen();
+  });
+  return true;
 }
 
 async function doLogin() {
