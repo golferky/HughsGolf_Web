@@ -4901,6 +4901,48 @@ function selectedOptionText(selectId) {
 
 function printableClone(element) {
   const clone = element.cloneNode(true);
+  const sourceControls = element.querySelectorAll('input, select, textarea');
+  const cloneControls = clone.querySelectorAll('input, select, textarea');
+
+  sourceControls.forEach((source, index) => {
+    const target = cloneControls[index];
+    if (!target) return;
+
+    const tagName = source.tagName.toLowerCase();
+    const replacement = document.createElement('span');
+    replacement.className = source.className || '';
+
+    if (tagName === 'select') {
+      replacement.textContent = source.selectedOptions?.[0]?.textContent?.trim() || source.value || '';
+      replacement.style.cssText = 'display:inline-block;min-width:80px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:white;color:var(--dark);font-size:12px;';
+      target.replaceWith(replacement);
+      return;
+    }
+
+    if (tagName === 'textarea') {
+      replacement.textContent = source.value || '';
+      replacement.style.cssText = 'display:block;min-height:32px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:white;color:var(--dark);white-space:pre-wrap;';
+      target.replaceWith(replacement);
+      return;
+    }
+
+    const inputType = (source.type || '').toLowerCase();
+    if (inputType === 'checkbox' || inputType === 'radio') {
+      replacement.textContent = source.checked ? '✓' : '';
+      replacement.style.cssText = 'display:inline-block;width:16px;height:16px;line-height:14px;text-align:center;border:1px solid var(--border);border-radius:3px;background:white;color:var(--green);font-weight:700;';
+      target.replaceWith(replacement);
+      return;
+    }
+
+    replacement.textContent = source.value || '';
+    if (source.classList.contains('eg-input')) {
+      replacement.style.cssText = 'display:inline-block;width:38px;height:28px;line-height:26px;text-align:center;border:1px solid #c8c0b0;border-radius:4px;background:white;color:var(--dark);font-family:"DM Mono",monospace;font-weight:700;font-size:14px;';
+    } else {
+      replacement.style.cssText = 'display:inline-block;min-width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:white;color:var(--dark);font-size:12px;';
+    }
+    target.replaceWith(replacement);
+  });
+
   clone.querySelectorAll('button').forEach(el => el.remove());
   clone.querySelectorAll('[style]').forEach(el => {
     el.style.position = '';
