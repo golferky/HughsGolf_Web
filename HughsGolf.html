@@ -751,6 +751,12 @@
             <option value="Back" selected>Back</option>
           </select>
         </div>
+        <div class="filter-group" id="futureScoreOverrideGroup" style="display:none;justify-content:center">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#b71c1c">
+            <input type="checkbox" id="futureScoreOverride" onchange="toggleFutureScoreOverride(this.checked)" style="width:15px;height:15px;cursor:pointer">
+            Local test: allow future scores
+          </label>
+        </div>
       </div>
       <div style="display:flex;gap:8px">
         <button id="entryClear" disabled title="Select a score row to clear that player only" style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;cursor:not-allowed;opacity:.45;font-family:'DM Sans',sans-serif;font-size:13px">Clear</button>
@@ -1622,6 +1628,50 @@ window.skinWinnerCells = {};
 window.eoyNoShows = new Set();
 window.psBackFirst = false;
 
+function isLocalTestHost() {
+  return ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+}
+
+function canUseFutureScoreOverride() {
+  return isLocalTestHost() && (currentUser?.role === 'developer' || currentUser?.role === 'officer');
+}
+
+function futureScoreOverrideEnabled() {
+  return canUseFutureScoreOverride() && localStorage.getItem('hg_future_score_override') === 'Y';
+}
+
+function toggleFutureScoreOverride(enabled) {
+  if (!canUseFutureScoreOverride()) {
+    localStorage.removeItem('hg_future_score_override');
+    return;
+  }
+  localStorage.setItem('hg_future_score_override', enabled ? 'Y' : 'N');
+  buildEntryGrid();
+}
+
+function refreshTestModeUi() {
+  const bannerId = 'localTestModeBanner';
+  let banner = document.getElementById(bannerId);
+  if (isLocalTestHost()) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = bannerId;
+      banner.style.cssText = 'background:#4a148c;color:white;padding:8px 18px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;box-shadow:0 2px 8px rgba(0,0,0,.18)';
+      const content = document.querySelector('.content');
+      content?.parentNode.insertBefore(banner, content);
+    }
+    banner.textContent = 'Local test mode - using this computer/server DB, not the live QNAP URL';
+  } else if (banner) {
+    banner.remove();
+  }
+
+  const overrideGroup = document.getElementById('futureScoreOverrideGroup');
+  const overrideInput = document.getElementById('futureScoreOverride');
+  const showOverride = canUseFutureScoreOverride();
+  if (overrideGroup) overrideGroup.style.display = showOverride ? '' : 'none';
+  if (overrideInput) overrideInput.checked = futureScoreOverrideEnabled();
+}
+
 // ── SQL.js init ──
 let SQL;
 let sqlReady = false;
@@ -2006,6 +2056,7 @@ function onDbLoaded() {
   refreshTab('scores');
   buildTableList();
   initEntry();
+  refreshTestModeUi();
 }
 
 function populatePrizeMoneySeasons() {
@@ -7356,6 +7407,7 @@ function applyRoleAccess() {
   const isOfficer = role === 'developer' || role === 'officer';
   if (entrySaveBtn)  entrySaveBtn.style.display  = isOfficer ? '' : 'none';
   if (entryClearBtn) entryClearBtn.style.display = isOfficer ? '' : 'none';
+  refreshTestModeUi();
   updateEntryClearButton();
   if (entryPostSeason) entryPostSeason.style.display = ''; // always visible
   // Post Season checkbox is just a view filter - allow all roles to toggle it
@@ -8926,10 +8978,12 @@ function buildEntryGrid() {
   // Check if date is in the future
   const todayInt = (() => { const d = new Date(); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); })();
   const isFuture = parseInt(date) > todayInt;
+  const allowFutureScores = isFuture && futureScoreOverrideEnabled();
+  const blockFutureScores = isFuture && !allowFutureScores;
 
   // If scores exist for this date but no skin winners recorded yet, calculate now
   // (must happen before skinWinnerCells cache is built below)
-  if (date && !isFuture) {
+  if (date && !blockFutureScores) {
     const hasScores = query(`SELECT 1 FROM Scores WHERE League="Hugh's" AND Date=${date} LIMIT 1`).length > 0;
     const hasWinners = query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Date=${date} LIMIT 1`).length > 0;
     if (hasScores && !hasWinners) {
@@ -8949,8 +9003,12 @@ function buildEntryGrid() {
   if (isFuture) {
     const banner = document.createElement('div');
     banner.id = 'entryFutureBanner';
-    banner.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:10px 16px;font-size:13px;color:#856404;margin-bottom:12px;font-weight:600';
-    banner.textContent = isNextDate
+    banner.style.cssText = allowFutureScores
+      ? 'background:#ffebee;border:1px solid #c62828;border-radius:6px;padding:10px 16px;font-size:13px;color:#b71c1c;margin-bottom:12px;font-weight:700'
+      : 'background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:10px 16px;font-size:13px;color:#856404;margin-bottom:12px;font-weight:600';
+    banner.textContent = allowFutureScores
+      ? `LOCAL TEST OVERRIDE ON - ${fmtDate(date)} is a future date, but scores are unlocked in this local copy.`
+      : isNextDate
       ? `⏳ ${fmtDate(date)} is the next scheduled date — you can pre-assign subs but scores cannot be entered yet.`
       : `🔒 ${fmtDate(date)} is a future date — no changes allowed.`;
     const entryHost = document.getElementById('tab-scores');
@@ -9099,12 +9157,12 @@ function buildEntryGrid() {
     window.eoyNoShows = new Set();
   }
 
-  renderEntryGrid(slots, nine, isFuture, isPostSeason);
+  renderEntryGrid(slots, nine, blockFutureScores, isPostSeason);
   entryDirty = false;
   entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
   applyCellClasses(nine);
   if (isPostSeason) calcEoySkins(season, true); // true = silent (no confirm/alert)
-  if (isFuture) {
+  if (blockFutureScores) {
     // Always disable score inputs for future dates
     document.querySelectorAll('#entryGrid input.eg-input').forEach(inp => {
       inp.disabled = true;
