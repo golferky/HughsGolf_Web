@@ -4966,6 +4966,15 @@ function copySelectOptions(sourceId, targetId, fallbackSql=null) {
   }
 }
 
+function setSelectValueIfPresent(selectId, value) {
+  const sel = document.getElementById(selectId);
+  if (!sel || !value) return false;
+  const exists = Array.from(sel.options).some(o => String(o.value) === String(value));
+  if (!exists) return false;
+  sel.value = value;
+  return true;
+}
+
 function populatePdfControls() {
   copySelectOptions('scoresDate', 'pdfScoresDate', "SELECT DISTINCT Date as sDate FROM Scores ORDER BY Date DESC LIMIT 60");
 
@@ -4993,7 +5002,14 @@ function createReportPdf(kind) {
 
   if (kind === 'scores') {
     const pdfDate = document.getElementById('pdfScoresDate')?.value;
-    if (pdfDate) document.getElementById('scoresDate').value = pdfDate;
+    setSelectValueIfPresent('scoresDate', pdfDate);
+    populateEntryDates();
+    if (setSelectValueIfPresent('entryDate', pdfDate)) {
+      entryState = {};
+      entryStateDate = null;
+      entryManual9 = false;
+      buildEntryGrid();
+    }
     loadScores();
     title = 'Scores Screen';
     subtitle = selectedOptionText('scoresDate');
