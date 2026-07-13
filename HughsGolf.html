@@ -4389,6 +4389,8 @@ function loadCtps() {
   const season  = document.getElementById('ctpsSeason').value;
 
   const fb = getScheduledFrontBack(date, league);
+  const repairedCarryovers = reconcilePreviousCtpCarryovers(date, season, league);
+  if (repairedCarryovers) saveDBToServer();
 
   // CTP holes = par 3 holes on the current 9
   const courseRow = query(`SELECT * FROM Courses WHERE Name=(SELECT Course FROM LeagueParms WHERE Name="${league}" AND Season=${season})`)[0];
@@ -4530,6 +4532,11 @@ function ctpNoWinner(hole, date, amount, fb) {
   loadCtps();
 }
 
+function reconcilePreviousCtpCarryovers(date, season, league = "Hugh's") {
+  const prev = query(`SELECT MAX(Date) as pDate FROM Payments WHERE League="${league}" AND Desc='CTP' AND Detail='Payment' AND Date < ${date} AND Date >= ${season}0101`)[0]?.pDate;
+  return prev ? reconcileCtpCarryovers(prev) : 0;
+}
+
 function reconcileCtpCarryovers(date) {
   if (!db || !date) return;
   const league = "Hugh's";
@@ -4551,14 +4558,17 @@ function reconcileCtpCarryovers(date) {
   if (potPerHole <= 0) return;
 
   const now = new Date().toLocaleDateString();
+  let inserted = 0;
   holes.forEach(hole => {
     const hasWinner = query(`SELECT 1 FROM Payments WHERE League=? AND Date=? AND Desc='CTP' AND Detail=? AND Player!='Kitty' LIMIT 1`, [league, date, `#${hole}`]).length > 0;
     const hasCarry = query(`SELECT 1 FROM Payments WHERE League=? AND Date=? AND Desc='CTP' AND Detail LIKE ? AND Player='Kitty' LIMIT 1`, [league, date, `Carryover${hole}%`]).length > 0;
     if (!hasWinner && !hasCarry) {
       serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'CTP',?,?,?,?)`,
         [league, 'Kitty', date, `Carryover${hole}-${fb}`, potPerHole, now, `CTP${hole} no winner - ${fb}`]);
+      inserted++;
     }
   });
+  return inserted;
 }
 
 function loadPaymentsTab() {
