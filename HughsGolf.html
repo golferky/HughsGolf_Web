@@ -380,6 +380,12 @@
     border-color: var(--green);
     box-shadow: 0 0 0 2px rgba(26,71,42,0.2);
   }
+  #entryGrid tr.eg-selected-row .eg-player {
+    box-shadow: inset 4px 0 0 var(--gold);
+  }
+  #entryGrid tr.eg-selected-row .eg-input {
+    border-color: var(--gold);
+  }
 
   /* Row backgrounds — only color the player cell, not hole cells */
   .eg-row-eoy-noshow .eg-player { background: #fff3e0; }
@@ -747,7 +753,7 @@
         </div>
       </div>
       <div style="display:flex;gap:8px">
-        <button id="entryClear" style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px">Clear</button>
+        <button id="entryClear" disabled title="Select a score row to clear that player only" style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;cursor:not-allowed;opacity:.45;font-family:'DM Sans',sans-serif;font-size:13px">Clear</button>
         <button id="gallusSubmitBtn" onclick="showGallusSubmit()" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">📤 Submit Round</button>
       </div>
     </div>
@@ -7101,6 +7107,7 @@ function applyRoleAccess() {
   const isOfficer = role === 'developer' || role === 'officer';
   if (entrySaveBtn)  entrySaveBtn.style.display  = isOfficer ? '' : 'none';
   if (entryClearBtn) entryClearBtn.style.display = isOfficer ? '' : 'none';
+  updateEntryClearButton();
   if (entryPostSeason) entryPostSeason.style.display = ''; // always visible
   // Post Season checkbox is just a view filter - allow all roles to toggle it
   const psCheckbox = document.getElementById('entryPostSeason');
@@ -8278,6 +8285,7 @@ let entryInitialized = false;
 let entryDirty = false;
 let entryLast9Value = null;
 let entryManual9 = false;
+let selectedEntrySlotKey = null;
 
 function calcEoySkins(season, silent=false) {
   const lp = query(`SELECT PostSeasonDt, SkinsPS FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
@@ -8579,8 +8587,31 @@ function reRenderEntry() {
   });
 }
 
+function updateEntryClearButton() {
+  const btn = document.getElementById('entryClear');
+  if (!btn) return;
+  const st = selectedEntrySlotKey ? entryState[selectedEntrySlotKey] : null;
+  const enabled = !!st && currentUser?.role !== 'player';
+  btn.disabled = !enabled;
+  btn.textContent = st ? `Clear ${st.active}` : 'Clear';
+  btn.title = enabled ? `Clear scores for ${st.active}` : 'Select a score row to clear that player only';
+  btn.style.opacity = enabled ? '1' : '.45';
+  btn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+}
+
+function selectEntrySlot(key) {
+  selectedEntrySlotKey = key && entryState[key] ? key : null;
+  document.querySelectorAll('#entryGrid tr.eg-selected-row').forEach(row => row.classList.remove('eg-selected-row'));
+  if (selectedEntrySlotKey) {
+    document.querySelector(`#entryGrid tr[data-slotkey="${CSS.escape(selectedEntrySlotKey)}"]`)?.classList.add('eg-selected-row');
+  }
+  updateEntryClearButton();
+}
+
 function buildEntryGrid() {
   if (!db || !courseData) return;
+  selectedEntrySlotKey = null;
+  updateEntryClearButton();
   const date   = document.getElementById('entryDate').value;
   const league = "Hugh's";
   const season = parseInt(date.toString().substring(0,4));
@@ -9125,6 +9156,8 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
         inp.style.cursor = 'default';
         inp.style.pointerEvents = 'none';
       } else {
+        inp.addEventListener('focus', () => selectEntrySlot(key));
+        inp.addEventListener('click', () => selectEntrySlot(key));
         inp.addEventListener('input', onScoreInput);
         inp.addEventListener('keydown', onScoreKeydown);
         inp.addEventListener('paste', onScorePaste);
@@ -10159,11 +10192,18 @@ async function saveEntryToDB() {
   entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
 }
 
-document.getElementById('entryClear')?.addEventListener('click', ()=>{
+document.getElementById('entryClear')?.addEventListener('click', async ()=>{
+  const key = selectedEntrySlotKey;
+  const st = key ? entryState[key] : null;
+  if (!st) {
+    updateEntryClearButton();
+    return;
+  }
   const date   = document.getElementById('entryDate').value;
   const fb     = document.getElementById('entry9').value;
   const league = "Hugh's";
-  const season2 = query("SELECT MAX(Season) as s FROM LeagueParms WHERE Name=\"Hugh's\""  )[0]?.s;
+  if (!confirm(`Clear scores for ${st.active} on ${fmtDate(date)}?\n\nWarning: clearing this score causes cascading recalculations for handicaps, matches, skins, CTPs, standings, and related reports.`)) return;
+
   const psRows3 = query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND PostSeasonDt IS NOT NULL`);
   let isPS2 = false;
   for (const r of psRows3) {
@@ -10175,26 +10215,41 @@ document.getElementById('entryClear')?.addEventListener('click', ()=>{
   }
   const nine2 = fb === 'Back' ? courseData.back : courseData.front;
 
-  // Clear scores from DB for this date
-  Object.values(entryState).forEach(st => {
-    if (isPS2) {
-      serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack='Front' AND League=?`, [st.active, date, league]);
-      serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack='Back' AND League=?`, [st.active, date, league]);
-    } else {
-      serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack=? AND League=?`, [st.active, date, fb, league]);
-      serverRun(`DELETE FROM Handicaps WHERE Player=? AND Date=? AND League=?`, [st.active, date, league]);
-    }
-  });
+  // Clear scores from DB for the selected player/date only.
+  if (isPS2) {
+    serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack='Front' AND League=?`, [st.active, date, league]);
+    serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack='Back' AND League=?`, [st.active, date, league]);
+  } else {
+    serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack=? AND League=?`, [st.active, date, fb, league]);
+    serverRun(`DELETE FROM Handicaps WHERE Player=? AND Date=? AND League=?`, [st.active, date, league]);
+  }
 
-  // Clear grid inputs and totals
-  document.querySelectorAll('#entryGrid .eg-input').forEach(inp => { inp.value=''; inp.classList.remove('under-par'); });
-  Object.values(entryState).forEach(st => st.holes = Array(isPS2 ? 18 : 9).fill(''));
-  document.querySelectorAll('[id^="gross-"],[id^="net-"],[id^="hdcp-"]').forEach(el => {
-    el.textContent=''; el.style.color='';
+  // Clear selected row inputs and projected totals only.
+  document.querySelectorAll(`#entryGrid input.eg-input[data-slotkey="${CSS.escape(key)}"]`).forEach(inp => {
+    inp.value = '';
+    inp.classList.remove('under-par');
   });
+  st.holes = Array(isPS2 ? 18 : 9).fill('');
+  const row = document.querySelector(`#entryGrid tr[data-slotkey="${CSS.escape(key)}"]`);
+  row?.querySelectorAll('.eg-gross,.eg-net').forEach(el => {
+    el.textContent = '';
+    el.classList.remove('under');
+    el.style.color = '';
+  });
+  const hEl = document.getElementById(`hdcp-${key}`);
+  if (hEl) {
+    hEl.textContent = '';
+    hEl.style.color = '';
+    hEl.style.fontWeight = '';
+  }
+
   applyCellClasses(nine2);
+  if (date) calcMatchesForDate(date);
+  if (date) saveSkinWinnersForDate(date);
+  await SERVER_RUN_QUEUE;
   entryDirty = false;
   entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
+  selectEntrySlot(null);
 });
 
 // ── Payment Modal ──
