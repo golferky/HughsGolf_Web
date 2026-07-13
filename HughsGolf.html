@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260713.15</span>
+    <span id="appVersionDisplay">v20260713.16</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.15</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.16</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -4449,7 +4449,7 @@ function loadHandicaps() {
     }).join('');
 
     const par = 36;
-    const maxHdcp = parseInt(query(`SELECT MaxHdcp FROM LeagueParms WHERE Name="Hugh's" ORDER BY Season DESC LIMIT 1`)[0]?.MaxHdcp || 18);
+    const maxHdcp = getLeagueMaxHdcp();
     const usedScores = usedIdx.map(i=>scores[i]);
     const avg = usedScores.length ? usedScores.reduce((a,b)=>a+b,0)/usedScores.length : 0;
     const calcHdcp = usedScores.length ? Math.min(maxHdcp, Math.round((avg - par) * 0.8)) : null;
@@ -10266,11 +10266,17 @@ function applyCellClasses(nine) {
   });
 }
 
+function getLeagueMaxHdcp() {
+  const val = parseInt(query(`SELECT MaxHdcp FROM LeagueParms WHERE Name="Hugh's" ORDER BY CAST(Season AS INTEGER) DESC LIMIT 1`)[0]?.MaxHdcp);
+  return Number.isFinite(val) && val > 0 ? val : 18;
+}
+
 function calcProjectedHdcp(newGross, last5, par) {
+  const maxHdcp = getLeagueMaxHdcp();
   // First-time player — no history, use this score only
   if (!last5 || !last5.scores) {
     const hdcp = (newGross - par) * 0.8;
-    return Math.round(Math.min(18, hdcp));
+    return Math.round(Math.min(maxHdcp, hdcp));
   }
 
   const scores = last5.scores.split('-').map(Number).filter(n => n > 0);
@@ -10286,7 +10292,7 @@ function calcProjectedHdcp(newGross, last5, par) {
 
   if (!working.length) return null;
   const avg = working.reduce((a,b)=>a+b,0) / working.length;
-  return Math.round(Math.min(18, (avg - par) * 0.8));
+  return Math.round(Math.min(maxHdcp, (avg - par) * 0.8));
 }
 
 function calcGross(holes) {
@@ -11021,7 +11027,7 @@ function showHdcpTip(el, e) {
     const par   = el.dataset.par;
     if (gross && par) {
       // Hdcp cell — first score calculation
-      const maxHdcp = parseInt(query(`SELECT MaxHdcp FROM LeagueParms WHERE Name="Hugh's" ORDER BY Season DESC LIMIT 1`)[0]?.MaxHdcp || 99);
+      const maxHdcp = getLeagueMaxHdcp();
       const calc = Math.min(maxHdcp, Math.round((parseInt(gross) - parseInt(par)) * 0.8));
       hdcpTip.innerHTML =
         `<div style="color:#aaa;font-size:10px;margin-bottom:6px">FIRST SCORE</div>` +
@@ -11067,7 +11073,7 @@ function showHdcpTip(el, e) {
   }
   // 1-3 scores: use all of them, no dropping
   const avg  = working.reduce((a,b)=>a+b,0) / working.length;
-  const calc = Math.round(Math.min(18, (avg - par) * 0.8));
+  const calc = Math.round(Math.min(getLeagueMaxHdcp(), (avg - par) * 0.8));
   const dropLabel = has5 ? ' · drop high & low' : scores.length >= 4 ? ' · drop high' : ' · all used';
   const calcLine = `<div style="color:#90caf9;font-size:11px;margin-top:6px;border-top:1px solid #333;padding-top:5px">`
     + `avg ${avg.toFixed(1)} − ${par} × 0.8 = <strong>${calc}</strong></div>`;
