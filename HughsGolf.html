@@ -4883,7 +4883,7 @@ function selectedOptionText(selectId) {
 
 function printableClone(element) {
   const clone = element.cloneNode(true);
-  clone.querySelectorAll('button,input,select,textarea').forEach(el => el.remove());
+  clone.querySelectorAll('button').forEach(el => el.remove());
   clone.querySelectorAll('[style]').forEach(el => {
     el.style.position = '';
     el.style.top = '';
@@ -4900,30 +4900,38 @@ function openReportPrintWindow(title, subtitle, bodyHtml) {
     alert('Popup blocked. Allow popups for HughsGolf to create PDFs.');
     return;
   }
+  const pageStyles = Array.from(document.querySelectorAll('style')).map(s => s.textContent).join('\n');
   const generated = new Date().toLocaleString();
   win.document.write(`<!doctype html>
 <html>
 <head>
   <title>${title}</title>
   <style>
-    @page { size: letter landscape; margin: 0.35in; }
-    body { font-family: Arial, sans-serif; color: #1f2a22; margin: 0; }
-    h1 { margin: 0 0 4px; color: #1b5e20; font-size: 22px; }
-    .meta { color: #666; font-size: 11px; margin-bottom: 14px; }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    th { background: #1b5e20 !important; color: #d4af37 !important; padding: 6px 8px; border: 1px solid #2d6a4f; text-align: left; }
-    td { padding: 5px 8px; border: 1px solid #ddd; }
-    .num, .ctr { text-align: center; }
-    .rank-cell { font-weight: 700; }
-    .badge { padding: 1px 5px; border-radius: 3px; border: 1px solid #ccc; }
-    .pts-bar { display: none; }
-    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+    ${pageStyles}
+    @page { size: letter landscape; margin: 0.3in; }
+    body { background: var(--cream); padding: 0; }
+    .pdf-page { max-width: none; padding: 0; margin: 0; }
+    .pdf-title { margin: 0 0 12px; color: var(--green); font-family: 'Bebas Neue', cursive; font-size: 26px; letter-spacing: 1px; }
+    .pdf-meta { color: var(--gray); font-size: 11px; margin-bottom: 14px; font-family: 'DM Mono', monospace; }
+    .pdf-page .section { display: block !important; }
+    .pdf-page .card { box-shadow: none; border: 1px solid var(--border); break-inside: avoid; }
+    .pdf-page .controls { break-inside: avoid; }
+    .pdf-page .table-wrap, .pdf-page div[style*="overflow-x"] { overflow: visible !important; }
+    .pdf-page table { page-break-inside: auto; }
+    .pdf-page tr { page-break-inside: avoid; page-break-after: auto; }
+    .pdf-page input, .pdf-page select { border: 1px solid var(--border); background: white; color: var(--dark); }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .pdf-title, .pdf-meta { break-after: avoid; }
+    }
   </style>
 </head>
 <body>
-  <h1>${title}</h1>
-  <div class="meta">${subtitle}${subtitle ? ' · ' : ''}Generated ${generated}</div>
-  ${bodyHtml}
+  <main class="pdf-page">
+    <div class="pdf-title">${title}</div>
+    <div class="pdf-meta">${subtitle}${subtitle ? ' · ' : ''}Generated ${generated}</div>
+    ${bodyHtml}
+  </main>
   <script>window.onload = () => setTimeout(() => window.print(), 250);<\/script>
 </body>
 </html>`);
@@ -4938,21 +4946,21 @@ function createReportPdf(kind) {
 
   if (kind === 'scores') {
     loadScores();
-    title = 'Scores';
+    title = 'Scores Screen';
     subtitle = selectedOptionText('scoresDate');
-    source = document.getElementById('scoresTable');
+    source = document.getElementById('tab-scores');
   } else if (kind === 'standings') {
     loadStandings();
-    title = document.getElementById('standTitle')?.textContent || 'Standings';
+    title = document.getElementById('standTitle')?.textContent || 'Standings Screen';
     subtitle = document.getElementById('standSubtitle')?.textContent || selectedOptionText('standSeason');
-    source = document.getElementById('standTable');
+    source = document.getElementById('tab-standings');
   } else if (kind === 'matches') {
     if (!document.getElementById('matchesSeason')?.options.length) initMatchesDate();
     document.getElementById('matchesTableView').checked = true;
     loadMatchesTable();
-    title = 'Matches';
+    title = 'Matches Screen';
     subtitle = selectedOptionText('matchesDate');
-    source = document.getElementById('matchesContent');
+    source = document.getElementById('tab-matches');
   }
 
   if (!source || !source.textContent.trim()) {
