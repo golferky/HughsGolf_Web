@@ -4481,6 +4481,7 @@ function ctpSetWinner(hole, date, player, amount) {
   serverRun(`DELETE FROM Payments WHERE League=? AND Desc='CTP' AND Player='Kitty' AND Detail LIKE 'Carryover${hole}-%'`, [league]);
   serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'CTP',?,?,?,'CTP Winner')`,
     [league, player, date, `#${hole}`, wholeAmt, '']);
+  reconcileCtpCarryovers(date);
   saveDBToServer();
   loadCtps();
 }
@@ -4500,8 +4501,40 @@ function ctpNoWinner(hole, date, amount, fb) {
   serverRun(`DELETE FROM Payments WHERE League=? AND Date=? AND Desc='CTP' AND Detail LIKE 'Carryover${hole}%' AND Player='Kitty'`, [league, date]);
   serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'CTP',?,?,?,?)`,
     [league, 'Kitty', date, `Carryover${hole}-${fb}`, wholeAmt, now, `CTP${hole} no winner - ${fb}`]);
+  reconcileCtpCarryovers(date);
   saveDBToServer();
   loadCtps();
+}
+
+function reconcileCtpCarryovers(date) {
+  if (!db || !date) return;
+  const league = "Hugh's";
+  const season = String(date).substring(0, 4);
+  const fb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="${league}" LIMIT 1`)[0]?.FrontBack || 'Front';
+  const courseRow = query(`SELECT * FROM Courses WHERE Name=(SELECT Course FROM LeagueParms WHERE Name="${league}" AND Season=${season})`)[0];
+  if (!courseRow) return;
+
+  const pars = fb === 'Front'
+    ? [courseRow.Hole1,courseRow.Hole2,courseRow.Hole3,courseRow.Hole4,courseRow.Hole5,courseRow.Hole6,courseRow.Hole7,courseRow.Hole8,courseRow.Hole9]
+    : [courseRow.Hole10,courseRow.Hole11,courseRow.Hole12,courseRow.Hole13,courseRow.Hole14,courseRow.Hole15,courseRow.Hole16,courseRow.Hole17,courseRow.Hole18];
+  const startHole = fb === 'Front' ? 1 : 10;
+  const holes = pars.map((p, i) => parseInt(p) === 3 ? startHole + i : null).filter(Boolean);
+  if (!holes.length) return;
+
+  const payerCount = parseInt(query(`SELECT COUNT(DISTINCT Player) as c FROM Payments WHERE Date=${date} AND Desc='CTP' AND Detail='Payment' AND League="${league}"`)[0]?.c || 0);
+  if (!payerCount) return;
+  const potPerHole = Math.floor(payerCount / holes.length);
+  if (potPerHole <= 0) return;
+
+  const now = new Date().toLocaleDateString();
+  holes.forEach(hole => {
+    const hasWinner = query(`SELECT 1 FROM Payments WHERE League=? AND Date=? AND Desc='CTP' AND Detail=? AND Player!='Kitty' LIMIT 1`, [league, date, `#${hole}`]).length > 0;
+    const hasCarry = query(`SELECT 1 FROM Payments WHERE League=? AND Date=? AND Desc='CTP' AND Detail LIKE ? AND Player='Kitty' LIMIT 1`, [league, date, `Carryover${hole}%`]).length > 0;
+    if (!hasWinner && !hasCarry) {
+      serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'CTP',?,?,?,?)`,
+        [league, 'Kitty', date, `Carryover${hole}-${fb}`, potPerHole, now, `CTP${hole} no winner - ${fb}`]);
+    }
+  });
 }
 
 function loadPaymentsTab() {
