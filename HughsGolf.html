@@ -4362,6 +4362,25 @@ function populateCtpsDateDropdown() {
   loadCtps();
 }
 
+function getScheduledFrontBack(date, league = "Hugh's") {
+  const season = String(date).substring(0, 4);
+  const normalizeFb = (value) => {
+    const v = String(value || '').trim().toUpperCase();
+    if (v === 'BACK' || v === 'B') return 'Back';
+    if (v === 'FRONT' || v === 'F') return 'Front';
+    return '';
+  };
+
+  const scoreFb = normalizeFb(query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="${league}" LIMIT 1`)[0]?.FrontBack);
+  if (scoreFb) return scoreFb;
+
+  const lp = query(`SELECT Start9, StartDate FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
+  const startMonth = lp?.StartDate ? parseInt(String(lp.StartDate).split('/')[0]) : 4;
+  const thisMonth  = parseInt(String(date).substring(4, 6));
+  const start9     = lp?.Start9 === 'B' ? 'Back' : 'Front';
+  return ((thisMonth - startMonth) % 2 === 0) ? start9 : (start9 === 'Front' ? 'Back' : 'Front');
+}
+
 function loadCtps() {
   if (!db) return;
   const date    = document.getElementById('ctpsDate').value;
@@ -4369,8 +4388,7 @@ function loadCtps() {
   const league  = "Hugh's";
   const season  = document.getElementById('ctpsSeason').value;
 
-  // Determine front/back from scores
-  const fb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="${league}" LIMIT 1`)[0]?.FrontBack || 'Front';
+  const fb = getScheduledFrontBack(date, league);
 
   // CTP holes = par 3 holes on the current 9
   const courseRow = query(`SELECT * FROM Courses WHERE Name=(SELECT Course FROM LeagueParms WHERE Name="${league}" AND Season=${season})`)[0];
@@ -4516,7 +4534,7 @@ function reconcileCtpCarryovers(date) {
   if (!db || !date) return;
   const league = "Hugh's";
   const season = String(date).substring(0, 4);
-  const fb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="${league}" LIMIT 1`)[0]?.FrontBack || 'Front';
+  const fb = getScheduledFrontBack(date, league);
   const courseRow = query(`SELECT * FROM Courses WHERE Name=(SELECT Course FROM LeagueParms WHERE Name="${league}" AND Season=${season})`)[0];
   if (!courseRow) return;
 
