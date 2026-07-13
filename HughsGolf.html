@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260713.7</span>
+    <span id="appVersionDisplay">v20260713.8</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.7</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.8</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -4878,6 +4878,16 @@ function openPaymentModalForPlayer(player, date) {
   const ctpAmt  = parseFloat(lp?.Closest || 1);
   const duesAmt = parseFloat(lp?.Cost || 45);
   const eoyAmt  = parseFloat(lp?.['EOY Skins'] || 20);
+  const psStatus = getPostSeasonPaymentStatus(player, date);
+
+  ['paySkinsCheck','payCtpCheck','payDuesCheck','payEoyCheck','payDuesAmt','payEoyAmt'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = false;
+  });
+  document.querySelectorAll('input[name="payEoyWk"]').forEach(r => {
+    r.disabled = false;
+    r.checked = false;
+  });
 
   // Existing payments for this player/date
   const existing = {};
@@ -4920,6 +4930,25 @@ function openPaymentModalForPlayer(player, date) {
   document.getElementById('payEoyCheck').disabled = eoyRemain <= 0;
   document.getElementById('payEoyAmt').disabled   = eoyRemain <= 0;
 
+  if (psStatus) {
+    document.getElementById('paySkinsCheck').checked = false;
+    document.getElementById('paySkinsCheck').disabled = true;
+    document.getElementById('paySkinsAmt').textContent = 'Post-season uses EOY Skins';
+    document.getElementById('payCtpCheck').checked = false;
+    document.getElementById('payCtpCheck').disabled = true;
+    document.getElementById('payCtpAmt').textContent = 'Post-season';
+
+    document.getElementById('payEoyPaid').textContent = psStatus.eligible ? `Paid week ${psStatus.week} ✓` : '';
+    document.getElementById('payEoyAmt').value = psStatus.eligible ? 0 : psStatus.weekAmt;
+    document.getElementById('payEoyCheck').checked = !psStatus.eligible;
+    document.getElementById('payEoyCheck').disabled = psStatus.eligible;
+    document.getElementById('payEoyAmt').disabled = psStatus.eligible;
+    document.querySelectorAll('input[name="payEoyWk"]').forEach(r => {
+      r.checked = r.value === String(psStatus.week);
+      r.disabled = psStatus.eligible;
+    });
+  }
+
   updatePayTotal(skinAmt, ctpAmt);
 
   ['paySkinsCheck','payCtpCheck','payDuesCheck','payEoyCheck','payDuesAmt','payEoyAmt'].forEach(id => {
@@ -4947,7 +4976,8 @@ function confirmPaymentForPlayer(player, date, skinAmt, ctpAmt) {
   if (document.getElementById('payEoyCheck').checked) {
     const amt = parseFloat(document.getElementById('payEoyAmt').value || 0);
     const wk  = document.querySelector('input[name="payEoyWk"]:checked')?.value || '';
-    if (amt > 0) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'EOY Skins','Payment',?,?,?)`, [league,player,date,amt,now,wk?`Wk ${wk}`:'']);
+    const comment = wk === '1' ? '(1st Week)' : wk === '2' ? '(2nd Week)' : '';
+    if (amt > 0) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'EOY Skins','Payment',?,?,?)`, [league,player,date,amt,now,comment]);
   }
 
   closePaymentModal();
@@ -8674,8 +8704,8 @@ function getEoySkinPlayersForWeek(season, week) {
   rows.forEach(r => {
     const comment = (r.Comment || '').toLowerCase();
     const earned = parseFloat(r.Earned || 0);
-    const firstWeekOnly = comment.includes('1st') || comment.includes('first') || comment.includes('week 1');
-    const secondWeekOnly = comment.includes('2nd') || comment.includes('second') || comment.includes('week 2');
+    const firstWeekOnly = comment.includes('1st') || comment.includes('first') || comment.includes('week 1') || comment.includes('wk 1');
+    const secondWeekOnly = comment.includes('2nd') || comment.includes('second') || comment.includes('week 2') || comment.includes('wk 2');
 
     if (firstWeekOnly) {
       if (week === 1) eligible.add(r.Player);
@@ -8696,6 +8726,55 @@ function getEoySkinPlayersForWeek(season, week) {
 function getEoySkinPlayersForDate(season, date, postSeasonDt) {
   const week = getPostSeasonWeekForDate(date, postSeasonDt);
   return getEoySkinPlayersForWeek(season, week);
+}
+
+function getPostSeasonContextForDate(date) {
+  const season = parseInt(date.toString().substring(0,4));
+  const rows = query(`SELECT PostSeasonDt, "EOY Skins" as EoySkins FROM LeagueParms WHERE Name="Hugh's" AND PostSeasonDt IS NOT NULL`);
+  for (const r of rows) {
+    const week = getPostSeasonWeekForDate(date, r.PostSeasonDt);
+    if (week) {
+      return {
+        season,
+        week,
+        weekComment: week === 1 ? '(1st Week)' : '(2nd Week)',
+        fullAmt: parseFloat(r.EoySkins || 20),
+        weekAmt: parseFloat(r.EoySkins || 20) / 2,
+        postSeasonDt: r.PostSeasonDt
+      };
+    }
+  }
+  return null;
+}
+
+function getPostSeasonPaymentStatus(player, date) {
+  const ctx = getPostSeasonContextForDate(date);
+  if (!ctx) return null;
+
+  const rows = query(`SELECT ID, CAST(Earned AS REAL) as Earned, COALESCE(Comment,'') as Comment
+    FROM Payments
+    WHERE League="Hugh's"
+      AND Player=?
+      AND "Desc"='EOY Skins'
+      AND Detail='Payment'
+      AND CAST(Earned AS REAL) > 0
+      AND Date >= ${ctx.season}0101
+      AND Date < ${ctx.season+1}0101`, [player]);
+  const eligible = getEoySkinPlayersForWeek(ctx.season, ctx.week).has(player);
+  const weekOnly = rows.filter(r => {
+    const comment = (r.Comment || '').toLowerCase();
+    return ctx.week === 1
+      ? (comment.includes('1st') || comment.includes('first') || comment.includes('week 1') || comment.includes('wk 1'))
+      : (comment.includes('2nd') || comment.includes('second') || comment.includes('week 2') || comment.includes('wk 2'));
+  });
+  const fullRows = rows.filter(r => {
+    const comment = (r.Comment || '').toLowerCase();
+    const tagged = comment.includes('1st') || comment.includes('first') || comment.includes('week 1') || comment.includes('wk 1') ||
+                   comment.includes('2nd') || comment.includes('second') || comment.includes('week 2') || comment.includes('wk 2');
+    return !tagged && parseFloat(r.Earned || 0) >= ctx.fullAmt;
+  });
+
+  return { ...ctx, eligible, weekOnly, fullRows };
 }
 
 function calcEoySkins(season, silent=false) {
@@ -9301,6 +9380,34 @@ function buildEntryGrid() {
 async function toggleEntryPaid(player, date, markPaid) {
   const league = "Hugh's";
   const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="${league}"`)[0]?.s;
+  const psStatus = getPostSeasonPaymentStatus(player, date);
+  if (psStatus) {
+    if (markPaid) {
+      if (psStatus.eligible) {
+        alert(`${player} is already paid for post-season week ${psStatus.week}.`);
+        return;
+      }
+      if (!confirm(`Mark ${player} as paid for post-season week ${psStatus.week}?\n\nThis records EOY Skins $${psStatus.weekAmt.toFixed(2)} with comment ${psStatus.weekComment}.`)) return;
+      serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'EOY Skins','Payment',?,?,?)`,
+        [league, player, date, psStatus.weekAmt, new Date().toLocaleString(), psStatus.weekComment]);
+    } else {
+      if (psStatus.fullRows.length) {
+        alert(`${player} has a full EOY Skins payment, so they are paid for both post-season weeks. Edit that payment on the Payments tab if you need to change it.`);
+        return;
+      }
+      if (!psStatus.weekOnly.length) {
+        alert(`No week-specific EOY Skins payment found for ${player} on post-season week ${psStatus.week}.`);
+        return;
+      }
+      if (!confirm(`Unmark ${player} as paid for post-season week ${psStatus.week}?\n\nThis removes their EOY Skins ${psStatus.weekComment} payment record.`)) return;
+      const ids = psStatus.weekOnly.map(r => r.ID).filter(Boolean);
+      serverRun(`DELETE FROM Payments WHERE League=? AND ID IN (${ids.map(()=>'?').join(',')})`, [league, ...ids]);
+    }
+    await saveDBToServer();
+    buildEntryGrid();
+    return;
+  }
+
   const lp = query(`SELECT Skins, Closest FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
   const skinAmt = parseFloat(lp?.Skins || 2);
   const ctpAmt  = parseFloat(lp?.Closest || 1);
@@ -9332,7 +9439,11 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
   const head = document.getElementById('entryHead');
   const body = document.getElementById('entryBody');
   const gridDate = document.getElementById('entryDate').value;
-  const paidPlayers = new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League="Hugh's" AND CAST(Date AS INTEGER)=CAST(${gridDate||0} AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment'`).map(r=>r.Player));
+  const gridSeason = parseInt((gridDate || '').toString().substring(0,4));
+  const psContext = isPostSeason ? getPostSeasonContextForDate(gridDate) : null;
+  const paidPlayers = isPostSeason && psContext
+    ? getEoySkinPlayersForWeek(gridSeason, psContext.week)
+    : new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League="Hugh's" AND CAST(Date AS INTEGER)=CAST(${gridDate||0} AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment'`).map(r=>r.Player));
 
   // For post season, sort: 18-hole first (by net), then 9-hole, then no scores
   if (isPostSeason) {
@@ -10678,7 +10789,27 @@ function openPaymentModal(key) {
     document.getElementById('payEoyAmt').disabled = true;
   }
 
+  if (psStatus) {
+    document.getElementById('paySkinsCheck').checked = false;
+    document.getElementById('paySkinsCheck').disabled = true;
+    document.getElementById('paySkinsAmt').textContent = 'Post-season uses EOY Skins';
+    document.getElementById('payCtpCheck').checked = false;
+    document.getElementById('payCtpCheck').disabled = true;
+    document.getElementById('payCtpAmt').textContent = 'Post-season';
+
+    document.getElementById('payEoyPaid').textContent = psStatus.eligible ? `Paid week ${psStatus.week} ✓` : '';
+    document.getElementById('payEoyAmt').value = psStatus.eligible ? 0 : psStatus.weekAmt;
+    document.getElementById('payEoyCheck').checked = !psStatus.eligible;
+    document.getElementById('payEoyCheck').disabled = psStatus.eligible;
+    document.getElementById('payEoyAmt').disabled = psStatus.eligible;
+    document.querySelectorAll('input[name="payEoyWk"]').forEach(r => {
+      r.checked = r.value === String(psStatus.week);
+      r.disabled = psStatus.eligible;
+    });
+  }
+
   updatePayTotal(skinAmt, ctpAmt);
+  document.getElementById('payBtn').onclick = confirmPayment;
   document.getElementById('paymentModal').style.display = 'flex';
 
   // Live total update
@@ -10728,8 +10859,9 @@ function confirmPayment() {
   if (document.getElementById('payEoyCheck').checked) {
     const amt = parseFloat(document.getElementById('payEoyAmt').value || 0);
     const wk  = document.querySelector('input[name="payEoyWk"]:checked')?.value || '';
+    const comment = wk === '1' ? '(1st Week)' : wk === '2' ? '(2nd Week)' : '';
     if (amt > 0) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'EOY Skins','Payment',?,?,?)`,
-      [league, player, date, amt, now, wk ? `Wk ${wk}` : '']);
+      [league, player, date, amt, now, comment]);
   }
 
   closePaymentModal();
