@@ -965,6 +965,7 @@
       <button onclick="showAdminSection('sql')" id="adminGroupSql" class="admin-btn active-admin-btn">🔍 SQL</button>
       <button onclick="showAdminSection('players')" id="adminGroupTables" class="admin-btn">Table Maintenance</button>
       <button onclick="showAdminSection('loginactivity')" id="adminGroupLogging" class="admin-btn">Logging</button>
+      <button onclick="showAdminSection('pdfs')" id="adminBtnPdfs" class="admin-btn">📄 PDFs</button>
       <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
       <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
       <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">💾 Backups</button>
@@ -982,6 +983,17 @@
     <div id="adminSubnavLogging" class="admin-subnav">
       <button onclick="showAdminSection('loginactivity')" id="adminBtnLoginactivity" class="admin-btn">🔑 Login Activity</button>
       <button onclick="showAdminSection('serverlog')" id="adminBtnServerlog" class="admin-btn">📋 Server Log</button>
+    </div>
+
+    <div id="adminPdfs" style="display:none">
+      <div class="card">
+        <div class="card-header">PDF Reports</div>
+        <div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+          <button onclick="createReportPdf('scores')" style="padding:12px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Scores PDF</button>
+          <button onclick="createReportPdf('standings')" style="padding:12px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Standings PDF</button>
+          <button onclick="createReportPdf('matches')" style="padding:12px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Matches PDF</button>
+        </div>
+      </div>
     </div>
 
     <!-- PLAYERS SECTION -->
@@ -4814,7 +4826,7 @@ function loadSchedule() {
 }
 
 // ── ADMIN TAB ──
-const ADMIN_SECTIONS = ['players','teams','subs','sql','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity'];
+const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity'];
 const ADMIN_GROUPS = {
   tables: ['players','teams','subs','leaguesettings'],
   logging: ['loginactivity','serverlog']
@@ -4846,7 +4858,7 @@ function showAdminSection(section) {
     const btn = document.getElementById(`adminGroup${g}`);
     if (btn) btn.className = 'admin-btn' + (group === g.toLowerCase() || (g === 'Sql' && section === 'sql') ? ' active-admin-btn' : '');
   });
-  ['rainout','sync','gallus','backups'].forEach(s => {
+  ['pdfs','rainout','sync','gallus','backups'].forEach(s => {
     const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
     if (btn) btn.className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
@@ -4862,6 +4874,92 @@ function showAdminSection(section) {
   if (section==='backups') loadBackups();
   if (section==='leaguesettings') loadLeagueSettings();
   if (section==='loginactivity') loadLoginActivity();
+}
+
+function selectedOptionText(selectId) {
+  const sel = document.getElementById(selectId);
+  return sel?.selectedOptions?.[0]?.textContent?.trim() || sel?.value || '';
+}
+
+function printableClone(element) {
+  const clone = element.cloneNode(true);
+  clone.querySelectorAll('button,input,select,textarea').forEach(el => el.remove());
+  clone.querySelectorAll('[style]').forEach(el => {
+    el.style.position = '';
+    el.style.top = '';
+    el.style.zIndex = '';
+    el.style.maxHeight = '';
+    el.style.overflow = '';
+  });
+  return clone.outerHTML;
+}
+
+function openReportPrintWindow(title, subtitle, bodyHtml) {
+  const win = window.open('', '_blank');
+  if (!win) {
+    alert('Popup blocked. Allow popups for HughsGolf to create PDFs.');
+    return;
+  }
+  const generated = new Date().toLocaleString();
+  win.document.write(`<!doctype html>
+<html>
+<head>
+  <title>${title}</title>
+  <style>
+    @page { size: letter landscape; margin: 0.35in; }
+    body { font-family: Arial, sans-serif; color: #1f2a22; margin: 0; }
+    h1 { margin: 0 0 4px; color: #1b5e20; font-size: 22px; }
+    .meta { color: #666; font-size: 11px; margin-bottom: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background: #1b5e20 !important; color: #d4af37 !important; padding: 6px 8px; border: 1px solid #2d6a4f; text-align: left; }
+    td { padding: 5px 8px; border: 1px solid #ddd; }
+    .num, .ctr { text-align: center; }
+    .rank-cell { font-weight: 700; }
+    .badge { padding: 1px 5px; border-radius: 3px; border: 1px solid #ccc; }
+    .pts-bar { display: none; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <h1>${title}</h1>
+  <div class="meta">${subtitle}${subtitle ? ' · ' : ''}Generated ${generated}</div>
+  ${bodyHtml}
+  <script>window.onload = () => setTimeout(() => window.print(), 250);<\/script>
+</body>
+</html>`);
+  win.document.close();
+}
+
+function createReportPdf(kind) {
+  if (!db) return;
+  let title = '';
+  let subtitle = '';
+  let source = null;
+
+  if (kind === 'scores') {
+    loadScores();
+    title = 'Scores';
+    subtitle = selectedOptionText('scoresDate');
+    source = document.getElementById('scoresTable');
+  } else if (kind === 'standings') {
+    loadStandings();
+    title = document.getElementById('standTitle')?.textContent || 'Standings';
+    subtitle = document.getElementById('standSubtitle')?.textContent || selectedOptionText('standSeason');
+    source = document.getElementById('standTable');
+  } else if (kind === 'matches') {
+    if (!document.getElementById('matchesSeason')?.options.length) initMatchesDate();
+    document.getElementById('matchesTableView').checked = true;
+    loadMatchesTable();
+    title = 'Matches';
+    subtitle = selectedOptionText('matchesDate');
+    source = document.getElementById('matchesContent');
+  }
+
+  if (!source || !source.textContent.trim()) {
+    alert('Nothing to print for this report yet.');
+    return;
+  }
+  openReportPrintWindow(title, subtitle, printableClone(source));
 }
 
 function loadAdminTab() {
