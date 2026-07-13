@@ -999,22 +999,29 @@
           <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#faf8f2">
             <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Scores Date</label>
             <select id="pdfScoresDate" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
-            <button onclick="createReportPdf('scores')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Scores PDF</button>
+            <button onclick="createReportPdf('scores')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;margin-bottom:8px">Print Scores PDF</button>
+            <button onclick="emailReportPdf('scores')" style="width:100%;padding:9px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Email Scores PDF</button>
           </div>
           <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#faf8f2">
             <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Standings As Of</label>
             <select id="pdfStandAsOf" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
-            <button onclick="createReportPdf('standings')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Standings PDF</button>
+            <button onclick="createReportPdf('standings')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;margin-bottom:8px">Print Standings PDF</button>
+            <button onclick="emailReportPdf('standings')" style="width:100%;padding:9px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Email Standings PDF</button>
           </div>
           <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#faf8f2">
             <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Matches Week</label>
             <select id="pdfMatchesDate" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
-            <button onclick="createReportPdf('matches')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Matches PDF</button>
+            <button onclick="createReportPdf('matches')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;margin-bottom:8px">Print Matches PDF</button>
+            <button onclick="emailReportPdf('matches')" style="width:100%;padding:9px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Email Matches PDF</button>
           </div>
           <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#f3f8f3;grid-column:1/-1">
             <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Combined Date</label>
             <select id="pdfCombinedDate" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
-            <button onclick="createReportPdf('combined')" style="width:100%;padding:12px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Combined Scores + Standings + Matches PDF</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button onclick="previewPdfEmailRecipients()" style="flex:1;min-width:180px;padding:11px 16px;background:white;color:var(--green);border:1px solid var(--green);border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Preview Recipients</button>
+              <button onclick="createReportPdf('combined')" style="flex:1;min-width:220px;padding:12px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Print Combined PDF</button>
+              <button onclick="emailReportPdf('combined')" style="flex:1;min-width:220px;padding:12px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Email Combined PDF</button>
+            </div>
           </div>
         </div>
       </div>
@@ -5081,10 +5088,13 @@ function reportPdfFilename(kind, subtitle) {
 
 async function offerReportPdfEmail(payload) {
   const recipients = getPdfEmailRecipients();
-  if (!recipients.length) return;
+  if (!recipients.length) {
+    alert('No players have Email Stats checked with a valid email address.');
+    return false;
+  }
   const names = recipients.slice(0, 12).map(r => r.Player).join('\n');
   const more = recipients.length > 12 ? `\n...and ${recipients.length - 12} more` : '';
-  if (!confirm(`Ready to email this PDF report to ${recipients.length} player(s) with Email Stats checked?\n\n${names}${more}`)) return;
+  if (!confirm(`Ready to email this PDF report to ${recipients.length} player(s) with Email Stats checked?\n\n${names}${more}`)) return false;
 
   try {
     const resp = await fetch('/send-report-pdf', {
@@ -5095,9 +5105,21 @@ async function offerReportPdfEmail(payload) {
     const json = await resp.json();
     if (!resp.ok || !json.ok) throw new Error(json.error || `HTTP ${resp.status}`);
     alert(`PDF emailed to ${json.sent_count}/${json.recipient_count} player(s).${json.failed?.length ? `\n\nFailed: ${json.failed.map(f => f.player).join(', ')}` : ''}`);
+    return true;
   } catch (e) {
     alert(`PDF email failed: ${e.message}`);
+    return false;
   }
+}
+
+function previewPdfEmailRecipients() {
+  const recipients = getPdfEmailRecipients();
+  if (!recipients.length) {
+    alert('No players have Email Stats checked with a valid email address.');
+    return;
+  }
+  alert(`Players who will receive emailed PDFs (${recipients.length}):\n\n` +
+    recipients.map(r => `${r.Player} <${r.Email}>`).join('\n'));
 }
 
 function populatePdfControls() {
@@ -5173,6 +5195,54 @@ function prepareMatchesPdfSection() {
   };
 }
 
+function buildReportPdfPayload(kind) {
+  if (!db) return null;
+  let title = '';
+  let subtitle = '';
+  let source = null;
+
+  if (kind === 'scores') {
+    ({ title, subtitle, source } = prepareScoresPdfSection());
+  } else if (kind === 'standings') {
+    ({ title, subtitle, source } = prepareStandingsPdfSection());
+  } else if (kind === 'matches') {
+    ({ title, subtitle, source } = prepareMatchesPdfSection());
+  } else if (kind === 'combined') {
+    applyCombinedPdfDate();
+    const reports = [prepareScoresPdfSection(), prepareStandingsPdfSection(), prepareMatchesPdfSection()];
+    return {
+      reports,
+      title: "Hugh's Golf Reports",
+      subtitle: 'Combined report',
+      text: reportTextFromSections(reports),
+      filename: reportPdfFilename('combined', selectedOptionText('pdfCombinedDate'))
+    };
+  }
+
+  if (!source || !source.textContent.trim()) return null;
+  return {
+    reports: [{ title, subtitle, source }],
+    title,
+    subtitle,
+    text: reportTextFromSections([{ title, subtitle, source }]),
+    filename: reportPdfFilename(kind, subtitle)
+  };
+}
+
+async function emailReportPdf(kind) {
+  const payload = buildReportPdfPayload(kind);
+  if (!payload) {
+    alert('Nothing to email for this report yet.');
+    return;
+  }
+  await offerReportPdfEmail({
+    title: payload.title,
+    subtitle: payload.subtitle,
+    text: payload.text,
+    filename: payload.filename
+  });
+}
+
 function createReportPdf(kind) {
   if (!db) return;
   let title = '';
@@ -5188,7 +5258,6 @@ function createReportPdf(kind) {
   } else if (kind === 'combined') {
     applyCombinedPdfDate();
     const reports = [prepareScoresPdfSection(), prepareStandingsPdfSection(), prepareMatchesPdfSection()];
-    const reportText = reportTextFromSections(reports);
     const bodyHtml = reports.map((r, i) => `
       <section style="${i ? 'break-before:page;page-break-before:always;' : ''}">
         <div class="pdf-title">${r.title}</div>
@@ -5197,12 +5266,6 @@ function createReportPdf(kind) {
       </section>
     `).join('');
     openReportPrintWindow("Hugh's Golf Reports", 'Combined report', bodyHtml);
-    setTimeout(() => offerReportPdfEmail({
-      title: "Hugh's Golf Reports",
-      subtitle: 'Combined report',
-      text: reportText,
-      filename: reportPdfFilename('combined', selectedOptionText('pdfCombinedDate'))
-    }), 1000);
     return;
   }
 
@@ -5211,12 +5274,6 @@ function createReportPdf(kind) {
     return;
   }
   openReportPrintWindow(title, subtitle, printableClone(source));
-  setTimeout(() => offerReportPdfEmail({
-    title,
-    subtitle,
-    text: reportTextFromSections([{ title, subtitle, source }]),
-    filename: reportPdfFilename(kind, subtitle)
-  }), 1000);
 }
 
 function loadAdminTab() {
