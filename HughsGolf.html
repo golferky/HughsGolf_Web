@@ -3926,7 +3926,10 @@ function toggleSkinsParticipants() {
 function populateSkinsDateDropdown() {
   const season = document.getElementById('skinsSeason').value;
   const skSel = document.getElementById('skinsDate');
-  const skinDates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='Skin' AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' ORDER BY Date DESC`);
+  const skinDates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='Skin' AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
+    UNION
+    SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League="Hugh's"), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
+    ORDER BY sDate DESC`);
   skSel.innerHTML = skinDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
   loadSkins();
 }
@@ -4351,7 +4354,10 @@ function loadCtpsTab() {
 function populateCtpsDateDropdown() {
   const season = document.getElementById('ctpsSeason').value;
   const sel = document.getElementById('ctpsDate');
-  const dates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='CTP' AND Detail='Payment' AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' ORDER BY Date DESC`);
+  const dates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='CTP' AND Detail='Payment' AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
+    UNION
+    SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League="Hugh's"), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
+    ORDER BY sDate DESC`);
   sel.innerHTML = dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
   loadCtps();
 }
