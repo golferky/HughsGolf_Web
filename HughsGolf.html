@@ -5074,10 +5074,49 @@ function updatePdfEmailSummary() {
   el.appendChild(names);
 }
 
+function reportCellText(cell) {
+  const controls = Array.from(cell.querySelectorAll('input, select, textarea'));
+  if (controls.length) {
+    const values = controls.map(ctrl => {
+      if (ctrl.tagName === 'SELECT') return ctrl.selectedOptions?.[0]?.textContent?.trim() || ctrl.value || '';
+      if (ctrl.type === 'checkbox' || ctrl.type === 'radio') return ctrl.checked ? 'Y' : '';
+      return ctrl.value || '';
+    }).filter(Boolean);
+    if (values.length) return values.join(' ');
+  }
+  return (cell.innerText || cell.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function reportTableText(table) {
+  const rows = Array.from(table.querySelectorAll('tr')).map(row =>
+    Array.from(row.children).map(reportCellText).filter(v => v !== '')
+  ).filter(cells => cells.length);
+  if (!rows.length) return '';
+  return rows.map(cells => cells.join(' | ')).join('\n');
+}
+
+function reportTableTitle(table) {
+  const idTitles = {
+    entryGrid: 'Scorecard',
+    scoresTable: 'Scores',
+    standTable: 'Standings'
+  };
+  if (idTitles[table.id]) return idTitles[table.id];
+  const header = table.closest('.card')?.querySelector('.card-header')?.textContent?.trim();
+  if (header) return header;
+  return 'Report Table';
+}
+
 function reportTextFromSections(reports) {
   return reports.map(r => {
-    const text = (r.source?.innerText || r.source?.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
-    return `${r.title}\n${r.subtitle || ''}\n\n${text}`;
+    const tables = Array.from(r.source?.querySelectorAll('table') || [])
+      .filter(table => table.querySelectorAll('tr').length > 0);
+    const tableBlocks = tables.map(table => {
+      const text = reportTableText(table);
+      return text ? `${reportTableTitle(table)}\n${text}` : '';
+    }).filter(Boolean);
+    const fallback = (r.source?.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
+    return `${r.title}\n${r.subtitle || ''}\n\n${tableBlocks.join('\n\n') || fallback}`;
   }).join('\n\n\n');
 }
 

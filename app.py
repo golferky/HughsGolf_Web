@@ -713,8 +713,8 @@ def build_text_pdf(title, subtitle, body_text):
     """Build a simple dependency-free PDF attachment from report text."""
     width, height = 792, 612  # letter landscape, points
     margin_x, top_y = 36, 560
-    font_size, line_step = 9, 12
-    max_chars, max_lines = 118, 43
+    font_size, line_step = 7, 9
+    max_chars, max_lines = 150, 58
 
     raw_lines = [title, subtitle, '', *str(body_text or '').splitlines()]
     wrapped = []
