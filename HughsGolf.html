@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260713.12</span>
+    <span id="appVersionDisplay">v20260713.13</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.12</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.13</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -8815,11 +8815,25 @@ function calcEoySkins(season, silent=false) {
   // Check if results already exist — just load them
   const psD1check = psDate1;
   const psD2check = psDate2;
-  const existingWinners = query(`SELECT Player, Detail FROM Payments WHERE Date IN (${psD1check},${psD2check}) AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND League="Hugh's"`);
+  const existingWinners = query(`SELECT rowid as RowID, Date, Player, Detail FROM Payments WHERE Date IN (${psD1check},${psD2check}) AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND League="Hugh's" ORDER BY Date, Player, Detail, rowid`);
   if (existingWinners.length > 0) {
     window.skinWinnerCells = {};
-    existingWinners.forEach(r => { window.skinWinnerCells[`${r.Player}-${r.Detail.replace('#','')}`] = true; });
-    return;
+    const seen = new Set();
+    let removed = 0;
+    existingWinners.forEach(r => {
+      const weekPlayers = parseInt(r.Date) === psDate1 ? eoyWeek1Players : eoyWeek2Players;
+      const cellKey = `${r.Player}-${r.Detail.replace('#','')}`;
+      const rowKey = `${r.Date}-${cellKey}`;
+      if (!weekPlayers.has(r.Player) || seen.has(rowKey)) {
+        serverRun(`DELETE FROM Payments WHERE rowid=?`, [r.RowID]);
+        removed++;
+        return;
+      }
+      seen.add(rowKey);
+      window.skinWinnerCells[cellKey] = true;
+    });
+    if (removed) saveDBToServer();
+    if (seen.size > 0) return;
   }
 
   // Get course data
@@ -10096,6 +10110,18 @@ function previewHalfSeasonWinners(season, half) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function saveSkinWinnersForDate(date) {
+  const psContext = getPostSeasonContextForDate(date);
+  if (psContext) {
+    const psDates = parsePostSeasonDates(psContext.postSeasonDt);
+    serverRun(`DELETE FROM Payments
+      WHERE League="Hugh's"
+        AND "Desc"='Skin'
+        AND Detail LIKE '#%'
+        AND Date IN (${psDates.week1},${psDates.week2})`);
+    calcEoySkins(psContext.season, true);
+    return { ok: true, count: 0, total: 0, message: 'Post-season EOY skins recalculated.' };
+  }
+
   const result = calcSkinWinnersForDate(date);
   const league = "Hugh's";
 
