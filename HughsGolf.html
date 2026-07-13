@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260713.5</span>
+    <span id="appVersionDisplay">v20260713.6</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.5</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.6</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -738,12 +738,7 @@
           <label>Date</label>
           <select id="entryDate"></select>
         </div>
-        <div class="filter-group" style="justify-content:center">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
-            <input type="checkbox" id="entryPostSeason" onchange="populateEntryDates(); buildEntryGrid();" style="width:15px;height:15px;cursor:pointer">
-            Post Season
-          </label>
-        </div>
+        <input type="checkbox" id="entryPostSeason" style="display:none">
         <div class="filter-group">
           <label>9 Holes</label>
           <select id="entry9">
@@ -759,6 +754,7 @@
         </div>
       </div>
       <div style="display:flex;gap:8px">
+        <button id="postSeasonTestBtn" onclick="togglePostSeasonTestMode()" style="display:none;padding:8px 16px;border:1px solid var(--gold);border-radius:6px;background:#fff8e1;color:#7a4b00;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px">Test Post Season</button>
         <button id="entryClear" disabled title="Select a score row to clear that player only" style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;cursor:not-allowed;opacity:.45;font-family:'DM Sans',sans-serif;font-size:13px">Clear</button>
         <button id="gallusSubmitBtn" onclick="showGallusSubmit()" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">📤 Submit Round</button>
       </div>
@@ -1649,6 +1645,46 @@ function toggleFutureScoreOverride(enabled) {
   buildEntryGrid();
 }
 
+function canUsePostSeasonTestMode() {
+  return canUseFutureScoreOverride();
+}
+
+function postSeasonTestModeEnabled() {
+  return !!document.getElementById('entryPostSeason')?.checked;
+}
+
+function refreshPostSeasonTestUi() {
+  const btn = document.getElementById('postSeasonTestBtn');
+  if (!btn) return;
+
+  const show = canUsePostSeasonTestMode();
+  const enabled = postSeasonTestModeEnabled();
+  btn.style.display = show ? '' : 'none';
+  btn.textContent = enabled ? 'Exit Post Season Test' : 'Test Post Season';
+  btn.style.background = enabled ? '#6a1b9a' : '#fff8e1';
+  btn.style.borderColor = enabled ? '#6a1b9a' : 'var(--gold)';
+  btn.style.color = enabled ? 'white' : '#7a4b00';
+}
+
+function togglePostSeasonTestMode(forceEnabled = null) {
+  if (!canUsePostSeasonTestMode()) return;
+
+  const psInput = document.getElementById('entryPostSeason');
+  if (!psInput) return;
+
+  const next = forceEnabled === null ? !psInput.checked : !!forceEnabled;
+  psInput.checked = next;
+  entryState = {};
+  entryStateDate = null;
+  entryStateFb = null;
+  entryDirty = false;
+  selectedEntrySlotKey = null;
+  entryManual9 = false;
+  refreshPostSeasonTestUi();
+  populateEntryDates();
+  buildEntryGrid();
+}
+
 function refreshTestModeUi() {
   const bannerId = 'localTestModeBanner';
   let banner = document.getElementById(bannerId);
@@ -1670,6 +1706,11 @@ function refreshTestModeUi() {
   const showOverride = canUseFutureScoreOverride();
   if (overrideGroup) overrideGroup.style.display = showOverride ? '' : 'none';
   if (overrideInput) overrideInput.checked = futureScoreOverrideEnabled();
+  if (!canUsePostSeasonTestMode()) {
+    const psInput = document.getElementById('entryPostSeason');
+    if (psInput) psInput.checked = false;
+  }
+  refreshPostSeasonTestUi();
 }
 
 // ── SQL.js init ──
@@ -7414,16 +7455,13 @@ function applyRoleAccess() {
   // Show/hide entry save/clear buttons based on role
   const entrySaveBtn  = document.getElementById('entrySave');
   const entryClearBtn = document.getElementById('entryClear');
-  const entryPostSeason = document.getElementById('entryPostSeason')?.closest('.filter-group');
   const isOfficer = role === 'developer' || role === 'officer';
   if (entrySaveBtn)  entrySaveBtn.style.display  = isOfficer ? '' : 'none';
   if (entryClearBtn) entryClearBtn.style.display = isOfficer ? '' : 'none';
   refreshTestModeUi();
   updateEntryClearButton();
-  if (entryPostSeason) entryPostSeason.style.display = ''; // always visible
-  // Post Season checkbox is just a view filter - allow all roles to toggle it
   const psCheckbox = document.getElementById('entryPostSeason');
-  if (psCheckbox) psCheckbox.disabled = false;
+  if (psCheckbox) psCheckbox.disabled = !canUsePostSeasonTestMode();
   const entry9 = document.getElementById('entry9');
   if (entry9) {
     const entry9Group = entry9.closest('.filter-group');
