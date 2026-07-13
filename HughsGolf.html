@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260713.11</span>
+    <span id="appVersionDisplay">v20260713.12</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.11</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.12</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1666,6 +1666,24 @@ function refreshPostSeasonTestUi() {
   btn.style.color = enabled ? 'white' : '#7a4b00';
 }
 
+async function cleanupPostSeasonTestRefunds() {
+  if (!canUsePostSeasonTestMode() || !db) return;
+  const date = document.getElementById('entryDate')?.value;
+  if (!date) return;
+
+  const season = parseInt(date.toString().substring(0, 4));
+  const lp = query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
+  const psDates = parsePostSeasonDates(lp?.PostSeasonDt);
+  if (!psDates) return;
+
+  serverRun(`DELETE FROM Payments
+    WHERE League="Hugh's"
+      AND "Desc"='EOY Skins'
+      AND Detail='Refund'
+      AND Date IN (${psDates.week1},${psDates.week2})`);
+  await saveDBToServer();
+}
+
 function togglePostSeasonTestMode(forceEnabled = null) {
   if (!canUsePostSeasonTestMode()) return;
 
@@ -1673,6 +1691,7 @@ function togglePostSeasonTestMode(forceEnabled = null) {
   if (!psInput) return;
 
   const next = forceEnabled === null ? !psInput.checked : !!forceEnabled;
+  const wasEnabled = psInput.checked;
   psInput.checked = next;
   entryState = {};
   entryStateDate = null;
@@ -1683,6 +1702,7 @@ function togglePostSeasonTestMode(forceEnabled = null) {
   refreshPostSeasonTestUi();
   populateEntryDates();
   buildEntryGrid();
+  if (wasEnabled && !next) cleanupPostSeasonTestRefunds();
 }
 
 function refreshTestModeUi() {
