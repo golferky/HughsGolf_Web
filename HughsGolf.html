@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260713.6</span>
+    <span id="appVersionDisplay">v20260713.7</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.6</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.7</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -8637,27 +8637,85 @@ let entryLast9Value = null;
 let entryManual9 = false;
 let selectedEntrySlotKey = null;
 
+function parsePostSeasonDates(postSeasonDt) {
+  if (!postSeasonDt) return null;
+  const p = postSeasonDt.split('/');
+  const d1 = parseInt(`${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`);
+  const d2obj = new Date(postSeasonDt);
+  d2obj.setDate(d2obj.getDate() + 7);
+  const d2 = parseInt(`${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`);
+  return { week1: d1, week2: d2 };
+}
+
+function getPostSeasonWeekForDate(date, postSeasonDt) {
+  const psDates = parsePostSeasonDates(postSeasonDt);
+  const dateInt = parseInt(date);
+  if (!psDates || !dateInt) return null;
+  if (dateInt === psDates.week1) return 1;
+  if (dateInt === psDates.week2) return 2;
+  return null;
+}
+
+function getEoySkinPlayersForWeek(season, week) {
+  if (![1, 2].includes(week)) return new Set();
+
+  const fullAmt = parseFloat(query(`SELECT "EOY Skins" as amt FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0]?.amt || 20);
+  const rows = query(`SELECT Player, CAST(Earned AS REAL) as Earned, COALESCE(Comment,'') as Comment
+    FROM Payments
+    WHERE League="Hugh's"
+      AND "Desc"='EOY Skins'
+      AND Detail='Payment'
+      AND CAST(Earned AS REAL) > 0
+      AND Date >= ${season}0101
+      AND Date < ${season+1}0101`);
+
+  const eligible = new Set();
+  const untaggedTotals = {};
+  rows.forEach(r => {
+    const comment = (r.Comment || '').toLowerCase();
+    const earned = parseFloat(r.Earned || 0);
+    const firstWeekOnly = comment.includes('1st') || comment.includes('first') || comment.includes('week 1');
+    const secondWeekOnly = comment.includes('2nd') || comment.includes('second') || comment.includes('week 2');
+
+    if (firstWeekOnly) {
+      if (week === 1) eligible.add(r.Player);
+    } else if (secondWeekOnly) {
+      if (week === 2) eligible.add(r.Player);
+    } else {
+      untaggedTotals[r.Player] = (untaggedTotals[r.Player] || 0) + earned;
+    }
+  });
+
+  Object.entries(untaggedTotals).forEach(([player, total]) => {
+    if (total >= fullAmt) eligible.add(player);
+  });
+
+  return eligible;
+}
+
+function getEoySkinPlayersForDate(season, date, postSeasonDt) {
+  const week = getPostSeasonWeekForDate(date, postSeasonDt);
+  return getEoySkinPlayersForWeek(season, week);
+}
+
 function calcEoySkins(season, silent=false) {
   const lp = query(`SELECT PostSeasonDt, SkinsPS FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
   if (!lp?.PostSeasonDt) { alert('No post season date found for ' + season); return; }
 
   // Get both post season dates
-  const p = lp.PostSeasonDt.split('/');
-  const psDate1 = parseInt(`${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`);
-  const d2obj = new Date(lp.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
-  const psDate2 = parseInt(`${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`);
+  const psDates = parsePostSeasonDates(lp.PostSeasonDt);
+  const psDate1 = psDates.week1;
+  const psDate2 = psDates.week2;
 
   // EOY Skins payers this season
-  const eoyPlayers = new Set(
-    query(`SELECT DISTINCT Player FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season+1}0101`)
-    .map(r => r.Player)
-  );
-  if (!eoyPlayers.size) { alert('No EOY Skins payers found for ' + season); return; }
+  const eoyWeek1Players = getEoySkinPlayersForWeek(season, 1);
+  const eoyWeek2Players = getEoySkinPlayersForWeek(season, 2);
+  const eoyPlayers = new Set([...eoyWeek1Players, ...eoyWeek2Players]);
+  if (!eoyPlayers.size) { alert('No eligible EOY Skins payers found for ' + season); return; }
 
   // Check if results already exist — just load them
-  const psD1check = parseInt(`${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`);
-  const d2check = new Date(lp.PostSeasonDt); d2check.setDate(d2check.getDate()+7);
-  const psD2check = parseInt(`${d2check.getFullYear()}${String(d2check.getMonth()+1).padStart(2,'0')}${String(d2check.getDate()).padStart(2,'0')}`);
+  const psD1check = psDate1;
+  const psD2check = psDate2;
   const existingWinners = query(`SELECT Player, Detail FROM Payments WHERE Date IN (${psD1check},${psD2check}) AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND League="Hugh's"`);
   if (existingWinners.length > 0) {
     window.skinWinnerCells = {};
@@ -8722,7 +8780,7 @@ function calcEoySkins(season, silent=false) {
   const w1HoleNums = w1Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w1Scores = {};
   query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${psDate1} AND League="Hugh's"`)
-    .filter(r => eoyPlayers.has(r.Player))
+    .filter(r => eoyWeek1Players.has(r.Player))
     .filter(r => [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']].some(v => v != null))
     .forEach(r => { w1Scores[r.Player] = [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']]; });
   const w1Nets = {};
@@ -8736,7 +8794,7 @@ function calcEoySkins(season, silent=false) {
   const w2HoleNums = w2Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w2Scores = {};
   query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${psDate2} AND League="Hugh's"`)
-    .filter(r => eoyPlayers.has(r.Player))
+    .filter(r => eoyWeek2Players.has(r.Player))
     .filter(r => [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']].some(v => v != null))
     .forEach(r => { w2Scores[r.Player] = [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']]; });
   const w2Nets = {};
@@ -9090,7 +9148,7 @@ function buildEntryGrid() {
   })() : `Date=${date}`;
   const skinPlayers = new Set(
     isPostSeason
-      ? query(`SELECT DISTINCT Player FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND CAST(Earned AS REAL) > 0 AND Date >= ${season}0101 AND Date < ${season+1}0101`).map(r => r.Player)
+      ? [...getEoySkinPlayersForDate(season, date, lp?.PostSeasonDt)]
       : query(`SELECT DISTINCT Player FROM Payments WHERE ${skinDateFilter} AND "Desc"='Skin' AND Detail='Payment'`).map(r => r.Player)
   );
 
@@ -9196,11 +9254,12 @@ function buildEntryGrid() {
 
   // Pre-populate EOY no-shows for row highlighting
   if (isPostSeason) {
-    const psD1tmp = parseInt((() => { const p=lp.PostSeasonDt.split('/'); return `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`; })());
-    const d2tmp = new Date(lp.PostSeasonDt); d2tmp.setDate(d2tmp.getDate()+7);
-    const psD2tmp = parseInt(`${d2tmp.getFullYear()}${String(d2tmp.getMonth()+1).padStart(2,'0')}${String(d2tmp.getDate()).padStart(2,'0')}`);
-    const eoyPayers = new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND CAST(Earned AS REAL) > 0 AND Date >= ${season}0101 AND Date < ${season+1}0101`).map(r=>r.Player));
-    const scorePlayers = new Set(query(`SELECT DISTINCT Player FROM Scores WHERE Date IN (${psD1tmp},${psD2tmp}) AND League="Hugh's"`).map(r=>r.Player));
+    const psDates = parsePostSeasonDates(lp.PostSeasonDt);
+    const eoyPayers = new Set([
+      ...getEoySkinPlayersForWeek(season, 1),
+      ...getEoySkinPlayersForWeek(season, 2)
+    ]);
+    const scorePlayers = new Set(query(`SELECT DISTINCT Player FROM Scores WHERE Date IN (${psDates.week1},${psDates.week2}) AND League="Hugh's"`).map(r=>r.Player));
     window.eoyNoShows = new Set([...eoyPayers].filter(p => !scorePlayers.has(p)));
   } else {
     window.eoyNoShows = new Set();
@@ -9939,7 +9998,7 @@ function computeSkinTies(nine, isPostSeason) {
   const holeMins   = Array(holeCount).fill(null);
   const holeCounts = Array(holeCount).fill(0);
 
-  const players = Object.values(entryState).filter(st => st.inSkins || isPostSeason);
+  const players = Object.values(entryState).filter(st => st.inSkins);
 
   players.forEach(st => {
     st.holes.forEach((v, hi) => {
@@ -9980,20 +10039,19 @@ function applyCellClasses(nine) {
   const psRows = db ? query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND PostSeasonDt IS NOT NULL`) : [];
   let skinDateCheck = `Date=${entryStateDate}`;
   for (const r of psRows) {
-    const p = r.PostSeasonDt.split('/');
-    const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
-    const d2obj = new Date(r.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
-    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
-    if (entryStateDate === d1 || entryStateDate === d2) {
-      skinDateCheck = `Date IN (${d1},${d2})`;
+    const psDates = parsePostSeasonDates(r.PostSeasonDt);
+    if (parseInt(entryStateDate) === psDates.week1 || parseInt(entryStateDate) === psDates.week2) {
+      skinDateCheck = `Date IN (${psDates.week1},${psDates.week2})`;
       break;
     }
   }
 
-  const skinPaymentsExist = Object.keys(window.skinWinnerCells || {}).length > 0 ||
-    (db && query(`SELECT 1 FROM Payments WHERE ${skinDateCheck} AND "Desc"='Skin' AND Detail='Payment' LIMIT 1`).length > 0);
-
   const isPS = skinDateCheck.includes('IN'); // post season uses IN clause with 2 dates
+  const skinPaymentsExist = Object.keys(window.skinWinnerCells || {}).length > 0 ||
+    (db && (isPS
+      ? Object.values(entryState).some(st => st.inSkins)
+      : query(`SELECT 1 FROM Payments WHERE ${skinDateCheck} AND "Desc"='Skin' AND Detail='Payment' LIMIT 1`).length > 0));
+
   const tiedHoles = skinPaymentsExist ? computeSkinTies(nine, isPS) : new Map();
   const skinWinners = window.skinWinnerCells || {};
 
@@ -10012,7 +10070,7 @@ function applyCellClasses(nine) {
       if (skinPaymentsExist) {
         if (skinWinners[`${st.active}-${holeNum}`] && !isNaN(parseInt(v))) {
           td.classList.add('skin-winner-cell');
-        } else if ((st.inSkins || isPS) && tiedHoles.has(hi) && !isNaN(parseInt(v))) {
+        } else if (st.inSkins && tiedHoles.has(hi) && !isNaN(parseInt(v))) {
           let strokes = 0;
           if (isPS) {
             const isBack = hi >= 9;
