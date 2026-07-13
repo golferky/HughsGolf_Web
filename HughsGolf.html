@@ -9186,19 +9186,7 @@ function buildEntryGrid() {
     });
     document.querySelectorAll('#entryGrid button').forEach(btn => btn.disabled = true);
   }
-  const par9 = nine.pars.reduce((a,b)=>a+b,0);
-  Object.values(entryState).forEach(st => {
-    const gross = calcGross(st.holes);
-    if (!gross) return;
-    const newHdcp = calcProjectedHdcp(gross, st.last5, par9);
-    if (newHdcp === null) return;
-    // Only write if no Handicaps record exists for this player+date yet
-    const existing = query(`SELECT 1 FROM Handicaps WHERE Player=? AND Date=? AND League="Hugh's"`, [st.active, date]);
-    if (!existing.length) {
-      serverRun(`INSERT OR REPLACE INTO Handicaps (League, Player, Date, PHdcp, Hdcp)
-              VALUES ("Hugh's", ?, ?, ?, ?)`, [st.active, date, st.phdcp, newHdcp]);
-    }
-  });
+  Object.keys(entryState).forEach(key => updateCompletedEntryHandicap(key, nine, false));
 }
 
 // ── Toggle Paid status inline on Scorecard ─────────────────────────────────
@@ -10048,6 +10036,48 @@ function calcNet(holes, pars, hcps, phdcp) {
   return gross - phdcp;
 }
 
+function updateCompletedEntryHandicap(key, nine, writeDb = true) {
+  const st = entryState[key];
+  if (!st || document.getElementById('entryPostSeason')?.checked) return null;
+
+  const gross = calcGross(st.holes);
+  if (!gross) return null;
+
+  const par9 = nine.pars.reduce((a,b)=>a+b,0);
+  const newHdcp = calcProjectedHdcp(gross, st.last5, par9);
+  if (newHdcp === null) return null;
+
+  const prevScores    = st.last5 ? st.last5.scores.split('-').map(Number).filter(n=>n>0) : [];
+  const updatedScores = [gross, ...prevScores].slice(0, 5);
+  const updatedLast5  = updatedScores.join('-');
+  const updatedMaxS   = Math.max(...updatedScores);
+  const date          = document.getElementById('entryDate').value;
+  const phdcp         = parseInt(st.phdcp) || 0;
+  st.hdcp = newHdcp;
+
+  const hEl = document.getElementById(`hdcp-${key}`);
+  if (hEl) {
+    const arrow = newHdcp < phdcp ? ' ▼' : newHdcp > phdcp ? ' ▲' : '';
+    hEl.textContent = newHdcp + arrow;
+    hEl.dataset.gross = gross;
+    hEl.dataset.par = par9;
+    hEl.dataset.last5 = updatedLast5;
+    hEl.dataset.maxs = updatedMaxS;
+    hEl.dataset.ldate = date;
+    hEl.style.color = newHdcp < phdcp ? 'var(--green)' : newHdcp > phdcp ? 'var(--red)' : '';
+    hEl.style.fontWeight = arrow ? '700' : '';
+  }
+
+  if (writeDb) {
+    serverRun(`INSERT OR REPLACE INTO Handicaps (League, Player, Date, PHdcp, Hdcp)
+            VALUES ("Hugh's", ?, ?, ?, ?)`, [st.active, date, phdcp, newHdcp]);
+    serverRun(`INSERT OR REPLACE INTO PlayerLast5 (League, Player, Last5, LastDate)
+            VALUES ("Hugh's", ?, ?, ?)`, [st.active, updatedLast5, date]);
+  }
+
+  return { gross, newHdcp, updatedLast5 };
+}
+
 function onScoreInput(e) {
   const inp = e.target;
   // Strip non-numeric characters
@@ -10079,43 +10109,8 @@ function onScoreInput(e) {
   // Recompute styling
   applyCellClasses(nine);
 
-  // Update Handicaps table and Hdcp cell once all 9 scores entered
   if (gross) {
-    const newHdcp = calcProjectedHdcp(gross, st.last5, par9);
-    if (newHdcp !== null) {
-      // Build updated last5 string including today's score
-      const prevScores = st.last5 ? st.last5.scores.split('-').map(Number).filter(n=>n>0) : [];
-      const updatedScores = [gross, ...prevScores].slice(0, 5);
-      const updatedLast5  = updatedScores.join('-');
-      const updatedMaxS   = Math.max(...updatedScores);
-      const updatedDate   = document.getElementById('entryDate').value;
-
-      // Update hdcp cell
-      const hEl = document.getElementById(`hdcp-${key}`);
-      if (hEl) {
-        const arrow = newHdcp < st.phdcp ? ' ▼' : newHdcp > st.phdcp ? ' ▲' : '';
-        hEl.textContent = newHdcp + arrow; hEl.dataset.gross = gross; hEl.dataset.par = par9;
-        hEl.dataset.last5 = updatedLast5; hEl.dataset.maxs = updatedMaxS; hEl.dataset.ldate = updatedDate;
-        hEl.style.color = newHdcp < st.phdcp ? 'var(--green)' : newHdcp > st.phdcp ? 'var(--red)' : '';
-        hEl.style.fontWeight = arrow ? '700' : '';
-      }
-      // phdcp tooltip stays as original historical last5 — do not update it
-
-      // If player had no prior handicap, show the new hdcp in PHdcp cell too
-      if (!st.phdcp) {
-        if (pEl && !pEl.textContent.trim()) {
-          pEl.textContent = newHdcp;
-          pEl.style.color = 'var(--gray)';
-          st.phdcp = newHdcp;
-        }
-      }
-      // Write to Handicaps table immediately
-      serverRun(`INSERT OR REPLACE INTO Handicaps (League, Player, Date, PHdcp, Hdcp)
-              VALUES ("Hugh's", ?, ?, ?, ?)`, [st.active, updatedDate, st.phdcp, newHdcp]);
-      // Update PlayerLast5 table
-      serverRun(`INSERT OR REPLACE INTO PlayerLast5 (League, Player, Last5, LastDate)
-              VALUES ("Hugh's", ?, ?, ?)`, [st.active, updatedLast5, updatedDate]);
-    }
+    updateCompletedEntryHandicap(key, nine, true);
 
     // ── Instant per-player Score save + auto-pay ─────────────────────────
     savePlayerScoreNow(key, gross, net);
@@ -10345,25 +10340,7 @@ function distributeScores(key, nineDigits, firstInp) {
   const nEl = document.getElementById(`net-${key}`);
   if (gEl) gEl.textContent = gross || '';
   if (nEl) { nEl.textContent = net || ''; nEl.className = 'eg-net' + (net && net < par9 ? ' under' : ''); }
-  if (gross) {
-    const newHdcp = calcProjectedHdcp(gross, st.last5, par9);
-    if (newHdcp !== null) {
-      const prevScores   = st.last5 ? st.last5.scores.split('-').map(Number).filter(n=>n>0) : [];
-      const updatedScores = [gross, ...prevScores].slice(0, 5);
-      const updatedLast5  = updatedScores.join('-');
-      const updatedMaxS   = Math.max(...updatedScores);
-      const date = document.getElementById('entryDate').value;
-
-      const hEl = document.getElementById(`hdcp-${key}`);
-      if (hEl) { const arrow = newHdcp < st.phdcp ? ' ▼' : newHdcp > st.phdcp ? ' ▲' : ''; hEl.textContent = newHdcp + arrow; hEl.dataset.gross = gross; hEl.dataset.par = par9; hEl.dataset.last5 = updatedLast5; hEl.dataset.maxs = updatedMaxS; hEl.dataset.ldate = date; hEl.style.color = newHdcp < st.phdcp ? 'var(--green)' : newHdcp > st.phdcp ? 'var(--red)' : ''; hEl.style.fontWeight = arrow ? '700' : ''; }
-      // phdcp tooltip stays as original historical last5 — do not update it
-      if (!st.phdcp) {
-        if (pEl && !pEl.textContent.trim()) { pEl.textContent = newHdcp; pEl.style.color = 'var(--gray)'; st.phdcp = newHdcp; }
-      }
-      serverRun(`INSERT OR REPLACE INTO Handicaps (League, Player, Date, PHdcp, Hdcp)
-              VALUES ("Hugh's", ?, ?, ?, ?)`, [st.active, date, st.phdcp, newHdcp]);
-    }
-  }
+  if (gross) updateCompletedEntryHandicap(key, nine, true);
   applyCellClasses(nine);
 }
 
@@ -10434,18 +10411,7 @@ async function saveEntryToDB() {
          h[5]||null,h[6]||null,h[7]||null,h[8]||null, gross, net]);
     }
 
-    // No handicap recalc for post season
-    if (!isPS) {
-      const par9 = nine.pars.reduce((a,b)=>a+b,0);
-      const newHdcp = calcProjectedHdcp(gross, st.last5, par9);
-      if (newHdcp !== null) {
-        const existing = query(`SELECT 1 FROM Handicaps WHERE Player=? AND Date=? AND League="Hugh's"`, [playerName, date]);
-        if (!existing.length) {
-          serverRun(`INSERT OR REPLACE INTO Handicaps (League,Player,Date,PHdcp,Hdcp) VALUES ("Hugh's",?,?,?,?)`,
-            [playerName, date, st.phdcp, newHdcp]);
-        }
-      }
-    }
+    if (!isPS) updateCompletedEntryHandicap(st.slotKey, nine, true);
     saved++;
   });
 
