@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260713.14</span>
+    <span id="appVersionDisplay">v20260713.15</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.14</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.15</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -4449,19 +4449,27 @@ function loadHandicaps() {
     }).join('');
 
     const par = 36;
+    const maxHdcp = parseInt(query(`SELECT MaxHdcp FROM LeagueParms WHERE Name="Hugh's" ORDER BY Season DESC LIMIT 1`)[0]?.MaxHdcp || 18);
     const usedScores = usedIdx.map(i=>scores[i]);
     const avg = usedScores.length ? usedScores.reduce((a,b)=>a+b,0)/usedScores.length : 0;
-    const calcHdcp = Math.min(18, Math.round((avg - par) * 0.8));
+    const calcHdcp = usedScores.length ? Math.min(maxHdcp, Math.round((avg - par) * 0.8)) : null;
+    const prevHdcp = r.PHdcp ?? r.Hdcp ?? '';
+    const displayHdcp = calcHdcp !== null ? calcHdcp : (r.Hdcp ?? '');
+    const prevNum = parseInt(prevHdcp);
+    const displayNum = parseInt(displayHdcp);
+    const hdcpColor = Number.isFinite(prevNum) && Number.isFinite(displayNum)
+      ? (displayNum < prevNum ? 'var(--green)' : displayNum > prevNum ? 'var(--red)' : '')
+      : '';
 
     const tr = document.createElement('tr');
     const isMe = currentUser && r.Player === currentUser.name;
     if (isMe) tr.style.background = '#fff3cd';
     tr.innerHTML = `
       <td style="padding:8px 12px;font-weight:600">${r.Player}${isMe ? ' <span style="font-size:10px;color:#856404">(you)</span>' : ''}</td>
-      <td class="num" style="color:var(--gray)">${r.PHdcp||r.Hdcp}</td>
-      <td class="num"><strong style="color:${r.Hdcp<r.PHdcp?'var(--green)':r.Hdcp>r.PHdcp?'var(--red)':''}">${r.Hdcp}</strong></td>
+      <td class="num" style="color:var(--gray)">${prevHdcp}</td>
+      <td class="num"><strong style="color:${hdcpColor}">${displayHdcp}</strong></td>
       <td style="padding:8px 12px">${scoreCells || '<span style="color:#ccc;font-size:12px">No scores</span>'}</td>
-      <td style="padding:8px 12px;font-size:11px;color:var(--gray)">${scores.length} scores${usedScores.length ? ` · avg ${avg.toFixed(1)} · calc ${calcHdcp}` : ''}</td>
+      <td style="padding:8px 12px;font-size:11px;color:var(--gray)">${scores.length} scores${calcHdcp !== null ? ` · avg ${avg.toFixed(1)} · calc ${calcHdcp}` : ''}</td>
       <td style="color:var(--gray);font-size:12px;padding:8px 12px">${fmtDate(r.Date)}</td>
     `;
     tb.appendChild(tr);
