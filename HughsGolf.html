@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260713.2</span>
+    <span id="appVersionDisplay">v20260713.3</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.2</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.3</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -10200,28 +10200,11 @@ async function savePlayerScoreNow(key, gross, net) {
   const date = document.getElementById('entryDate').value;
   const fb = document.getElementById('entry9').value;
   const league = "Hugh's";
-  const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || '';
-
-  async function runSql(sql) {
-    try {
-      const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':SAVE_TOKEN}, body: JSON.stringify({ sql, sessionToken }) });
-      const json = await resp.json();
-      if (!json.ok) console.warn('runSql failed:', sql, json.error);
-      return json.ok;
-    } catch(e) { console.warn('runSql error:', e); return false; }
-  }
 
   const h = st.holes;
-  const hv = [0,1,2,3,4,5,6,7,8].map(i => h[i] ? h[i] : 'NULL').join(',');
-  const pn = playerName.replace(/'/g,"''");
-  const lg = league.replace(/'/g,"''");
 
-  // Save score server-side
-  await runSql(`DELETE FROM Scores WHERE Player='${pn}' AND Date=${date} AND FrontBack='${fb}' AND League='${lg}'`);
-  await runSql(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES ('${lg}','${pn}',${date},'${fb}',${hv},${gross},${net})`);
-
-  // Also update local memory for immediate UI
-  db.run(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack=? AND League=?`, [playerName, date, fb, league]);
+  // Clear by the Scores table unique key before inserting the current 9.
+  serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND League=?`, [playerName, date, league]);
   serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [league, playerName, date, fb, h[0]||null, h[1]||null, h[2]||null, h[3]||null, h[4]||null,
      h[5]||null, h[6]||null, h[7]||null, h[8]||null, gross, net]);
@@ -10231,7 +10214,6 @@ async function savePlayerScoreNow(key, gross, net) {
   const lp = query(`SELECT Skins, Closest FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
   const skinAmt = parseFloat(lp?.Skins || 2);
   const ctpAmt  = parseFloat(lp?.Closest || 1);
-  const payDate = new Date().toLocaleString().replace(/'/g,"''");
 
   for (const [desc, amt] of [['Skin', skinAmt], ['CTP', ctpAmt]]) {
     const already = query(`SELECT 1 FROM Payments WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc"=? AND Detail='Payment' LIMIT 1`,
@@ -10248,7 +10230,6 @@ async function savePlayerScoreNow(key, gross, net) {
     const perfectHistory = priorDates.every(d => paidSet.has(d));
     if (!perfectHistory) continue;
 
-    await runSql(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,DatePaid) VALUES ('${lg}','${pn}',${date},'${desc}','Payment',${amt},'${payDate}')`);
     serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,DatePaid) VALUES (?,?,?,?,?,?,?)`,
       [league, playerName, date, desc, 'Payment', amt, new Date().toLocaleString()]);
   }
@@ -10405,7 +10386,7 @@ async function saveEntryToDB() {
       }
     } else {
       // Regular: single 9-hole record
-      serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack=? AND League=?`, [playerName, date, fb, league]);
+      serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND League=?`, [playerName, date, league]);
       serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net)
               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [league, playerName, date, fb,
@@ -10499,7 +10480,7 @@ document.getElementById('entryClear')?.addEventListener('click', async ()=>{
     serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack='Front' AND League=?`, [st.active, date, league]);
     serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack='Back' AND League=?`, [st.active, date, league]);
   } else {
-    serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack=? AND League=?`, [st.active, date, fb, league]);
+    serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND League=?`, [st.active, date, league]);
     serverRun(`DELETE FROM Handicaps WHERE Player=? AND Date=? AND League=?`, [st.active, date, league]);
   }
 
