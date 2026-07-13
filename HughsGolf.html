@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260713.3</span>
+    <span id="appVersionDisplay">v20260713.4</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.3</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.4</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -5539,6 +5539,7 @@ async function checkServerVersion() {
       showVersionUpdateModal(version, flaskVersion);
       return;
     }
+    if (isLocalTestHost()) return;
     if (dbModified) {
       if (SERVER_DB_MODIFIED === null) {
         SERVER_DB_MODIFIED = dbModified; // establish baseline on first check
@@ -5610,8 +5611,10 @@ async function saveDBToServer(successLabel, btnId) {
       }
       throw new Error(json.error || 'Save failed');
     }
-    if (json.modifiedMs) SERVER_DB_MODIFIED_MS = json.modifiedMs;
-    SERVER_DB_MODIFIED = Date.now() / 1000; // this tab's own save — don't flag it as "someone else"
+    if (json.modifiedMs) {
+      SERVER_DB_MODIFIED_MS = json.modifiedMs;
+      SERVER_DB_MODIFIED = json.modifiedMs / 1000; // this tab's own save — don't flag it as "someone else"
+    }
     loadDbInfo();
 
     // Update calling button if provided
