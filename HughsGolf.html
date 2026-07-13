@@ -2756,24 +2756,35 @@ document.querySelectorAll('.half-tab').forEach(t => {
 
 // ── SCORES ──
 function getPlayerLast5Map(beforeDate) {
-  // Get current season start date
-  const season = query("SELECT MAX(Season) as s FROM LeagueParms WHERE Name=\"Hugh's\""  )[0]?.s;
-  const startDate = `${season}0101`;
-  const dateFilter = beforeDate ? `AND p.LastDate < '${beforeDate}'` : '';
-  const dateFilter2 = beforeDate ? `AND p2.LastDate < '${beforeDate}'` : '';
-
   const map = {};
-  // Primary: current-season data
-  query(`SELECT p.Player, p.Last5, p.LastDate, n.maxS
-    FROM PlayerLast5 p
-    LEFT JOIN NewHdcp n ON n.Player=p.Player AND n.League=p.League
-      AND n.Date=(SELECT MAX(n2.Date) FROM NewHdcp n2 WHERE n2.Player=p.Player AND n2.League=p.League AND n2.Date >= '${startDate}')
-    WHERE p.LastDate=(SELECT MAX(p2.LastDate) FROM PlayerLast5 p2 WHERE p2.Player=p.Player AND p2.League=p.League AND p2.LastDate >= '${startDate}' ${dateFilter2})
-    AND p.League="Hugh's" AND p.LastDate >= '${startDate}' ${dateFilter}`)
-    .forEach(r => { map[r.Player] = { scores: r.Last5, date: r.LastDate, maxS: r.maxS }; });
+  const beforeClause = beforeDate ? 'AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)' : '';
+  const params = beforeDate ? [beforeDate] : [];
 
-  // Fallback: players with no current-season data, but who have prior-season history —
-  // use their most recent record from any season so they aren't treated as brand new
+  // Prefer actual score history so stale PlayerLast5 rows do not make the hover incomplete.
+  query(`SELECT Player, Gross, Date
+    FROM Scores
+    WHERE League="Hugh's"
+      AND Gross IS NOT NULL
+      AND CAST(Gross AS INTEGER) > 0
+      ${beforeClause}
+    ORDER BY Player, CAST(Date AS INTEGER) DESC, rowid DESC`, params)
+    .forEach(r => {
+      const gross = parseInt(r.Gross);
+      if (!gross) return;
+      if (!map[r.Player]) map[r.Player] = { list: [], date: r.Date };
+      if (map[r.Player].list.length < 5) map[r.Player].list.push(gross);
+    });
+
+  Object.keys(map).forEach(player => {
+    const list = map[player].list;
+    map[player] = {
+      scores: list.join('-'),
+      date: map[player].date,
+      maxS: list.length ? Math.max(...list) : null
+    };
+  });
+
+  // Fallback for players who only have stored handicap history and no score rows available.
   const fallbackDateFilter = beforeDate ? `AND p.LastDate < '${beforeDate}'` : '';
   query(`SELECT p.Player, p.Last5, p.LastDate, n.maxS
     FROM PlayerLast5 p
@@ -2781,7 +2792,10 @@ function getPlayerLast5Map(beforeDate) {
       AND n.Date=(SELECT MAX(n2.Date) FROM NewHdcp n2 WHERE n2.Player=p.Player AND n2.League=p.League)
     WHERE p.LastDate=(SELECT MAX(p2.LastDate) FROM PlayerLast5 p2 WHERE p2.Player=p.Player AND p2.League=p.League ${fallbackDateFilter})
     AND p.League="Hugh's" ${fallbackDateFilter}`)
-    .forEach(r => { if (!map[r.Player]) map[r.Player] = { scores: r.Last5, date: r.LastDate, maxS: r.maxS }; });
+    .forEach(r => {
+      const scores = String(r.Last5 || '').split('-').map(Number).filter(n => n > 0).slice(0, 5);
+      if (!map[r.Player] && scores.length) map[r.Player] = { scores: scores.join('-'), date: r.LastDate, maxS: r.maxS || Math.max(...scores) };
+    });
 
   return map;
 }
