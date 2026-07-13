@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260713.8</span>
+    <span id="appVersionDisplay">v20260713.9</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.8</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260713.9</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -10315,8 +10315,12 @@ function onScoreInput(e) {
   // Recompute styling
   applyCellClasses(nine);
 
-  if (gross) {
-    updateCompletedEntryHandicap(key, nine, true);
+  const psHalfComplete = isPS && (
+    st.holes.slice(0, 9).every(v => parseInt(v) > 0) ||
+    st.holes.slice(9, 18).every(v => parseInt(v) > 0)
+  );
+  if (gross || psHalfComplete) {
+    if (!isPS) updateCompletedEntryHandicap(key, nine, true);
 
     // ── Instant per-player Score save + auto-pay ─────────────────────────
     savePlayerScoreNow(key, gross, net);
@@ -10406,6 +10410,47 @@ async function savePlayerScoreNow(key, gross, net) {
   const league = "Hugh's";
 
   const h = st.holes;
+  const isPS = document.getElementById('entryPostSeason')?.checked;
+
+  if (isPS) {
+    const backFirst = entryState._psBackFirst;
+    const psDate1   = entryState._psDate1 || date;
+    const psDate2   = entryState._psDate2 || date;
+    const first9H   = h.slice(0, 9);
+    const second9H  = h.slice(9, 18);
+    const firstDone = first9H.every(v => parseInt(v) > 0);
+    const secondDone = second9H.every(v => parseInt(v) > 0);
+    const first9Fb  = backFirst ? 'Back'  : 'Front';
+    const second9Fb = backFirst ? 'Front' : 'Back';
+    const first9Pars  = backFirst ? courseData.back.pars  : courseData.front.pars;
+    const second9Pars = backFirst ? courseData.front.pars : courseData.back.pars;
+    const first9Hcps  = backFirst ? courseData.back.hcps  : courseData.front.hcps;
+    const second9Hcps = backFirst ? courseData.front.hcps : courseData.back.hcps;
+
+    if (firstDone) {
+      const first9Gross = first9H.reduce((a,v)=>a+(parseInt(v)||0),0);
+      const first9Net = calcNet(first9H, first9Pars, first9Hcps, st.phdcp);
+      serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND League=?`, [playerName, psDate1, league]);
+      serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [league, playerName, psDate1, first9Fb, first9H[0]||null, first9H[1]||null, first9H[2]||null, first9H[3]||null, first9H[4]||null,
+         first9H[5]||null, first9H[6]||null, first9H[7]||null, first9H[8]||null, first9Gross, first9Net]);
+    }
+
+    if (secondDone) {
+      const second9Gross = second9H.reduce((a,v)=>a+(parseInt(v)||0),0);
+      const second9Net = calcNet(second9H, second9Pars, second9Hcps, st.phdcp);
+      serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND League=?`, [playerName, psDate2, league]);
+      serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [league, playerName, psDate2, second9Fb, second9H[0]||null, second9H[1]||null, second9H[2]||null, second9H[3]||null, second9H[4]||null,
+         second9H[5]||null, second9H[6]||null, second9H[7]||null, second9H[8]||null, second9Gross, second9Net]);
+    }
+
+    const season = parseInt(date.toString().substring(0,4));
+    if (firstDone || secondDone) calcEoySkins(season, true);
+    await saveDBToServer();
+    reRenderEntry();
+    return;
+  }
 
   // Clear by the Scores table unique key before inserting the current 9.
   serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND League=?`, [playerName, date, league]);
@@ -10579,12 +10624,12 @@ async function saveEntryToDB() {
       const first9Net  = calcNet(first9H,  first9Pars,  first9Hcps,  st.phdcp);
       const second9Net = calcNet(second9H, second9Pars, second9Hcps, st.phdcp);
       if (first9Gross) {
-        serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack=? AND League=?`, [playerName, psDate1, first9Fb, league]);
+        serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND League=?`, [playerName, psDate1, league]);
         serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [league,playerName,psDate1,first9Fb, first9H[0]||null,first9H[1]||null,first9H[2]||null,first9H[3]||null,first9H[4]||null,first9H[5]||null,first9H[6]||null,first9H[7]||null,first9H[8]||null, first9Gross, first9Net]);
       }
       if (second9Gross) {
-        serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND FrontBack=? AND League=?`, [playerName, psDate2, second9Fb, league]);
+        serverRun(`DELETE FROM Scores WHERE Player=? AND Date=? AND League=?`, [playerName, psDate2, league]);
         serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [league,playerName,psDate2,second9Fb, second9H[0]||null,second9H[1]||null,second9H[2]||null,second9H[3]||null,second9H[4]||null,second9H[5]||null,second9H[6]||null,second9H[7]||null,second9H[8]||null, second9Gross, second9Net]);
       }
