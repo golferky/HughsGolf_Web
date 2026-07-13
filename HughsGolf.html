@@ -1004,6 +1004,9 @@
             <select id="pdfMatchesDate" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
             <button onclick="createReportPdf('matches')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Matches PDF</button>
           </div>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#f3f8f3;grid-column:1/-1">
+            <button onclick="createReportPdf('combined')" style="width:100%;padding:12px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Combined Scores + Standings + Matches PDF</button>
+          </div>
         </div>
       </div>
     </div>
@@ -4994,6 +4997,48 @@ function populatePdfControls() {
   copySelectOptions('matchesDate', 'pdfMatchesDate');
 }
 
+function prepareScoresPdfSection() {
+  const pdfDate = document.getElementById('pdfScoresDate')?.value;
+  setSelectValueIfPresent('scoresDate', pdfDate);
+  populateEntryDates();
+  if (setSelectValueIfPresent('entryDate', pdfDate)) {
+    entryState = {};
+    entryStateDate = null;
+    entryManual9 = false;
+    buildEntryGrid();
+  }
+  loadScores();
+  return {
+    title: 'Scores Screen',
+    subtitle: selectedOptionText('scoresDate'),
+    source: document.getElementById('tab-scores')
+  };
+}
+
+function prepareStandingsPdfSection() {
+  const pdfAsOf = document.getElementById('pdfStandAsOf')?.value;
+  if (document.getElementById('standAsOf')) document.getElementById('standAsOf').value = pdfAsOf || '';
+  loadStandings();
+  return {
+    title: document.getElementById('standTitle')?.textContent || 'Standings Screen',
+    subtitle: document.getElementById('standSubtitle')?.textContent || selectedOptionText('standSeason'),
+    source: document.getElementById('tab-standings')
+  };
+}
+
+function prepareMatchesPdfSection() {
+  if (!document.getElementById('matchesSeason')?.options.length) initMatchesDate();
+  const pdfDate = document.getElementById('pdfMatchesDate')?.value;
+  if (pdfDate) document.getElementById('matchesDate').value = pdfDate;
+  document.getElementById('matchesTableView').checked = true;
+  loadMatchesTable();
+  return {
+    title: 'Matches Screen',
+    subtitle: selectedOptionText('matchesDate'),
+    source: document.getElementById('tab-matches')
+  };
+}
+
 function createReportPdf(kind) {
   if (!db) return;
   let title = '';
@@ -5001,35 +5046,22 @@ function createReportPdf(kind) {
   let source = null;
 
   if (kind === 'scores') {
-    const pdfDate = document.getElementById('pdfScoresDate')?.value;
-    setSelectValueIfPresent('scoresDate', pdfDate);
-    populateEntryDates();
-    if (setSelectValueIfPresent('entryDate', pdfDate)) {
-      entryState = {};
-      entryStateDate = null;
-      entryManual9 = false;
-      buildEntryGrid();
-    }
-    loadScores();
-    title = 'Scores Screen';
-    subtitle = selectedOptionText('scoresDate');
-    source = document.getElementById('tab-scores');
+    ({ title, subtitle, source } = prepareScoresPdfSection());
   } else if (kind === 'standings') {
-    const pdfAsOf = document.getElementById('pdfStandAsOf')?.value;
-    if (document.getElementById('standAsOf')) document.getElementById('standAsOf').value = pdfAsOf || '';
-    loadStandings();
-    title = document.getElementById('standTitle')?.textContent || 'Standings Screen';
-    subtitle = document.getElementById('standSubtitle')?.textContent || selectedOptionText('standSeason');
-    source = document.getElementById('tab-standings');
+    ({ title, subtitle, source } = prepareStandingsPdfSection());
   } else if (kind === 'matches') {
-    if (!document.getElementById('matchesSeason')?.options.length) initMatchesDate();
-    const pdfDate = document.getElementById('pdfMatchesDate')?.value;
-    if (pdfDate) document.getElementById('matchesDate').value = pdfDate;
-    document.getElementById('matchesTableView').checked = true;
-    loadMatchesTable();
-    title = 'Matches Screen';
-    subtitle = selectedOptionText('matchesDate');
-    source = document.getElementById('tab-matches');
+    ({ title, subtitle, source } = prepareMatchesPdfSection());
+  } else if (kind === 'combined') {
+    const reports = [prepareScoresPdfSection(), prepareStandingsPdfSection(), prepareMatchesPdfSection()];
+    const bodyHtml = reports.map((r, i) => `
+      <section style="${i ? 'break-before:page;page-break-before:always;' : ''}">
+        <div class="pdf-title">${r.title}</div>
+        <div class="pdf-meta">${r.subtitle || ''}</div>
+        ${printableClone(r.source)}
+      </section>
+    `).join('');
+    openReportPrintWindow("Hugh's Golf Reports", 'Combined report', bodyHtml);
+    return;
   }
 
   if (!source || !source.textContent.trim()) {
