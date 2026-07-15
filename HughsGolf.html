@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.20-sandbox</span>
+    <span id="appVersionDisplay">v20260715.21-sandbox</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.20-sandbox</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.21-sandbox</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -3034,11 +3034,11 @@ function loadScores() {
            MAX(CASE WHEN s.FrontBack='Front' THEN s.Net END) as FrontNet,
            MAX(CASE WHEN s.FrontBack='Back' THEN s.Gross END) as BackGross,
            MAX(CASE WHEN s.FrontBack='Back' THEN s.Net END) as BackNet,
-           SUM(COALESCE(s.Gross,0)) as Gross,
+           CASE WHEN COUNT(DISTINCT s.FrontBack) >= 2 THEN SUM(COALESCE(s.Gross,0)) END as Gross,
            MAX(COALESCE(h.Hdcp,h.PHdcp,0)) as Hdcp,
-           SUM(COALESCE(s.Gross,0)) - MAX(COALESCE(h.Hdcp,h.PHdcp,0)) as Net,
+           CASE WHEN COUNT(DISTINCT s.FrontBack) >= 2 THEN SUM(COALESCE(s.Gross,0)) - MAX(COALESCE(h.Hdcp,h.PHdcp,0)) END as Net,
            GROUP_CONCAT(s.FrontBack, '+') as FrontBack,
-           COUNT(*) as Rounds
+           COUNT(DISTINCT s.FrontBack) as Rounds
     FROM Scores s
     LEFT JOIN Handicaps h ON h.Player = s.Player AND h.League = s.League
       AND h.Date = (SELECT MAX(h2.Date) FROM Handicaps h2 WHERE h2.Player = s.Player AND h2.League = s.League AND h2.Date <= ${psCtx.week1})
@@ -3064,7 +3064,7 @@ function loadScores() {
   const scoresTable = document.getElementById('scoresTable');
   if (scoresTable) delete scoresTable.dataset.sortable;
   document.querySelector('#scoresTable thead tr').innerHTML = psCtx
-    ? '<th>Player</th><th class="num">F Gross</th><th class="num">F Net</th><th class="num">B Gross</th><th class="num">B Net</th><th class="num">18 Gross</th><th class="num">18 Net</th><th class="num">Hdcp</th><th class="ctr">Holes</th>'
+    ? '<th>Player</th><th class="num">Out Gross</th><th class="num">Out Net</th><th class="num">In Gross</th><th class="num">In Net</th><th class="num">18 Gross</th><th class="num">18 Net</th><th class="num">Hdcp</th><th class="ctr">Holes</th>'
     : '<th>Player</th><th class="num">Gross</th><th class="num">Net</th><th class="ctr">9</th><th class="num">PHdcp</th><th class="num">Hdcp</th>';
   // Attach sort listeners directly
   document.querySelectorAll('#scoresTable thead th').forEach((th, i) => {
@@ -3087,10 +3087,12 @@ function loadScores() {
       tr.appendChild(Object.assign(document.createElement('td'), { className: 'num score-gross', textContent: r.Gross || '' }));
       tr.appendChild(Object.assign(document.createElement('td'), { className: 'num score-net', innerHTML: `<strong>${r.Net ?? ''}</strong>` }));
       tr.appendChild(Object.assign(document.createElement('td'), { className: 'num', style: 'color:var(--gray)', textContent: r.Hdcp ?? '' }));
+      const hasFront = r.FrontGross !== null && r.FrontGross !== undefined && r.FrontGross !== '';
+      const hasBack = r.BackGross !== null && r.BackGross !== undefined && r.BackGross !== '';
       tr.appendChild(Object.assign(document.createElement('td'), {
         className: 'ctr',
         style: 'font-size:11px;color:var(--gray)',
-        textContent: parseInt(r.Rounds) >= 2 ? '18' : `${r.FrontBack || ''} only`
+        textContent: parseInt(r.Rounds) >= 2 ? '18' : hasFront ? '1-9 only' : hasBack ? '10-18 only' : ''
       }));
     } else {
       tr.appendChild(Object.assign(document.createElement('td'), { className: 'num score-gross', textContent: r.Gross||'' }));
@@ -9879,17 +9881,21 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
 
     // Pre-create post season totals cells (needed inside hole loop)
     if (isPostSeason) {
-      const frontGross = st.holes.slice(0,9).reduce((a,v)=>a+(parseInt(v)||0),0);
-      const backGross  = st.holes.slice(9,18).reduce((a,v)=>a+(parseInt(v)||0),0);
-      const front9Net  = calcNet(st.holes.slice(0,9), nine.pars.slice(0,9), nine.hcps.slice(0,9), st.phdcp);
-      const back9Net   = calcNet(st.holes.slice(9,18), nine.pars.slice(9,18), nine.hcps.slice(9,18), st.phdcp);
-      const totalNet   = (frontGross && backGross) ? front9Net + back9Net : '';
+      const psTotals = getPostSeasonEntryTotals(st);
       const outTd = document.createElement('td');
-      outTd.className = 'eg-gross'; outTd.style.fontWeight='700'; outTd.textContent = frontGross || '';
+      outTd.className = 'eg-gross';
+      outTd.id = `out-${key}`;
+      outTd.style.fontWeight='700';
+      outTd.textContent = psTotals.frontGross;
       const inTd = document.createElement('td');
-      inTd.className = 'eg-gross'; inTd.style.fontWeight='700'; inTd.textContent = backGross || '';
+      inTd.className = 'eg-gross';
+      inTd.id = `in-${key}`;
+      inTd.style.fontWeight='700';
+      inTd.textContent = psTotals.backGross;
       const tnTd = document.createElement('td');
-      tnTd.className = 'eg-net'; tnTd.id = `net-${key}`; tnTd.textContent = totalNet || '';
+      tnTd.className = 'eg-net' + (psTotals.totalNet && psTotals.totalNet < 72 ? ' under' : '');
+      tnTd.id = `net-${key}`;
+      tnTd.textContent = psTotals.totalNet;
       tr._outTd = outTd; tr._inTd = inTd; tr._tnTd = tnTd;
     }
     // Stroke count per hole - for post season applies full phdcp to each 9
@@ -10523,6 +10529,20 @@ function calcNet(holes, pars, hcps, phdcp) {
   return gross - phdcp;
 }
 
+function getPostSeasonEntryTotals(st) {
+  const frontH = st.holes.slice(0, 9);
+  const backH = st.holes.slice(9, 18);
+  const frontVals = frontH.map(v => parseInt(v)).filter(v => !isNaN(v) && v > 0);
+  const backVals = backH.map(v => parseInt(v)).filter(v => !isNaN(v) && v > 0);
+  const frontGross = frontVals.length ? frontVals.reduce((a,b)=>a+b,0) : '';
+  const backGross = backVals.length ? backVals.reduce((a,b)=>a+b,0) : '';
+  const frontComplete = frontVals.length === 9;
+  const backComplete = backVals.length === 9;
+  const totalGross = frontComplete && backComplete ? frontGross + backGross : '';
+  const totalNet = totalGross ? totalGross - (parseInt(st.phdcp) || 0) : '';
+  return { frontGross, backGross, frontComplete, backComplete, totalGross, totalNet };
+}
+
 function updateCompletedEntryHandicap(key, nine, writeDb = true) {
   const st = entryState[key];
   if (!st || document.getElementById('entryPostSeason')?.checked) return null;
@@ -10587,10 +10607,23 @@ function onScoreInput(e) {
   const gross = calcGross(st.holes);
   const net   = calcNet(st.holes, nine.pars, nine.hcps, st.phdcp);
 
-  const gEl = document.getElementById(`gross-${key}`);
-  const nEl = document.getElementById(`net-${key}`);
-  if (gEl) gEl.textContent = gross || '';
-  if (nEl) { nEl.textContent = net || ''; nEl.className = 'eg-net' + (net && net < par9 ? ' under' : ''); }
+  if (isPS) {
+    const psTotals = getPostSeasonEntryTotals(st);
+    const outEl = document.getElementById(`out-${key}`);
+    const inEl = document.getElementById(`in-${key}`);
+    const nEl = document.getElementById(`net-${key}`);
+    if (outEl) outEl.textContent = psTotals.frontGross;
+    if (inEl) inEl.textContent = psTotals.backGross;
+    if (nEl) {
+      nEl.textContent = psTotals.totalNet;
+      nEl.className = 'eg-net' + (psTotals.totalNet && psTotals.totalNet < par9 ? ' under' : '');
+    }
+  } else {
+    const gEl = document.getElementById(`gross-${key}`);
+    const nEl = document.getElementById(`net-${key}`);
+    if (gEl) gEl.textContent = gross || '';
+    if (nEl) { nEl.textContent = net || ''; nEl.className = 'eg-net' + (net && net < par9 ? ' under' : ''); }
+  }
 
   // Recompute styling
   applyCellClasses(nine);
@@ -10860,10 +10893,23 @@ function distributeScores(key, scoreDigits, firstInp) {
   const st = entryState[key];
   const gross = calcGross(st.holes);
   const net   = calcNet(st.holes, nine.pars, nine.hcps, st.phdcp);
-  const gEl = document.getElementById(`gross-${key}`);
-  const nEl = document.getElementById(`net-${key}`);
-  if (gEl) gEl.textContent = gross || '';
-  if (nEl) { nEl.textContent = net || ''; nEl.className = 'eg-net' + (net && net < par9 ? ' under' : ''); }
+  if (isPS) {
+    const psTotals = getPostSeasonEntryTotals(st);
+    const outEl = document.getElementById(`out-${key}`);
+    const inEl = document.getElementById(`in-${key}`);
+    const nEl = document.getElementById(`net-${key}`);
+    if (outEl) outEl.textContent = psTotals.frontGross;
+    if (inEl) inEl.textContent = psTotals.backGross;
+    if (nEl) {
+      nEl.textContent = psTotals.totalNet;
+      nEl.className = 'eg-net' + (psTotals.totalNet && psTotals.totalNet < par9 ? ' under' : '');
+    }
+  } else {
+    const gEl = document.getElementById(`gross-${key}`);
+    const nEl = document.getElementById(`net-${key}`);
+    if (gEl) gEl.textContent = gross || '';
+    if (nEl) { nEl.textContent = net || ''; nEl.className = 'eg-net' + (net && net < par9 ? ' under' : ''); }
+  }
   if (gross && !isPS) updateCompletedEntryHandicap(key, nine, true);
   if (isPS) savePlayerScoreNow(key, gross, net);
   applyCellClasses(nine);
