@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.7</span>
+    <span id="appVersionDisplay">v20260715.8</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.7</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.8</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1965,21 +1965,29 @@ let SERVER_RUN_QUEUE = Promise.resolve();
 
 async function sendServerSql(serverSql, sessionToken) {
   const token = await ensureSaveToken();
-  const resp = await fetch('/run-sql', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json','X-Save-Token':token},
-    body: JSON.stringify({ sql: serverSql, sessionToken })
-  });
-  const json = await resp.json();
-  if (!json.ok) throw new Error(json.error || `HTTP ${resp.status}`);
-  if (json.modifiedMs) {
-    SERVER_DB_MODIFIED_MS = json.modifiedMs;
-    SERVER_DB_MODIFIED = json.modifiedMs / 1000;
-    DB_UPDATE_PENDING = false;
-  } else {
-    SERVER_DB_MODIFIED = Date.now() / 1000; // this tab's own write — don't flag it as "someone else"
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const resp = await fetch('/run-sql', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-Save-Token':token},
+      body: JSON.stringify({ sql: serverSql, sessionToken })
+    });
+    const json = await resp.json();
+    if (json.ok) {
+      if (json.modifiedMs) {
+        SERVER_DB_MODIFIED_MS = json.modifiedMs;
+        SERVER_DB_MODIFIED = json.modifiedMs / 1000;
+        DB_UPDATE_PENDING = false;
+      } else {
+        SERVER_DB_MODIFIED = Date.now() / 1000; // this tab's own write — don't flag it as "someone else"
+      }
+      return json;
+    }
+    lastError = json.error || `HTTP ${resp.status}`;
+    if (!/disk I\/O error|database is locked|database is busy/i.test(lastError)) break;
+    await delay(250 * (attempt + 1));
   }
-  return json;
+  throw new Error(lastError || 'Server SQL failed');
 }
 
 async function serverRun(sql, params=[]) {
@@ -3247,15 +3255,6 @@ async function calcMatchesForDate(date) {
   const sched  = query(`SELECT * FROM Schedule WHERE League="Hugh's" AND Date='${date}'`)[0];
   if (!sched) return;
 
-  const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || '';
-  async function runSql(sql) {
-    try {
-      const resp = await fetch('/run-sql', { method:'POST', headers:{'Content-Type':'application/json','X-Save-Token':SAVE_TOKEN}, body: JSON.stringify({ sql, sessionToken }) });
-      const json = await resp.json();
-      if (!json.ok) console.warn('calcMatches runSql failed:', json.error);
-    } catch(e) { console.warn('calcMatches runSql error:', e); }
-  }
-
   const matchups = [];
   for (let i = 1; i <= 24; i++) { const v = sched[i.toString()]; if (v && v.includes('v')) matchups.push(v); }
 
@@ -3272,7 +3271,6 @@ async function calcMatchesForDate(date) {
     .forEach(r => { subs[`${r.Team}-${r.Grade}`] = r.Player; });
 
   // Delete existing matches server-side and in local memory
-  await runSql(`DELETE FROM Matches WHERE Date=${date} AND League='${league.replace(/'/g,"''")}'`);
   serverRun(`DELETE FROM Matches WHERE Date=? AND League=?`, [date, league]);
 
   for (const mu of matchups) {
@@ -3295,15 +3293,11 @@ async function calcMatchesForDate(date) {
 
     for (const r of rows) {
       if (!r.player) continue;
-      const p = r.player.replace(/'/g,"''");
-      const o = (r.opp||'').replace(/'/g,"''");
-      const pt = (r.partner||'').replace(/'/g,"''");
-      const tn = r.teamNet !== null ? r.teamNet : 'NULL';
-      await runSql(`INSERT INTO Matches (League,Player,Date,Points,Team_Points,Opponent,Partner,Team_Net) VALUES ('${league.replace(/'/g,"''")}','${p}',${date},${r.pts},${r.tpts},${o?`'${o}'`:'NULL'},${pt?`'${pt}'`:'NULL'},${tn})`);
       serverRun(`INSERT INTO Matches (League, Player, Date, Points, Team_Points, Opponent, Partner, Team_Net) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [league, r.player, date, r.pts, r.tpts, r.opp||null, r.partner||null, r.teamNet]);
     }
   }
+  await SERVER_RUN_QUEUE;
 
   // Refresh matches tab if it's showing this date
   if (document.getElementById('matchesDate')?.value == date) loadMatches();
