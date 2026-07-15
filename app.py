@@ -1184,7 +1184,8 @@ def run_server():
     print(f'HughsGolf server v{VERSION} starting on port {PORT}')
     print(f'DB path: {DB_PATH}')
     ensure_schema()
-    threading.Thread(target=update_duckdns, daemon=True).start()
+    if 'sandbox' not in VERSION.lower():
+        threading.Thread(target=update_duckdns, daemon=True).start()
     threading.Thread(target=clear_stale_sessions, daemon=True).start()
     app.run(host='0.0.0.0', port=PORT, debug=False)
 
