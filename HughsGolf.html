@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.19-sandbox</span>
+    <span id="appVersionDisplay">v20260715.20-sandbox</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.19-sandbox</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.20-sandbox</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -7079,7 +7079,7 @@ async function doGallusConfirm() {
 
   // Save + auto-pay for each imported player whose score is now complete
   const nine = document.getElementById('entryPostSeason')?.checked
-    ? (window.psBackFirst ? courseData.all18back : courseData.all18)
+    ? courseData.all18
     : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front);
   for (const key of importedKeys) {
     const st = entryState[key];
@@ -8978,6 +8978,27 @@ function getPostSeasonContextForDate(date) {
   return null;
 }
 
+function getPostSeasonFrontBackMap(psDate1, psDate2, league = "Hugh's") {
+  const normalizeFb = value => {
+    const v = String(value || '').trim().toUpperCase();
+    if (v === 'BACK' || v === 'B') return 'Back';
+    if (v === 'FRONT' || v === 'F') return 'Front';
+    return '';
+  };
+  let week1Fb = normalizeFb(query(`SELECT FrontBack FROM Scores WHERE Date=${psDate1} AND League="${league}" LIMIT 1`)[0]?.FrontBack)
+    || normalizeFb(query(`SELECT FrontBack FROM Schedule WHERE Date=${psDate1} AND League="${league}" LIMIT 1`)[0]?.FrontBack)
+    || getScheduledFrontBack(psDate1, league);
+  let week2Fb = normalizeFb(query(`SELECT FrontBack FROM Scores WHERE Date=${psDate2} AND League="${league}" LIMIT 1`)[0]?.FrontBack)
+    || normalizeFb(query(`SELECT FrontBack FROM Schedule WHERE Date=${psDate2} AND League="${league}" LIMIT 1`)[0]?.FrontBack);
+  if (!week2Fb) week2Fb = week1Fb === 'Back' ? 'Front' : 'Back';
+  return {
+    week1Fb,
+    week2Fb,
+    frontDate: week1Fb === 'Front' ? psDate1 : psDate2,
+    backDate: week1Fb === 'Back' ? psDate1 : psDate2
+  };
+}
+
 function getPostSeasonPaymentStatus(player, date) {
   const ctx = getPostSeasonContextForDate(date);
   if (!ctx) return null;
@@ -9168,7 +9189,7 @@ function calcEoySkins(season, silent=false) {
   query(`SELECT Player, Detail FROM Payments WHERE ${skinWinDateFilter} AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`)
     .forEach(r => { window.skinWinnerCells[`${r.Player}-${r.Detail.replace('#','')}`] = true; });
 
-  applyCellClasses(document.getElementById('entryPostSeason')?.checked ? (window.psBackFirst ? courseData.all18back : courseData.all18) : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front));
+  applyCellClasses(document.getElementById('entryPostSeason')?.checked ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front));
 
   if (!silent) alert(`✓ EOY Skins calculated!\n${totalSkins} skins @ $${skinValue.toFixed(2)} each`);
 }
@@ -9294,9 +9315,7 @@ function reRenderEntry() {
   if (currentDate !== entryStateDate || currentFb !== entryStateFb) { buildEntryGrid(); return; }
 
   const isPostSeason = document.getElementById('entryPostSeason')?.checked || false;
-  const nine = isPostSeason
-    ? (window.psBackFirst ? courseData.all18back : courseData.all18)
-    : (currentFb === 'Back' ? courseData.back : courseData.front);
+  const nine = isPostSeason ? courseData.all18 : (currentFb === 'Back' ? courseData.back : courseData.front);
   const slots = Object.values(entryState).map(st => ({
     team: st.team, grade: st.grade, group: st.group,
     regular: st.regular, sub: st.sub, active: st.active, inSkins: st.inSkins
@@ -9377,17 +9396,16 @@ function buildEntryGrid() {
     }
   }
   const fb = document.getElementById('entry9').value;
-  // For post season, detect if back was played first
-  const psBackFirst = isPostSeason ? (() => {
+  // For post season, week order may be Back then Front, but screen order is always holes 1-18.
+  if (isPostSeason) {
     const psD1 = parseInt((() => { const p=lp.PostSeasonDt.split('/'); return `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`; })());
-    const firstFb = query(`SELECT FrontBack FROM Scores WHERE Date=${psD1} AND League="${league}" LIMIT 1`)[0]?.FrontBack;
-    window.psBackFirst = firstFb === 'Back';
-    return firstFb === 'Back';
-  })() : false;
+    const psD2obj = new Date(lp.PostSeasonDt); psD2obj.setDate(psD2obj.getDate()+7);
+    const psD2 = parseInt(`${psD2obj.getFullYear()}${String(psD2obj.getMonth()+1).padStart(2,'0')}${String(psD2obj.getDate()).padStart(2,'0')}`);
+    const psMap = getPostSeasonFrontBackMap(psD1, psD2, league);
+    window.psBackFirst = psMap.week1Fb === 'Back';
+  }
 
-  const nine = isPostSeason
-    ? (psBackFirst ? courseData.all18back : courseData.all18)
-    : (fb === 'Back' ? courseData.back : courseData.front);
+  const nine = isPostSeason ? courseData.all18 : (fb === 'Back' ? courseData.back : courseData.front);
 
   const sel9 = document.getElementById('entry9');
   sel9.style.display = isPostSeason ? 'none' : '';
@@ -9493,10 +9511,8 @@ function buildEntryGrid() {
     const psDate1 = parseInt((() => { const p=lp.PostSeasonDt.split('/'); return `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`; })());
     const psDate2 = parseInt((() => { const d=new Date(lp.PostSeasonDt); d.setDate(d.getDate()+7); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`; })());
 
-    // Detect which 9 was played first
-    const firstFb = query(`SELECT FrontBack FROM Scores WHERE Date=${psDate1} AND League="${league}" LIMIT 1`)[0]?.FrontBack || 'Front';
-    const backFirst = firstFb === 'Back';
-    window.psBackFirst = backFirst;
+    const psMap = getPostSeasonFrontBackMap(psDate1, psDate2, league);
+    window.psBackFirst = psMap.week1Fb === 'Back';
 
     const frontScores = {}, backScores = {};
     query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date IN (${psDate1},${psDate2}) AND FrontBack='Front' AND League="${league}"`)
@@ -9507,20 +9523,21 @@ function buildEntryGrid() {
     const allPs = new Set([...Object.keys(frontScores), ...Object.keys(backScores)]);
     allPs.forEach(p => {
       const f = frontScores[p] || {}, b = backScores[p] || {};
-      // If back played first, show back as holes 1-9, front as holes 10-18
-      existingScores[p] = backFirst ? {
-        '1':b['1'],'2':b['2'],'3':b['3'],'4':b['4'],'5':b['5'],'6':b['6'],'7':b['7'],'8':b['8'],'9':b['9'],
-        '10':f['1'],'11':f['2'],'12':f['3'],'13':f['4'],'14':f['5'],'15':f['6'],'16':f['7'],'17':f['8'],'18':f['9']
-      } : {
+      // Always display in course order: holes 1-9, then holes 10-18.
+      existingScores[p] = {
         '1':f['1'],'2':f['2'],'3':f['3'],'4':f['4'],'5':f['5'],'6':f['6'],'7':f['7'],'8':f['8'],'9':f['9'],
         '10':b['1'],'11':b['2'],'12':b['3'],'13':b['4'],'14':b['5'],'15':b['6'],'16':b['7'],'17':b['8'],'18':b['9']
       };
     });
 
-    // Store order so save knows which record is which
-    entryState._psBackFirst = backFirst;
+    // Store date mapping so saves use the right post-season week while display stays 1-18.
+    entryState._psBackFirst = psMap.week1Fb === 'Back';
     entryState._psDate1 = psDate1;
     entryState._psDate2 = psDate2;
+    entryState._psFrontDate = psMap.frontDate;
+    entryState._psBackDate = psMap.backDate;
+    entryState._psWeek1Fb = psMap.week1Fb;
+    entryState._psWeek2Fb = psMap.week2Fb;
   } else {
     query(`SELECT Player,"1","2","3","4","5","6","7","8","9",Gross,Net FROM Scores WHERE Date=${date} AND FrontBack='${fb}' AND League="${league}"`)
       .forEach(r => existingScores[r.Player] = r);
@@ -10558,8 +10575,7 @@ function onScoreInput(e) {
   const par = parseInt(inp.dataset.par);
   const val = inp.value.trim();
   const isPS = document.getElementById('entryPostSeason')?.checked;
-  const nine = isPS ? (window.psBackFirst ? courseData.all18back : courseData.all18)
-                    : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front);
+  const nine = isPS ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front);
   const par9 = nine.pars.reduce((a,b)=>a+b,0);
 
   entryState[key].holes[hi] = val;
@@ -10692,40 +10708,33 @@ async function savePlayerScoreNow(key, gross, net) {
   const isPS = document.getElementById('entryPostSeason')?.checked;
 
   if (isPS) {
-    const backFirst = entryState._psBackFirst;
-    const psDate1   = entryState._psDate1 || date;
-    const psDate2   = entryState._psDate2 || date;
-    const first9H   = h.slice(0, 9);
-    const second9H  = h.slice(9, 18);
-    const firstDone = first9H.every(v => parseInt(v) > 0);
-    const secondDone = second9H.every(v => parseInt(v) > 0);
-    const first9Fb  = backFirst ? 'Back'  : 'Front';
-    const second9Fb = backFirst ? 'Front' : 'Back';
-    const first9Pars  = backFirst ? courseData.back.pars  : courseData.front.pars;
-    const second9Pars = backFirst ? courseData.front.pars : courseData.back.pars;
-    const first9Hcps  = backFirst ? courseData.back.hcps  : courseData.front.hcps;
-    const second9Hcps = backFirst ? courseData.front.hcps : courseData.back.hcps;
+    const frontDate = entryState._psFrontDate || entryState._psDate1 || date;
+    const backDate  = entryState._psBackDate  || entryState._psDate2 || date;
+    const front9H   = h.slice(0, 9);
+    const back9H    = h.slice(9, 18);
+    const frontDone = front9H.every(v => parseInt(v) > 0);
+    const backDone  = back9H.every(v => parseInt(v) > 0);
 
-    if (firstDone) {
-      const first9Gross = first9H.reduce((a,v)=>a+(parseInt(v)||0),0);
-      const first9Net = calcNet(first9H, first9Pars, first9Hcps, st.phdcp);
-      serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, psDate1, league]);
+    if (frontDone) {
+      const front9Gross = front9H.reduce((a,v)=>a+(parseInt(v)||0),0);
+      const front9Net = calcNet(front9H, courseData.front.pars, courseData.front.hcps, st.phdcp);
+      serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, frontDate, league]);
       serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [league, playerName, psDate1, first9Fb, first9H[0]||null, first9H[1]||null, first9H[2]||null, first9H[3]||null, first9H[4]||null,
-         first9H[5]||null, first9H[6]||null, first9H[7]||null, first9H[8]||null, first9Gross, first9Net]);
+        [league, playerName, frontDate, 'Front', front9H[0]||null, front9H[1]||null, front9H[2]||null, front9H[3]||null, front9H[4]||null,
+         front9H[5]||null, front9H[6]||null, front9H[7]||null, front9H[8]||null, front9Gross, front9Net]);
     }
 
-    if (secondDone) {
-      const second9Gross = second9H.reduce((a,v)=>a+(parseInt(v)||0),0);
-      const second9Net = calcNet(second9H, second9Pars, second9Hcps, st.phdcp);
-      serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, psDate2, league]);
+    if (backDone) {
+      const back9Gross = back9H.reduce((a,v)=>a+(parseInt(v)||0),0);
+      const back9Net = calcNet(back9H, courseData.back.pars, courseData.back.hcps, st.phdcp);
+      serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, backDate, league]);
       serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [league, playerName, psDate2, second9Fb, second9H[0]||null, second9H[1]||null, second9H[2]||null, second9H[3]||null, second9H[4]||null,
-         second9H[5]||null, second9H[6]||null, second9H[7]||null, second9H[8]||null, second9Gross, second9Net]);
+        [league, playerName, backDate, 'Back', back9H[0]||null, back9H[1]||null, back9H[2]||null, back9H[3]||null, back9H[4]||null,
+         back9H[5]||null, back9H[6]||null, back9H[7]||null, back9H[8]||null, back9Gross, back9Net]);
     }
 
     const season = parseInt(date.toString().substring(0,4));
-    if (firstDone || secondDone) calcEoySkins(season, true);
+    if (frontDone || backDone) calcEoySkins(season, true);
     loadScores();
     return;
   }
@@ -10820,27 +10829,33 @@ function onScoreKeydown(e) {
 }
 
 function onScorePaste(e) {
-  // Handle paste of 9 digits on any hole input
+  // Handle paste of score digits in visible course order.
   const key = e.target.dataset.slotkey;
   const hi  = parseInt(e.target.dataset.hi);
   const text = (e.clipboardData || window.clipboardData).getData('text').trim();
   if (text.length >= 9 && /^\d+$/.test(text)) {
     e.preventDefault();
-    distributeScores(key, text.slice(0, 9), e.target);
+    const isPS = document.getElementById('entryPostSeason')?.checked;
+    const maxCells = isPS ? 18 : 9;
+    distributeScores(key, text.slice(0, maxCells - hi), e.target);
   }
 }
 
-function distributeScores(key, nineDigits, firstInp) {
-  const nine = document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front;
+function distributeScores(key, scoreDigits, firstInp) {
+  const isPS = document.getElementById('entryPostSeason')?.checked;
+  const nine = isPS ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front);
   const par9 = nine.pars.reduce((a,b)=>a+b,0);
-  const digits = nineDigits.split('');
+  const digits = scoreDigits.split('');
   const inputs = document.querySelectorAll(`input[data-slotkey="${key}"]`);
+  const startIdx = firstInp ? (parseInt(firstInp.dataset.hi) || 0) : 0;
   digits.forEach((d, i) => {
-    if (inputs[i]) { inputs[i].value = d; entryState[key].holes[i] = d; }
+    const idx = startIdx + i;
+    if (inputs[idx]) { inputs[idx].value = d; entryState[key].holes[idx] = d; }
   });
   entryDirty = true;
-  if (firstInp) firstInp.value = digits[0];
-  if (inputs[8]) { inputs[8].focus(); inputs[8].select(); }
+  if (firstInp && digits.length) firstInp.value = digits[0];
+  const lastIdx = Math.min(startIdx + digits.length - 1, inputs.length - 1);
+  if (inputs[lastIdx]) { inputs[lastIdx].focus(); inputs[lastIdx].select(); }
 
   const st = entryState[key];
   const gross = calcGross(st.holes);
@@ -10849,7 +10864,8 @@ function distributeScores(key, nineDigits, firstInp) {
   const nEl = document.getElementById(`net-${key}`);
   if (gEl) gEl.textContent = gross || '';
   if (nEl) { nEl.textContent = net || ''; nEl.className = 'eg-net' + (net && net < par9 ? ' under' : ''); }
-  if (gross) updateCompletedEntryHandicap(key, nine, true);
+  if (gross && !isPS) updateCompletedEntryHandicap(key, nine, true);
+  if (isPS) savePlayerScoreNow(key, gross, net);
   applyCellClasses(nine);
 }
 
@@ -10875,40 +10891,33 @@ async function saveEntryToDB() {
   let saved = 0;
 
   Object.values(entryState).forEach(st => {
-    const gross = calcGross(st.holes);
-    if (!gross) return;
-    const net        = calcNet(st.holes, nine.pars, nine.hcps, st.phdcp);
     const h          = st.holes;
+    const gross      = isPS ? h.reduce((sum, v) => sum + (parseInt(v) || 0), 0) : calcGross(h);
+    const hasScore   = isPS ? h.some(v => parseInt(v) > 0) : !!gross;
+    if (!hasScore) return;
+    const net        = isPS ? null : calcNet(h, nine.pars, nine.hcps, st.phdcp);
     const playerName = st.active;
 
     // Save scores
     if (isPS) {
-      // Post season: split 18 holes into two 9-hole records on correct dates
-      const backFirst = entryState._psBackFirst;
-      const psDate1   = entryState._psDate1 || date;
-      const psDate2   = entryState._psDate2 || date;
-      // First 9 holes go to date1, second 9 to date2
-      const first9H  = h.slice(0,9);
-      const second9H = h.slice(9,18);
-      const first9Fb  = backFirst ? 'Back'  : 'Front';
-      const second9Fb = backFirst ? 'Front' : 'Back';
-      const first9Pars  = backFirst ? courseData.back.pars  : courseData.front.pars;
-      const second9Pars = backFirst ? courseData.front.pars : courseData.back.pars;
-      const first9Hcps  = backFirst ? courseData.back.hcps  : courseData.front.hcps;
-      const second9Hcps = backFirst ? courseData.front.hcps : courseData.back.hcps;
-      const first9Gross  = first9H.reduce((a,v)=>a+(parseInt(v)||0),0);
-      const second9Gross = second9H.reduce((a,v)=>a+(parseInt(v)||0),0);
-      const first9Net  = calcNet(first9H,  first9Pars,  first9Hcps,  st.phdcp);
-      const second9Net = calcNet(second9H, second9Pars, second9Hcps, st.phdcp);
-      if (first9Gross) {
-        serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, psDate1, league]);
+      // Post season display is always 1-9 then 10-18. Save each half to that side's date.
+      const frontDate = entryState._psFrontDate || entryState._psDate1 || date;
+      const backDate  = entryState._psBackDate  || entryState._psDate2 || date;
+      const front9H = h.slice(0,9);
+      const back9H  = h.slice(9,18);
+      const front9Gross = front9H.reduce((a,v)=>a+(parseInt(v)||0),0);
+      const back9Gross  = back9H.reduce((a,v)=>a+(parseInt(v)||0),0);
+      const front9Net = calcNet(front9H, courseData.front.pars, courseData.front.hcps, st.phdcp);
+      const back9Net  = calcNet(back9H, courseData.back.pars, courseData.back.hcps, st.phdcp);
+      if (front9Gross) {
+        serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, frontDate, league]);
         serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          [league,playerName,psDate1,first9Fb, first9H[0]||null,first9H[1]||null,first9H[2]||null,first9H[3]||null,first9H[4]||null,first9H[5]||null,first9H[6]||null,first9H[7]||null,first9H[8]||null, first9Gross, first9Net]);
+          [league,playerName,frontDate,'Front', front9H[0]||null,front9H[1]||null,front9H[2]||null,front9H[3]||null,front9H[4]||null,front9H[5]||null,front9H[6]||null,front9H[7]||null,front9H[8]||null, front9Gross, front9Net]);
       }
-      if (second9Gross) {
-        serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, psDate2, league]);
+      if (back9Gross) {
+        serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, backDate, league]);
         serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          [league,playerName,psDate2,second9Fb, second9H[0]||null,second9H[1]||null,second9H[2]||null,second9H[3]||null,second9H[4]||null,second9H[5]||null,second9H[6]||null,second9H[7]||null,second9H[8]||null, second9Gross, second9Net]);
+          [league,playerName,backDate,'Back', back9H[0]||null,back9H[1]||null,back9H[2]||null,back9H[3]||null,back9H[4]||null,back9H[5]||null,back9H[6]||null,back9H[7]||null,back9H[8]||null, back9Gross, back9Net]);
       }
     } else {
       // Regular: single 9-hole record
@@ -10925,41 +10934,43 @@ async function saveEntryToDB() {
   });
 
   // ── Auto-mark Skin/CTP payments for players with perfect payment history ──
-  const lp2 = query(`SELECT Skins, Closest FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
-  const skinAmt2 = parseFloat(lp2?.Skins || 2);
-  const ctpAmt2  = parseFloat(lp2?.Closest || 1);
-  const payDate  = new Date().toLocaleString();
-  let autoPaid = 0;
+  if (!isPS) {
+    const lp2 = query(`SELECT Skins, Closest FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
+    const skinAmt2 = parseFloat(lp2?.Skins || 2);
+    const ctpAmt2  = parseFloat(lp2?.Closest || 1);
+    const payDate  = new Date().toLocaleString();
+    let autoPaid = 0;
 
-  Object.values(entryState).forEach(st => {
-    const gross = calcGross(st.holes);
-    if (!gross) return; // only players who have a score today
-    const playerName = st.active;
+    Object.values(entryState).forEach(st => {
+      const gross = calcGross(st.holes);
+      if (!gross) return; // only players who have a score today
+      const playerName = st.active;
 
-    [['Skin', skinAmt2], ['CTP', ctpAmt2]].forEach(([desc, amt]) => {
-      // Already has a payment for today?
-      const already = query(`SELECT 1 FROM Payments WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc=? AND Detail='Payment' LIMIT 1`,
-        [league, playerName, date, desc]).length > 0;
-      if (already) return;
+      [['Skin', skinAmt2], ['CTP', ctpAmt2]].forEach(([desc, amt]) => {
+        // Already has a payment for today?
+        const already = query(`SELECT 1 FROM Payments WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc=? AND Detail='Payment' LIMIT 1`,
+          [league, playerName, date, desc]).length > 0;
+        if (already) return;
 
-      // All prior dates this season where player had a score
-      const priorDates = query(`SELECT DISTINCT Date FROM Scores WHERE League=? AND Player=? AND Date >= ${season}0101 AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)`,
-        [league, playerName, date]).map(r => r.Date);
-      if (!priorDates.length) return; // no history — don't auto-enroll new players
+        // All prior dates this season where player had a score
+        const priorDates = query(`SELECT DISTINCT Date FROM Scores WHERE League=? AND Player=? AND Date >= ${season}0101 AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)`,
+          [league, playerName, date]).map(r => r.Date);
+        if (!priorDates.length) return; // no history — don't auto-enroll new players
 
-      // Did they pay this Desc on EVERY prior date they played?
-      const paidDates = query(`SELECT DISTINCT Date FROM Payments WHERE League=? AND Player=? AND Desc=? AND Detail='Payment' AND Date >= ${season}0101 AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)`,
-        [league, playerName, desc, date]).map(r => r.Date);
-      const paidSet = new Set(paidDates);
-      const perfectHistory = priorDates.every(d => paidSet.has(d));
-      if (!perfectHistory) return;
+        // Did they pay this Desc on EVERY prior date they played?
+        const paidDates = query(`SELECT DISTINCT Date FROM Payments WHERE League=? AND Player=? AND Desc=? AND Detail='Payment' AND Date >= ${season}0101 AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)`,
+          [league, playerName, desc, date]).map(r => r.Date);
+        const paidSet = new Set(paidDates);
+        const perfectHistory = priorDates.every(d => paidSet.has(d));
+        if (!perfectHistory) return;
 
-      // Auto-insert payment
-      serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid) VALUES (?,?,?,?,?,?,?)`,
-        [league, playerName, date, desc, 'Payment', amt, payDate]);
-      autoPaid++;
+        // Auto-insert payment
+        serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid) VALUES (?,?,?,?,?,?,?)`,
+          [league, playerName, date, desc, 'Payment', amt, payDate]);
+        autoPaid++;
+      });
     });
-  });
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
 
