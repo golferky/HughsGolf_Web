@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.9</span>
+    <span id="appVersionDisplay">v20260715.10</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.9</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.10</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -849,7 +849,7 @@
       </div>
       <div class="filter-group">
         <label>Week</label>
-        <select id="ctpsDate"></select>
+        <select id="ctpsDate" onchange="loadCtps()"></select>
       </div>
     </div>
     <div id="ctpsContent" style="margin-top:16px"></div>
@@ -4067,6 +4067,7 @@ function loadSkins() {
     document.getElementById('ctpWinners').innerHTML = '<div class="empty">No CTP data available</div>';
     return;
   }
+  syncCtpsToSkinsDate(date);
 
   // Stat boxes
   const participants = query(`SELECT COUNT(DISTINCT Player) as c FROM Payments WHERE Date=${date} AND Desc='Skin' AND Detail='Payment'`)[0]?.c || 0;
@@ -4489,7 +4490,23 @@ function loadCtpsTab() {
   populateCtpsDateDropdown();
 }
 
-function populateCtpsDateDropdown() {
+function syncCtpsToSkinsDate(date = document.getElementById('skinsDate')?.value) {
+  const seasonSel = document.getElementById('ctpsSeason');
+  const dateSel = document.getElementById('ctpsDate');
+  if (!date || !seasonSel || !dateSel) return;
+  if (!seasonSel.options.length || !dateSel.options.length) return;
+  const season = String(date).substring(0, 4);
+  if (seasonSel.value !== season) {
+    seasonSel.value = season;
+    populateCtpsDateDropdown(false);
+  }
+  if (Array.from(dateSel.options).some(o => String(o.value) === String(date))) {
+    dateSel.value = date;
+  }
+  loadCtps();
+}
+
+function populateCtpsDateDropdown(loadAfter = true) {
   const season = document.getElementById('ctpsSeason').value;
   const sel = document.getElementById('ctpsDate');
   const dates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='CTP' AND Detail='Payment' AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
@@ -4497,7 +4514,13 @@ function populateCtpsDateDropdown() {
     SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League="Hugh's"), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     ORDER BY sDate DESC`);
   sel.innerHTML = dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
-  loadCtps();
+  if (loadAfter) {
+    const skinsDate = document.getElementById('skinsDate')?.value;
+    if (skinsDate && String(skinsDate).substring(0, 4) === String(season) && Array.from(sel.options).some(o => String(o.value) === String(skinsDate))) {
+      sel.value = skinsDate;
+    }
+    loadCtps();
+  }
 }
 
 function getScheduledFrontBack(date, league = "Hugh's") {
@@ -4637,7 +4660,7 @@ function loadCtps() {
   document.getElementById('ctpsContent').innerHTML = html;
 }
 
-function ctpSetWinner(hole, date, player, amount) {
+async function ctpSetWinner(hole, date, player, amount) {
   if (!player) return;
   const league     = "Hugh's";
   const wholeAmt   = Math.floor(amount); // whole dollars only
@@ -4646,18 +4669,20 @@ function ctpSetWinner(hole, date, player, amount) {
   serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'CTP',?,?,?,'CTP Winner')`,
     [league, player, date, `#${hole}`, wholeAmt, '']);
   reconcileCtpCarryovers(date);
-  saveDBToServer();
+  await SERVER_RUN_QUEUE;
   loadCtps();
+  loadSkins();
 }
 
-function ctpReset(hole, date) {
+async function ctpReset(hole, date) {
   const league = "Hugh's";
   serverRun(`DELETE FROM Payments WHERE League=? AND Date=? AND Desc='CTP' AND Detail=? AND Player!='Kitty'`, [league, date, `#${hole}`]);
-  saveDBToServer();
+  await SERVER_RUN_QUEUE;
   loadCtps();
+  loadSkins();
 }
 
-function ctpNoWinner(hole, date, amount, fb) {
+async function ctpNoWinner(hole, date, amount, fb) {
   const league    = "Hugh's";
   const now       = new Date().toLocaleDateString();
   const wholeAmt  = Math.floor(amount); // whole dollars only — remainder stays in kitty
@@ -4666,8 +4691,9 @@ function ctpNoWinner(hole, date, amount, fb) {
   serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'CTP',?,?,?,?)`,
     [league, 'Kitty', date, `Carryover${hole}-${fb}`, wholeAmt, now, `CTP${hole} no winner - ${fb}`]);
   reconcileCtpCarryovers(date);
-  saveDBToServer();
+  await SERVER_RUN_QUEUE;
   loadCtps();
+  loadSkins();
 }
 
 function reconcilePreviousCtpCarryovers(date, season, league = "Hugh's") {
