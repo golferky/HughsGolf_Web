@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.22-sandbox</span>
+    <span id="appVersionDisplay">v20260715.23-sandbox</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.22-sandbox</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.23-sandbox</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -8981,23 +8981,15 @@ function getPostSeasonContextForDate(date) {
 }
 
 function getPostSeasonFrontBackMap(psDate1, psDate2, league = "Hugh's") {
-  const normalizeFb = value => {
-    const v = String(value || '').trim().toUpperCase();
-    if (v === 'BACK' || v === 'B') return 'Back';
-    if (v === 'FRONT' || v === 'F') return 'Front';
-    return '';
-  };
-  let week1Fb = normalizeFb(query(`SELECT FrontBack FROM Scores WHERE Date=${psDate1} AND League="${league}" LIMIT 1`)[0]?.FrontBack)
-    || normalizeFb(query(`SELECT FrontBack FROM Schedule WHERE Date=${psDate1} AND League="${league}" LIMIT 1`)[0]?.FrontBack)
-    || getScheduledFrontBack(psDate1, league);
-  let week2Fb = normalizeFb(query(`SELECT FrontBack FROM Scores WHERE Date=${psDate2} AND League="${league}" LIMIT 1`)[0]?.FrontBack)
-    || normalizeFb(query(`SELECT FrontBack FROM Schedule WHERE Date=${psDate2} AND League="${league}" LIMIT 1`)[0]?.FrontBack);
-  if (!week2Fb) week2Fb = week1Fb === 'Back' ? 'Front' : 'Back';
+  // Post season entry is always course order: 1-9 first, 10-18 second.
+  // Do not infer this from Scores rows; test rows can be partial or mixed while entry is in progress.
+  const week1Fb = 'Front';
+  const week2Fb = 'Back';
   return {
     week1Fb,
     week2Fb,
-    frontDate: week1Fb === 'Front' ? psDate1 : psDate2,
-    backDate: week1Fb === 'Back' ? psDate1 : psDate2
+    frontDate: psDate1,
+    backDate: psDate2
   };
 }
 
