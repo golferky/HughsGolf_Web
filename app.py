@@ -37,13 +37,20 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8445'))
-VERSION    = '20260714.2'
+VERSION    = '20260715.1'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
+
+def db_modified_ms():
+    """Current DB modified time in milliseconds, or 0 if no DB exists."""
+    try:
+        return int(os.path.getmtime(DB_PATH) * 1000) if os.path.exists(DB_PATH) else 0
+    except Exception:
+        return 0
 
 # In-memory reset tokens: { token: { player, expires } }
 reset_tokens = {}
@@ -218,7 +225,7 @@ def db_info():
         if not os.path.exists(DB_PATH):
             return jsonify({'ok': False, 'error': 'DB not found'}), 404
         stat = os.stat(DB_PATH)
-        modified_ms = int(stat.st_mtime * 1000)
+        modified_ms = db_modified_ms()
         modified_str = datetime.datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
         return jsonify({
             'ok': True,
@@ -262,6 +269,21 @@ def save_db():
             pass
 
     with DB_WRITE_LOCK:
+        current_ms = db_modified_ms()
+        client_db_modified = request.headers.get('X-DB-Modified-Ms', '').strip()
+        try:
+            client_ms = int(float(client_db_modified)) if client_db_modified else 0
+        except ValueError:
+            client_ms = 0
+        if current_ms and client_ms and current_ms > client_ms + 1500:
+            return jsonify({
+                'ok': False,
+                'error': 'stale_db',
+                'message': 'The server database has newer changes. Reload before saving.',
+                'serverModifiedMs': current_ms,
+                'clientModifiedMs': client_ms
+            }), 409
+
         if os.path.exists(DB_PATH):
             ts = now_local().strftime('%Y%m%d_%H%M%S')
             backup = os.path.join(BACKUP_DIR, f'HughsGolf_{ts}.db')
@@ -277,9 +299,10 @@ def save_db():
         with open(tmp, 'wb') as f:
             f.write(data)
         os.replace(tmp, DB_PATH)
+        modified_ms = db_modified_ms()
 
     print(f'[{now_local():%H:%M:%S}] DB saved — {len(data):,} bytes')
-    return jsonify({'ok': True, 'bytes': len(data)})
+    return jsonify({'ok': True, 'bytes': len(data), 'modifiedMs': modified_ms})
 
 
 @app.route('/backup-list')
@@ -1072,8 +1095,9 @@ def run_sql():
                 conn.commit()
                 rc = cur.rowcount
                 conn.close()
+                modified_ms = db_modified_ms()
                 print(f'[{now_local():%H:%M:%S}] run-sql: {sql[:80]} — {rc} row(s) affected')
-                return jsonify({'ok': True, 'rowcount': rc})
+                return jsonify({'ok': True, 'rowcount': rc, 'modifiedMs': modified_ms})
     except Exception as e:
         print(f'[{now_local():%H:%M:%S}] run-sql error: {e}; sql={sql[:200]}')
         return jsonify({'ok': False, 'error': str(e)}), 500

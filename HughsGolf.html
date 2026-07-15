@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260714.2</span>
+    <span id="appVersionDisplay">v20260715.1</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260714.2</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.1</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1972,7 +1972,13 @@ async function sendServerSql(serverSql, sessionToken) {
   });
   const json = await resp.json();
   if (!json.ok) throw new Error(json.error || `HTTP ${resp.status}`);
-  SERVER_DB_MODIFIED = Date.now() / 1000; // this tab's own write — don't flag it as "someone else"
+  if (json.modifiedMs) {
+    SERVER_DB_MODIFIED_MS = json.modifiedMs;
+    SERVER_DB_MODIFIED = json.modifiedMs / 1000;
+    DB_UPDATE_PENDING = false;
+  } else {
+    SERVER_DB_MODIFIED = Date.now() / 1000; // this tab's own write — don't flag it as "someone else"
+  }
   return json;
 }
 
@@ -5639,6 +5645,16 @@ function shouldReloadForPendingDbUpdate() {
   return DB_UPDATE_PENDING && !isLocalTestHost() && !entryDirty;
 }
 
+function showStaleDbSavePrompt(serverModifiedMs) {
+  DB_UPDATE_PENDING = true;
+  if (serverModifiedMs) {
+    SERVER_DB_MODIFIED_MS = serverModifiedMs;
+    SERVER_DB_MODIFIED = serverModifiedMs / 1000;
+  }
+  const msg = 'Someone else saved newer league data before this browser saved.\n\nTo avoid overwriting their changes, your save was blocked. Reload now to get the latest DB.';
+  if (confirm(msg + '\n\nReload now?')) location.reload(true);
+}
+
 async function checkServerVersion() {
   try {
     const resp = await fetch('/version?t=' + Date.now());
@@ -5701,6 +5717,10 @@ async function saveDBToServer(successLabel, btnId) {
       if (json.error === 'stale_version') {
         // Show blocking reload modal
         showVersionUpdateModal(json.serverVersion, json.flaskVersion);
+        return;
+      }
+      if (json.error === 'stale_db') {
+        showStaleDbSavePrompt(json.serverModifiedMs);
         return;
       }
       throw new Error(json.error || 'Save failed');
