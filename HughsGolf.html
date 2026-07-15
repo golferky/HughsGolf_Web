@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.1</span>
+    <span id="appVersionDisplay">v20260715.2</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.1</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.2</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -5610,9 +5610,9 @@ const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
 function resetSessionTimer() {
   if (!currentUser) return;
   clearTimeout(sessionTimer);
-  sessionTimer = setTimeout(() => {
+  sessionTimer = setTimeout(async () => {
     alert('Session expired due to inactivity. Please log in again.');
-    logoutUser('timeout');
+    await logoutUser('timeout');
   }, SESSION_TIMEOUT);
 }
 
@@ -5689,6 +5689,15 @@ document.addEventListener('keypress', resetSessionTimer);
 let _saveInProgress = false;
 
 let _savePending = false;
+function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+async function waitForSaveIdle(maxMs = 10000) {
+  const started = Date.now();
+  while ((_saveInProgress || _savePending) && Date.now() - started < maxMs) {
+    await delay(100);
+  }
+}
+
 async function saveDBToServer(successLabel, btnId) {
   if (!db) return;
   if (_saveInProgress) { _savePending = true; return; }   // queue instead of dropping
@@ -5749,7 +5758,7 @@ async function saveDBToServer(successLabel, btnId) {
     _saveInProgress = false;
     if (_savePending) {
       _savePending = false;
-      saveDBToServer(successLabel, btnId);
+      await saveDBToServer(successLabel, btnId);
     }
   }
 }
@@ -7593,8 +7602,10 @@ async function doChangePw() {
   alert('Password changed successfully.');
 }
 
-function logoutUser(reason) {
+async function logoutUser(reason) {
   document.title = "Hugh's Golf League";
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) { logoutBtn.textContent = 'Saving...'; logoutBtn.disabled = true; }
   // Log the logout/timeout event before clearing currentUser
   if (currentUser) {
     try {
@@ -7615,7 +7626,14 @@ function logoutUser(reason) {
     } catch(e) { /* ignore */ }
     localStorage.removeItem(`hg_session_${currentUser.name}`);
   }
-  saveDBToServer();
+  try {
+    await SERVER_RUN_QUEUE;
+    await waitForSaveIdle();
+    await saveDBToServer();
+    await waitForSaveIdle();
+  } catch(e) {
+    console.warn('logout final save failed:', e);
+  }
   clearInterval(window._sessionCheckInterval);
   window._mySessionToken = null;
   currentUser = null;
@@ -7623,6 +7641,8 @@ function logoutUser(reason) {
   clearTimeout(sessionTimer);
   document.getElementById('loggedInUser').style.display = 'none';
   document.getElementById('logoutBtn').style.display = 'none';
+  document.getElementById('logoutBtn').textContent = 'Logout';
+  document.getElementById('logoutBtn').disabled = false;
   document.getElementById('changePwBtn').style.display = 'none';
   // Clear all password fields and reset forms
   document.getElementById('newPassword1').value = '';
