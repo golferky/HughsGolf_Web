@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.21-sandbox</span>
+    <span id="appVersionDisplay">v20260715.22-sandbox</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.21-sandbox</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.22-sandbox</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -3064,7 +3064,7 @@ function loadScores() {
   const scoresTable = document.getElementById('scoresTable');
   if (scoresTable) delete scoresTable.dataset.sortable;
   document.querySelector('#scoresTable thead tr').innerHTML = psCtx
-    ? '<th>Player</th><th class="num">Out Gross</th><th class="num">Out Net</th><th class="num">In Gross</th><th class="num">In Net</th><th class="num">18 Gross</th><th class="num">18 Net</th><th class="num">Hdcp</th><th class="ctr">Holes</th>'
+    ? '<th>Player</th><th class="num">1-9 Gross</th><th class="num">1-9 Net</th><th class="num">10-18 Gross</th><th class="num">10-18 Net</th><th class="num">18 Gross</th><th class="num">18 Net</th><th class="num">Hdcp</th><th class="ctr">Holes</th>'
     : '<th>Player</th><th class="num">Gross</th><th class="num">Net</th><th class="ctr">9</th><th class="num">PHdcp</th><th class="num">Hdcp</th>';
   // Attach sort listeners directly
   document.querySelectorAll('#scoresTable thead th').forEach((th, i) => {
@@ -10751,7 +10751,7 @@ async function savePlayerScoreNow(key, gross, net) {
     if (frontDone) {
       const front9Gross = front9H.reduce((a,v)=>a+(parseInt(v)||0),0);
       const front9Net = calcNet(front9H, courseData.front.pars, courseData.front.hcps, st.phdcp);
-      serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, frontDate, league]);
+      serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Front' AND League=?`, [playerName, frontDate, league]);
       serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [league, playerName, frontDate, 'Front', front9H[0]||null, front9H[1]||null, front9H[2]||null, front9H[3]||null, front9H[4]||null,
          front9H[5]||null, front9H[6]||null, front9H[7]||null, front9H[8]||null, front9Gross, front9Net]);
@@ -10760,7 +10760,7 @@ async function savePlayerScoreNow(key, gross, net) {
     if (backDone) {
       const back9Gross = back9H.reduce((a,v)=>a+(parseInt(v)||0),0);
       const back9Net = calcNet(back9H, courseData.back.pars, courseData.back.hcps, st.phdcp);
-      serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, backDate, league]);
+      serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Back' AND League=?`, [playerName, backDate, league]);
       serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [league, playerName, backDate, 'Back', back9H[0]||null, back9H[1]||null, back9H[2]||null, back9H[3]||null, back9H[4]||null,
          back9H[5]||null, back9H[6]||null, back9H[7]||null, back9H[8]||null, back9Gross, back9Net]);
@@ -10956,12 +10956,12 @@ async function saveEntryToDB() {
       const front9Net = calcNet(front9H, courseData.front.pars, courseData.front.hcps, st.phdcp);
       const back9Net  = calcNet(back9H, courseData.back.pars, courseData.back.hcps, st.phdcp);
       if (front9Gross) {
-        serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, frontDate, league]);
+        serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Front' AND League=?`, [playerName, frontDate, league]);
         serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [league,playerName,frontDate,'Front', front9H[0]||null,front9H[1]||null,front9H[2]||null,front9H[3]||null,front9H[4]||null,front9H[5]||null,front9H[6]||null,front9H[7]||null,front9H[8]||null, front9Gross, front9Net]);
       }
       if (back9Gross) {
-        serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, backDate, league]);
+        serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Back' AND League=?`, [playerName, backDate, league]);
         serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [league,playerName,backDate,'Back', back9H[0]||null,back9H[1]||null,back9H[2]||null,back9H[3]||null,back9H[4]||null,back9H[5]||null,back9H[6]||null,back9H[7]||null,back9H[8]||null, back9Gross, back9Net]);
       }
@@ -11061,8 +11061,10 @@ document.getElementById('entryClear')?.addEventListener('click', async ()=>{
 
   // Clear scores from DB for the selected player/date only.
   if (isPS2) {
-    serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Front' AND League=?`, [st.active, date, league]);
-    serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Back' AND League=?`, [st.active, date, league]);
+    const frontDate = entryState._psFrontDate || entryState._psDate1 || date;
+    const backDate  = entryState._psBackDate  || entryState._psDate2 || date;
+    serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Front' AND League=?`, [st.active, frontDate, league]);
+    serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Back' AND League=?`, [st.active, backDate, league]);
   } else {
     serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [st.active, date, league]);
     serverRun(`DELETE FROM Handicaps WHERE Player=? AND Date=? AND League=?`, [st.active, date, league]);
