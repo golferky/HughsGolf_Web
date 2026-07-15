@@ -37,7 +37,7 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260715.15-sandbox'
+VERSION    = '20260715.16-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -261,7 +261,7 @@ def save_db():
             import re
             with open(os.path.join(BASE_DIR, 'HughsGolf.html'), 'r') as f:
                 content = f.read(20000)
-            match = re.search(r'v(2026\d+\.\d+)', content)
+            match = re.search(r'v(2026\d+\.\d+(?:-[A-Za-z0-9_.-]+)?)', content)
             server_version = match.group(1) if match else None
             if server_version and client_version != server_version:
                 return jsonify({'ok': False, 'error': 'stale_version', 'serverVersion': server_version, 'flaskVersion': VERSION}), 409
