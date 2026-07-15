@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.11</span>
+    <span id="appVersionDisplay">v20260715.12</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.11</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.12</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -4070,11 +4070,11 @@ function loadSkins() {
   syncCtpsToSkinsDate(date);
 
   // Stat boxes
-  const participants = query(`SELECT COUNT(DISTINCT Player) as c FROM Payments WHERE Date=${date} AND Desc='Skin' AND Detail='Payment'`)[0]?.c || 0;
-  const skinPot = query(`SELECT SUM(Earned) as s FROM Payments WHERE Date=${date} AND Desc='Skin' AND Detail='Payment'`)[0]?.s || 0;
-  const ctpPot = query(`SELECT SUM(Earned) as s FROM Payments WHERE Date=${date} AND Desc='CTP' AND Detail='Payment'`)[0]?.s || 0;
-  const skinWinCount = query(`SELECT COUNT(DISTINCT Detail || ':' || Player) as c FROM Payments p WHERE Date=${date} AND Desc='Skin' AND Detail NOT IN ('Payment','') AND Player != 'Kitty'
-    AND EXISTS (SELECT 1 FROM Scores s WHERE s.League=p.League AND s.Date=p.Date AND s.Player=p.Player AND s.Gross IS NOT NULL AND s.Gross != 0)`)[0]?.c || 0;
+  const participants = query(`SELECT COUNT(DISTINCT Player) as c FROM Payments WHERE CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='Skin' AND Detail='Payment'`, [date])[0]?.c || 0;
+  const skinPot = query(`SELECT SUM(Earned) as s FROM Payments WHERE CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='Skin' AND Detail='Payment'`, [date])[0]?.s || 0;
+  const ctpPot = query(`SELECT SUM(Earned) as s FROM Payments WHERE CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='CTP' AND Detail='Payment'`, [date])[0]?.s || 0;
+  const skinWinCount = query(`SELECT COUNT(DISTINCT Detail || ':' || Player) as c FROM Payments p WHERE CAST(p.Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='Skin' AND Detail NOT IN ('Payment','') AND Player != 'Kitty'
+    AND EXISTS (SELECT 1 FROM Scores s WHERE s.League=p.League AND CAST(s.Date AS INTEGER)=CAST(p.Date AS INTEGER) AND s.Player=p.Player AND s.Gross IS NOT NULL AND s.Gross != 0)`, [date])[0]?.c || 0;
 
   document.getElementById('skinStatBoxes').innerHTML = `
     <div class="stat-box gold"><div class="val">${participants}</div><div class="lbl">Players In</div></div>
@@ -4086,18 +4086,18 @@ function loadSkins() {
   const skinWins = query(`
     SELECT DISTINCT p.Player, p.Detail, p.Earned, p.Comment
     FROM Payments p
-    WHERE p.Date=${date} AND p.Desc='Skin'
+    WHERE CAST(p.Date AS INTEGER)=CAST(? AS INTEGER) AND p.Desc='Skin'
       AND Detail NOT IN ('Payment','Carryover','')
       AND p.Player != 'Kitty'
       AND EXISTS (
         SELECT 1 FROM Scores s
-        WHERE s.League=p.League AND s.Date=p.Date AND s.Player=p.Player
+        WHERE s.League=p.League AND CAST(s.Date AS INTEGER)=CAST(p.Date AS INTEGER) AND s.Player=p.Player
           AND s.Gross IS NOT NULL AND s.Gross != 0
       )
     ORDER BY CAST(REPLACE(Detail,'#','') AS INTEGER)
-  `);
+  `, [date]);
 
-  const skinCarry = query(`SELECT Earned FROM Payments WHERE Date=${date} AND Desc='Skin' AND Player='Kitty'`)[0];
+  const skinCarry = query(`SELECT Earned FROM Payments WHERE CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='Skin' AND Player='Kitty'`, [date])[0];
 
   const swDiv = document.getElementById('skinWinners');
   if (!skinWins.length) {
@@ -4121,13 +4121,13 @@ function loadSkins() {
   const ctpWins = query(`
     SELECT Player, Detail, Earned, Comment
     FROM Payments
-    WHERE Date=${date} AND Desc='CTP'
+    WHERE CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='CTP'
       AND Detail NOT IN ('Payment','')
       AND Player != 'Kitty'
     ORDER BY Detail
-  `);
+  `, [date]);
 
-  const ctpCarry = query(`SELECT Detail, Earned FROM Payments WHERE Date=${date} AND Desc='CTP' AND Player='Kitty'`);
+  const ctpCarry = query(`SELECT Detail, Earned FROM Payments WHERE CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='CTP' AND Player='Kitty'`, [date]);
 
   const ctpDiv = document.getElementById('ctpWinners');
   if (!ctpWins.length) {
