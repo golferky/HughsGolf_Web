@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.23-sandbox</span>
+    <span id="appVersionDisplay">v20260715.24-sandbox</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.23-sandbox</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.24-sandbox</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -9500,6 +9500,7 @@ function buildEntryGrid() {
 
   // Existing scores for this date
   const existingScores = {};
+  let psEntryMeta = null;
   if (isPostSeason) {
     // Load scores from both post season dates (could be played on different dates)
     const psDate1 = parseInt((() => { const p=lp.PostSeasonDt.split('/'); return `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`; })());
@@ -9524,14 +9525,16 @@ function buildEntryGrid() {
       };
     });
 
-    // Store date mapping so saves use the right post-season week while display stays 1-18.
-    entryState._psBackFirst = psMap.week1Fb === 'Back';
-    entryState._psDate1 = psDate1;
-    entryState._psDate2 = psDate2;
-    entryState._psFrontDate = psMap.frontDate;
-    entryState._psBackDate = psMap.backDate;
-    entryState._psWeek1Fb = psMap.week1Fb;
-    entryState._psWeek2Fb = psMap.week2Fb;
+    // Store date mapping after entryState is initialized below.
+    psEntryMeta = {
+      _psBackFirst: psMap.week1Fb === 'Back',
+      _psDate1: psDate1,
+      _psDate2: psDate2,
+      _psFrontDate: psMap.frontDate,
+      _psBackDate: psMap.backDate,
+      _psWeek1Fb: psMap.week1Fb,
+      _psWeek2Fb: psMap.week2Fb
+    };
   } else {
     query(`SELECT Player,"1","2","3","4","5","6","7","8","9",Gross,Net FROM Scores WHERE Date=${date} AND FrontBack='${fb}' AND League="${league}"`)
       .forEach(r => existingScores[r.Player] = r);
@@ -9567,6 +9570,7 @@ function buildEntryGrid() {
 
   // Init entryState keyed by slot key (team-grade) so subs don't collide
   entryState = {};
+  if (psEntryMeta) Object.assign(entryState, psEntryMeta);
   slots.forEach(slot => {
     const key = `${slot.team}-${slot.grade}`;
     const ex = existingScores[slot.active] || existingScores[slot.regular];
@@ -10760,6 +10764,7 @@ async function savePlayerScoreNow(key, gross, net) {
 
     const season = parseInt(date.toString().substring(0,4));
     if (frontDone || backDone) calcEoySkins(season, true);
+    await SERVER_RUN_QUEUE;
     loadScores();
     return;
   }
