@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.26-sandbox</span>
+    <span id="appVersionDisplay">v20260715.27-sandbox</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.26-sandbox</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.27-sandbox</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -3008,7 +3008,44 @@ function syncScoresDateForEntryContext() {
     const html = `<option value="${ctx.week1}">${ctx.season} Post Season - ${fmtDate(ctx.week1)} + ${fmtDate(ctx.week2)}</option>`;
     if (sel.innerHTML !== html) sel.innerHTML = html;
     sel.value = String(ctx.week1);
+    return;
   }
+  const entryDate = document.getElementById('entryDate')?.value;
+  if (entryDate) {
+    const html = `<option value="${entryDate}">${fmtDate(entryDate)}</option>`;
+    if (sel.innerHTML !== html) sel.innerHTML = html;
+    sel.value = String(entryDate);
+  }
+}
+
+function mergeLiveRegularScoreRows(rows, date) {
+  if (!courseData) return rows;
+  if (!entryState || !entryStateDate || String(entryStateDate) !== String(date)) return rows;
+  const fb = document.getElementById('entry9')?.value || entryStateFb || '';
+  if (fb && entryStateFb && fb !== entryStateFb) return rows;
+
+  const merged = new Map(rows.map(r => [r.Player, { ...r }]));
+  Object.values(entryState).forEach(st => {
+    if (!st || !Array.isArray(st.holes) || st.holes.length !== 9 || !st.active) return;
+    const gross = calcGross(st.holes);
+    if (!gross) return;
+    const nine = (fb === 'Back') ? courseData.back : courseData.front;
+    const net = calcNet(st.holes, nine.pars, nine.hcps, st.phdcp);
+    merged.set(st.active, {
+      Player: st.active,
+      Gross: gross,
+      Net: net,
+      FrontBack: fb,
+      PHdcp: st.phdcp,
+      Hdcp: st.hdcp ?? st.phdcp
+    });
+  });
+  return [...merged.values()].sort((a, b) => {
+    const aNet = a.Net == null ? 9999 : parseInt(a.Net);
+    const bNet = b.Net == null ? 9999 : parseInt(b.Net);
+    if (aNet !== bNet) return aNet - bNet;
+    return String(a.Player || '').localeCompare(String(b.Player || ''));
+  });
 }
 
 function mergeLivePostSeasonScoreRows(rows) {
@@ -3062,6 +3099,8 @@ function loadScores() {
   const psCtx = getActivePostSeasonScoreContext();
   if (psCtx) {
     syncScoresDateForEntryContext();
+  } else if (entryStateDate && document.getElementById('entryDate')?.value) {
+    syncScoresDateForEntryContext();
   } else {
     refreshDateDropdown('scoresDate', "SELECT DISTINCT Date as sDate FROM Scores ORDER BY Date DESC LIMIT 60");
   }
@@ -3105,6 +3144,7 @@ function loadScores() {
     ORDER BY s.Net ASC
   `);
   if (psCtx) rows = mergeLivePostSeasonScoreRows(rows);
+  else rows = mergeLiveRegularScoreRows(rows, date);
 
   // Update header
   const scoresTable = document.getElementById('scoresTable');
