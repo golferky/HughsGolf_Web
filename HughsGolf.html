@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.2</span>
+    <span id="appVersionDisplay">v20260715.3</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.2</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.3</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -5640,19 +5640,33 @@ function showVersionUpdateModal(serverVersion, flaskVersion) {
 
 let SERVER_DB_MODIFIED = null;
 let DB_UPDATE_PENDING = false;
+let STALE_DB_SAVE_BLOCKED = false;
 
 function shouldReloadForPendingDbUpdate() {
   return DB_UPDATE_PENDING && !isLocalTestHost() && !entryDirty;
 }
 
 function showStaleDbSavePrompt(serverModifiedMs) {
+  if (STALE_DB_SAVE_BLOCKED && document.getElementById('staleDbSaveModal')) return;
+  STALE_DB_SAVE_BLOCKED = true;
+  _savePending = false;
   DB_UPDATE_PENDING = true;
   if (serverModifiedMs) {
     SERVER_DB_MODIFIED_MS = serverModifiedMs;
     SERVER_DB_MODIFIED = serverModifiedMs / 1000;
   }
-  const msg = 'Someone else saved newer league data before this browser saved.\n\nTo avoid overwriting their changes, your save was blocked. Reload now to get the latest DB.';
-  if (confirm(msg + '\n\nReload now?')) location.reload(true);
+  if (document.getElementById('staleDbSaveModal')) return;
+  const modal = document.createElement('div');
+  modal.id = 'staleDbSaveModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:100000;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:12px;padding:32px;max-width:460px;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,0.4)">
+      <div style="font-size:38px;margin-bottom:12px">⚠</div>
+      <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:#c62828;margin-bottom:10px">Reload Needed</div>
+      <div style="font-size:15px;color:#333;line-height:1.45;margin-bottom:22px">Someone else saved newer league data before this browser saved. Your save was blocked so their changes would not be overwritten.</div>
+      <button onclick="location.reload(true)" style="width:100%;padding:12px;background:#1a472a;color:white;border:none;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">Reload Now</button>
+    </div>`;
+  document.body.appendChild(modal);
 }
 
 async function checkServerVersion() {
@@ -5700,6 +5714,7 @@ async function waitForSaveIdle(maxMs = 10000) {
 
 async function saveDBToServer(successLabel, btnId) {
   if (!db) return;
+  if (STALE_DB_SAVE_BLOCKED) return;
   if (_saveInProgress) { _savePending = true; return; }   // queue instead of dropping
   _saveInProgress = true;
   _savePending = false;
@@ -5756,7 +5771,7 @@ async function saveDBToServer(successLabel, btnId) {
     alert('DB save to server failed: ' + e.message + '\n\nCheck that the Flask server is running.');
   } finally {
     _saveInProgress = false;
-    if (_savePending) {
+    if (_savePending && !STALE_DB_SAVE_BLOCKED) {
       _savePending = false;
       await saveDBToServer(successLabel, btnId);
     }
