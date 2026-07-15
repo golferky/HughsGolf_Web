@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.25-sandbox</span>
+    <span id="appVersionDisplay">v20260715.26-sandbox</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.25-sandbox</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.26-sandbox</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -3011,6 +3011,52 @@ function syncScoresDateForEntryContext() {
   }
 }
 
+function mergeLivePostSeasonScoreRows(rows) {
+  if (!entryState || !entryStateDate) return rows;
+  const psCtx = getActivePostSeasonScoreContext();
+  if (!psCtx || ![psCtx.week1, psCtx.week2].includes(parseInt(entryStateDate))) return rows;
+
+  const merged = new Map(rows.map(r => [r.Player, { ...r }]));
+  Object.values(entryState).forEach(st => {
+    if (!st || !Array.isArray(st.holes) || st.holes.length < 18 || !st.active) return;
+    const totals = getPostSeasonEntryTotals(st);
+    if (!totals.frontGross && !totals.backGross) return;
+
+    const hdcp = parseInt(st.phdcp) || 0;
+    const rounds = (totals.frontComplete ? 1 : 0) + (totals.backComplete ? 1 : 0);
+    const totalGross = totals.frontComplete && totals.backComplete ? totals.frontGross + totals.backGross : null;
+    merged.set(st.active, {
+      Player: st.active,
+      FrontGross: totals.frontGross || null,
+      FrontNet: totals.frontComplete ? totals.frontGross - hdcp : null,
+      BackGross: totals.backGross || null,
+      BackNet: totals.backComplete ? totals.backGross - hdcp : null,
+      Gross: totalGross,
+      Hdcp: hdcp,
+      Net: totalGross ? totalGross - hdcp : null,
+      FrontBack: [
+        totals.frontComplete ? 'Front' : '',
+        totals.backComplete ? 'Back' : ''
+      ].filter(Boolean).join('+'),
+      Rounds: rounds
+    });
+  });
+
+  return [...merged.values()].sort((a, b) => {
+    const aFull = parseInt(a.Rounds) >= 2;
+    const bFull = parseInt(b.Rounds) >= 2;
+    if (aFull && !bFull) return -1;
+    if (!aFull && bFull) return 1;
+    const aNet = a.Net == null ? 9999 : parseInt(a.Net);
+    const bNet = b.Net == null ? 9999 : parseInt(b.Net);
+    if (aNet !== bNet) return aNet - bNet;
+    const aGross = a.Gross == null ? 9999 : parseInt(a.Gross);
+    const bGross = b.Gross == null ? 9999 : parseInt(b.Gross);
+    if (aGross !== bGross) return aGross - bGross;
+    return String(a.Player || '').localeCompare(String(b.Player || ''));
+  });
+}
+
 function loadScores() {
   if (!db) return;
   const psCtx = getActivePostSeasonScoreContext();
@@ -3027,7 +3073,7 @@ function loadScores() {
 
   const last5Map = getPlayerLast5Map();
 
-  const rows = psCtx ? query(`
+  let rows = psCtx ? query(`
     SELECT s.Player,
            MAX(CASE WHEN s.FrontBack='Front' THEN s.Gross END) as FrontGross,
            MAX(CASE WHEN s.FrontBack='Front' THEN s.Net END) as FrontNet,
@@ -3058,6 +3104,7 @@ function loadScores() {
     AND s.Gross IS NOT NULL AND s.Gross != 0
     ORDER BY s.Net ASC
   `);
+  if (psCtx) rows = mergeLivePostSeasonScoreRows(rows);
 
   // Update header
   const scoresTable = document.getElementById('scoresTable');
@@ -10622,6 +10669,7 @@ function onScoreInput(e) {
 
   // Recompute styling
   applyCellClasses(nine);
+  if (isPS) loadScores();
 
   const psHalfComplete = isPS && (
     st.holes.slice(0, 9).every(v => parseInt(v) > 0) ||
@@ -10909,6 +10957,7 @@ function distributeScores(key, scoreDigits, firstInp) {
   if (gross && !isPS) updateCompletedEntryHandicap(key, nine, true);
   if (isPS) savePlayerScoreNow(key, gross, net);
   applyCellClasses(nine);
+  if (isPS) loadScores();
 }
 
 // Save DB with updated scores
