@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.13</span>
+    <span id="appVersionDisplay">v20260715.14</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.13</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.14</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -849,7 +849,7 @@
       </div>
       <div class="filter-group">
         <label>Week</label>
-        <select id="ctpsDate" onchange="loadCtps()"></select>
+        <select id="ctpsDate" onchange="syncSkinsToCtpsDate()"></select>
       </div>
     </div>
     <div id="ctpsContent" style="margin-top:16px"></div>
@@ -4059,7 +4059,7 @@ function toggleSkinsParticipants() {
   if (btn) btn.textContent = isClosed ? 'Collapse' : 'Expand';
 }
 
-function populateSkinsDateDropdown() {
+function populateSkinsDateDropdown(loadAfter = true) {
   const season = document.getElementById('skinsSeason').value;
   const skSel = document.getElementById('skinsDate');
   const skinDates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='Skin' AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
@@ -4067,7 +4067,7 @@ function populateSkinsDateDropdown() {
     SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League="Hugh's"), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     ORDER BY sDate DESC`);
   skSel.innerHTML = skinDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
-  loadSkins();
+  if (loadAfter) loadSkins();
 }
 
 function loadSkins() {
@@ -4528,6 +4528,27 @@ function syncCtpsToSkinsDate(date = document.getElementById('skinsDate')?.value)
     dateSel.value = date;
   }
   loadCtps();
+}
+
+function syncSkinsToCtpsDate(date = document.getElementById('ctpsDate')?.value) {
+  const seasonSel = document.getElementById('skinsSeason');
+  const dateSel = document.getElementById('skinsDate');
+  date = toDateKey(date);
+  if (!date || !seasonSel || !dateSel) {
+    loadCtps();
+    return;
+  }
+  const season = String(date).substring(0, 4);
+  if (seasonSel.value !== season) {
+    seasonSel.value = season;
+    populateSkinsDateDropdown(false);
+  }
+  if (Array.from(dateSel.options).some(o => String(o.value) === String(date))) {
+    dateSel.value = date;
+    loadSkins();
+  } else {
+    loadCtps();
+  }
 }
 
 function populateCtpsDateDropdown(loadAfter = true) {
