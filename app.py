@@ -129,7 +129,7 @@ def version():
         import re
         with open(os.path.join(BASE_DIR, 'HughsGolf.html'), 'r') as f:
             content = f.read(20000)
-        match = re.search(r'v(2026\d+\.\d+)', content)
+        match = re.search(r'v(2026\d+\.\d+(?:-[A-Za-z0-9_.-]+)?)', content)
         html_version = match.group(1) if match else VERSION
     except Exception:
         html_version = VERSION
