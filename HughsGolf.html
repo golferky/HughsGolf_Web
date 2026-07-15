@@ -465,7 +465,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.14-sandbox</span>
+    <span id="appVersionDisplay">v20260715.15-sandbox</span>
     <span style="color:#335c3d">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -519,7 +519,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.14-sandbox</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.15-sandbox</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1702,6 +1702,7 @@ function togglePostSeasonTestMode(forceEnabled = null) {
   refreshPostSeasonTestUi();
   populateEntryDates();
   buildEntryGrid();
+  loadScores();
   if (wasEnabled && !next) cleanupPostSeasonTestRefunds();
 }
 
@@ -2591,7 +2592,7 @@ function refreshTab(tab) {
   if (tab === 'home') loadHome();
   if (tab === 'standings') loadStandings();
   if (tab === 'stableford') { loadStablefordTab(); loadSfStandings(); }
-  if (tab === 'scores') { loadScores(); if (!courseData) initEntry(); else reRenderEntry(); }
+  if (tab === 'scores') { if (!courseData) initEntry(); else reRenderEntry(); loadScores(); }
   if (tab === 'skins') { initSkinsTab(); loadCtpsTab(); }
   if (tab === 'noshows') loadNoShows();
   if (tab === 'handicaps') loadHandicaps();
@@ -2988,16 +2989,60 @@ function refreshDateDropdown(selectId, sql, params=[], includeBlankOption=null) 
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+function getActivePostSeasonScoreContext() {
+  if (!document.getElementById('entryPostSeason')?.checked) return null;
+  const entryDate = document.getElementById('entryDate')?.value;
+  if (!entryDate) return null;
+  const season = parseInt(String(entryDate).substring(0, 4));
+  const lp = query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
+  const psDates = parsePostSeasonDates(lp?.PostSeasonDt);
+  if (!psDates) return null;
+  if (![psDates.week1, psDates.week2].includes(parseInt(entryDate))) return null;
+  return { season, week1: psDates.week1, week2: psDates.week2 };
+}
+
+function syncScoresDateForEntryContext() {
+  const ctx = getActivePostSeasonScoreContext();
+  const sel = document.getElementById('scoresDate');
+  if (!sel) return;
+  if (ctx) {
+    const html = `<option value="${ctx.week1}">${ctx.season} Post Season - ${fmtDate(ctx.week1)} + ${fmtDate(ctx.week2)}</option>`;
+    if (sel.innerHTML !== html) sel.innerHTML = html;
+    sel.value = String(ctx.week1);
+  }
+}
+
 function loadScores() {
   if (!db) return;
-  refreshDateDropdown('scoresDate', "SELECT DISTINCT Date as sDate FROM Scores ORDER BY Date DESC LIMIT 60");
+  const psCtx = getActivePostSeasonScoreContext();
+  if (psCtx) {
+    syncScoresDateForEntryContext();
+  } else {
+    refreshDateDropdown('scoresDate', "SELECT DISTINCT Date as sDate FROM Scores ORDER BY Date DESC LIMIT 60");
+  }
   const date = document.getElementById('scoresDate').value;
   if (!date) return;
-  document.getElementById('scoresSubtitle').textContent = fmtDate(date);
+  document.getElementById('scoresSubtitle').textContent = psCtx
+    ? `${psCtx.season} Post Season - 18-hole net`
+    : fmtDate(date);
 
   const last5Map = getPlayerLast5Map();
 
-  const rows = query(`
+  const rows = psCtx ? query(`
+    SELECT s.Player,
+           SUM(COALESCE(s.Gross,0)) as Gross,
+           SUM(COALESCE(s.Net,0)) as Net,
+           GROUP_CONCAT(s.FrontBack, '+') as FrontBack,
+           COUNT(*) as Rounds,
+           h.Hdcp, h.PHdcp
+    FROM Scores s
+    LEFT JOIN Handicaps h ON h.Player = s.Player AND h.League = s.League
+      AND h.Date = (SELECT MAX(h2.Date) FROM Handicaps h2 WHERE h2.Player = s.Player AND h2.League = s.League AND h2.Date <= ${psCtx.week1})
+    WHERE s.Date IN (${psCtx.week1},${psCtx.week2})
+      AND s.Gross IS NOT NULL AND s.Gross != 0
+    GROUP BY s.Player
+    ORDER BY CASE WHEN COUNT(*) >= 2 THEN 0 ELSE 1 END, SUM(COALESCE(s.Net,0)) ASC, SUM(COALESCE(s.Gross,0)) ASC, s.Player
+  `) : query(`
     SELECT s.Player, s.Gross, s.Net, s.FrontBack,
            h.Hdcp, h.PHdcp
     FROM Scores s
@@ -3028,7 +3073,11 @@ function loadScores() {
     tr.appendChild(Object.assign(document.createElement('td'), { textContent: r.Player }));
     tr.appendChild(Object.assign(document.createElement('td'), { className: 'num score-gross', textContent: r.Gross||'' }));
     tr.appendChild(Object.assign(document.createElement('td'), { className: 'num score-net', innerHTML: `<strong>${r.Net||''}</strong>` }));
-    tr.appendChild(Object.assign(document.createElement('td'), { className: 'ctr', style: 'font-size:11px;color:var(--gray)', textContent: r.FrontBack||'' }));
+    tr.appendChild(Object.assign(document.createElement('td'), {
+      className: 'ctr',
+      style: 'font-size:11px;color:var(--gray)',
+      textContent: psCtx ? (parseInt(r.Rounds) >= 2 ? '18' : `${r.FrontBack || ''} only`) : (r.FrontBack||'')
+    }));
     const phdcpCell = makeTipCell('td', r.PHdcp != null ? r.PHdcp : '0', last5, 'num', 'color:var(--gray)');
     const hdcpCell  = makeTipCell('td', r.Hdcp  != null ? r.Hdcp  : '', last5, 'num', 'color:var(--gray)');
     if (!last5 && r.Gross) {
@@ -3041,6 +3090,8 @@ function loadScores() {
     tr.appendChild(hdcpCell);
     tb.appendChild(tr);
   });
+
+  if (psCtx) return;
 
   // Add no-show rows — players in Matches for this date with no score
   const scored = new Set(rows.map(r => r.Player));
@@ -9159,7 +9210,7 @@ function initEntry() {
   const sel = document.getElementById('entryDate');
 
   if (!entryInitialized) {
-    sel.addEventListener('change', () => { entryState = {}; entryStateDate = null; entryManual9 = false; buildEntryGrid(); });
+    sel.addEventListener('change', () => { entryState = {}; entryStateDate = null; entryManual9 = false; buildEntryGrid(); loadScores(); });
     const entry9Sel = document.getElementById('entry9');
     entryLast9Value = entry9Sel?.value || null;
     entry9Sel?.addEventListener('focus', () => { entryLast9Value = entry9Sel.value; });
