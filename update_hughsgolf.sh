@@ -7,7 +7,8 @@
 #   --deploy    copy files to NAS and restart Flask there
 # ─────────────────────────────────────────────────────────────────────────────
 
-WEBCODE="/Users/garyscudder/HughsGolf/WebCode"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WEBCODE="$SCRIPT_DIR"
 NAS_WEB="/Volumes/Web"
 DOWNLOADS="$HOME/Downloads"
 QNAP_USER="GaryAdmin"
