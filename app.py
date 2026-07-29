@@ -42,7 +42,7 @@ DB_DIR     = os.path.dirname(DB_PATH)
 BACKUP_DIR = os.path.abspath(os.environ.get('HUGHSGOLF_BACKUP_DIR', os.path.join(DB_DIR, 'backups')))
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8445'))
-VERSION    = '20260729.4'
+VERSION    = '20260729.5'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -954,7 +954,7 @@ def send_report_pdf():
 
     subject = f"Hugh's Golf League - {title}"
     body_text = f"{title}\n{subtitle}\n\nAttached is the latest Hugh's Golf report PDF."
-    if pdf_warning:
+    if pdf_warning and pdf_engine == 'text':
         body_text += "\n\nNote: server HTML PDF rendering is not installed yet, so this email used the fallback text PDF."
     sent_count = 0
     failed = []
