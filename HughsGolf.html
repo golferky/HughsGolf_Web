@@ -482,7 +482,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#d6ead2;font-family:'DM Mono',monospace;font-weight:700">
-    <span id="appVersionDisplay">v20260730.1</span>
+    <span id="appVersionDisplay">v20260730.2</span>
     <span style="color:#9bc59a">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -536,7 +536,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260730.1</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260730.2</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1049,6 +1049,7 @@
           <select id="pdfScoresDate" style="display:none"></select>
           <select id="pdfStandAsOf" style="display:none"></select>
           <select id="pdfMatchesDate" style="display:none"></select>
+          <select id="pdfPrizeMoneyDate" style="display:none"></select>
           <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#f3f8f3;margin-top:14px">
             <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Report Date</label>
             <select id="pdfCombinedDate" style="width:100%;max-width:320px;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:12px;font-size:13px"></select>
@@ -2378,7 +2379,12 @@ function loadPrizeMoney(options = {}) {
   if (pmDateSel.innerHTML !== pmNewOptionsHtml) {
     pmDateSel.innerHTML = pmNewOptionsHtml;
   }
-  if (pmCurrentVal === '' || pmDates.some(r => String(r.sDate) === pmCurrentVal)) pmDateSel.value = pmCurrentVal;
+  if (pmCurrentVal === '' || pmDates.some(r => String(r.sDate) === pmCurrentVal)) {
+    pmDateSel.value = pmCurrentVal;
+  } else if (/^\d{8}$/.test(pmCurrentVal)) {
+    pmDateSel.insertAdjacentHTML('beforeend', `<option value="${pmCurrentVal}">${fmtDate(pmCurrentVal)}</option>`);
+    pmDateSel.value = pmCurrentVal;
+  }
 
   const date   = document.getElementById('prizemoneyDate').value;
   const season = document.getElementById('prizemoneySeason').value || query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
@@ -6023,6 +6029,17 @@ function setSelectValueIfPresent(selectId, value) {
   return true;
 }
 
+function setSelectValueOrAddOption(selectId, value, label=null) {
+  const sel = document.getElementById(selectId);
+  if (!sel || !value) return false;
+  const strValue = String(value);
+  if (!Array.from(sel.options).some(o => String(o.value) === strValue)) {
+    sel.add(new Option(label || fmtDate(strValue), strValue));
+  }
+  sel.value = strValue;
+  return true;
+}
+
 function getPdfEmailRecipients() {
   if (!db) return [];
   return query(`SELECT Player, Email FROM Players
@@ -6164,6 +6181,9 @@ function populatePdfControls() {
     matchesDate.value = previousMatchDate;
   }
   copySelectOptions('matchesDate', 'pdfMatchesDate');
+  populatePrizeMoneySeasons();
+  populatePrizeMoneyDates();
+  copySelectOptions('prizemoneyDate', 'pdfPrizeMoneyDate');
   updatePdfEmailSummary();
 }
 
@@ -6173,6 +6193,7 @@ function applyCombinedPdfDate() {
   setSelectValueIfPresent('pdfScoresDate', combinedDate);
   setSelectValueIfPresent('pdfStandAsOf', combinedDate);
   setSelectValueIfPresent('pdfMatchesDate', combinedDate);
+  setSelectValueOrAddOption('pdfPrizeMoneyDate', combinedDate, fmtDate(combinedDate));
 }
 
 function prepareScoresPdfSection() {
@@ -6217,6 +6238,22 @@ function prepareMatchesPdfSection() {
   };
 }
 
+function preparePrizeMoneyPdfSection() {
+  populatePrizeMoneySeasons();
+  const pdfDate = document.getElementById('pdfPrizeMoneyDate')?.value || document.getElementById('pdfCombinedDate')?.value || '';
+  if (pdfDate) {
+    setSelectValueIfPresent('prizemoneySeason', String(pdfDate).slice(0, 4));
+  }
+  populatePrizeMoneyDates();
+  if (pdfDate) setSelectValueOrAddOption('prizemoneyDate', pdfDate, fmtDate(pdfDate));
+  loadPrizeMoney({ keepDate: pdfDate });
+  return {
+    title: 'Prize Money Screen',
+    subtitle: pdfDate ? fmtDate(pdfDate) : selectedOptionText('prizemoneySeason'),
+    source: document.getElementById('tab-prizemoney')
+  };
+}
+
 function buildReportPdfPayload(kind) {
   if (!db) return null;
   let title = '';
@@ -6231,7 +6268,7 @@ function buildReportPdfPayload(kind) {
     ({ title, subtitle, source } = prepareMatchesPdfSection());
   } else if (kind === 'combined') {
     applyCombinedPdfDate();
-    const reports = [prepareScoresPdfSection(), prepareStandingsPdfSection(), prepareMatchesPdfSection()];
+    const reports = [prepareScoresPdfSection(), prepareStandingsPdfSection(), prepareMatchesPdfSection(), preparePrizeMoneyPdfSection()];
     return {
       reports,
       title: "Hugh's Golf Reports",
@@ -6283,7 +6320,7 @@ function createReportPdf(kind) {
     ({ title, subtitle, source } = prepareMatchesPdfSection());
   } else if (kind === 'combined') {
     applyCombinedPdfDate();
-    const reports = [prepareScoresPdfSection(), prepareStandingsPdfSection(), prepareMatchesPdfSection()];
+    const reports = [prepareScoresPdfSection(), prepareStandingsPdfSection(), prepareMatchesPdfSection(), preparePrizeMoneyPdfSection()];
     const bodyHtml = reports.map((r, i) => `
       <section style="${i ? 'break-before:page;page-break-before:always;' : ''}">
         <div class="pdf-title">${r.title}</div>
