@@ -482,7 +482,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#d6ead2;font-family:'DM Mono',monospace;font-weight:700">
-    <span id="appVersionDisplay">v20260729.5</span>
+    <span id="appVersionDisplay">v20260730.1</span>
     <span style="color:#9bc59a">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -536,7 +536,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260729.5</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260730.1</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -636,7 +636,8 @@
             <input type="checkbox" id="homeLoginIncludeMine" onchange="loadHomeAdminLoginActivity()" style="width:18px;height:18px">
             Include my logins
           </label>
-          <button onclick="refreshHomeAdminLoginActivity()" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Refresh</button>
+          <button id="homeLoginRefreshBtn" onclick="refreshHomeAdminLoginActivity(this)" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Refresh</button>
+          <span id="homeLoginRefreshStatus" style="font-size:11px;color:#777"></span>
         </div>
         <div class="table-wrap" style="max-height:300px;overflow:auto">
           <table id="homeAdminLoginActivity">
@@ -1274,7 +1275,7 @@
         <div class="card-header">📈 League Login Participation</div>
         <div style="padding:16px">
           <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:12px">
-            <input type="checkbox" id="loginStatsExcludeTest" onchange="loadLoginActivity()" checked style="width:14px;height:14px">
+              <input type="checkbox" id="loginStatsExcludeTest" onchange="loadLoginActivity({skipServerRefresh:true})" checked style="width:14px;height:14px">
             Exclude test golfers from login stats
           </label>
           <div id="loginParticipationSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px"></div>
@@ -1324,18 +1325,19 @@
         <div class="card-header">🔑 Login Activity</div>
         <div style="padding:16px">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-            <button onclick="loadLoginActivity()" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">🔄 Refresh</button>
+            <button id="loginActivityRefreshBtn" onclick="refreshLoginActivityFromServer(this)" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">🔄 Refresh</button>
+            <span id="loginActivityRefreshStatus" style="font-size:11px;color:#777"></span>
             <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:4px;cursor:pointer">
-              <input type="checkbox" id="loginActivityShowDev" onchange="loadLoginActivity()" style="width:14px;height:14px">
+              <input type="checkbox" id="loginActivityShowDev" onchange="loadLoginActivity({skipServerRefresh:true})" style="width:14px;height:14px">
               Show Developer logins
             </label>
-            <select id="loginActivityPlayer" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+            <select id="loginActivityPlayer" onchange="loadLoginActivity({skipServerRefresh:true})" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
               <option value="">All players</option>
             </select>
-            <select id="loginActivityDate" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+            <select id="loginActivityDate" onchange="loadLoginActivity({skipServerRefresh:true})" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
               <option value="">All dates</option>
             </select>
-            <select id="loginActivityLimit" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+            <select id="loginActivityLimit" onchange="loadLoginActivity({skipServerRefresh:true})" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
               <option value="50">Last 50</option>
               <option value="100" selected>Last 100</option>
               <option value="300">Last 300</option>
@@ -3008,10 +3010,28 @@ function loadHomeAdminLoginActivity() {
   }).join('') || '<tr><td colspan="6" style="padding:12px;color:#999;text-align:center">No login activity recorded</td></tr>';
 }
 
-async function refreshHomeAdminLoginActivity() {
+async function refreshHomeAdminLoginActivity(button) {
   if (!db) return;
-  await refreshLiveDbSnapshotForReadOnlyView();
+  const btn = button || document.getElementById('homeLoginRefreshBtn');
+  const status = document.getElementById('homeLoginRefreshStatus');
+  const originalText = btn?.textContent || 'Refresh';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
+  }
+  if (status) status.textContent = '';
+  const refreshed = await refreshLiveDbSnapshotForReadOnlyView();
   loadHomeAdminLoginActivity();
+  if (status) {
+    status.textContent = refreshed
+      ? `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      : 'Refresh failed';
+    status.style.color = refreshed ? '#777' : 'var(--red)';
+  }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 function loadRecentSkins(date) {
@@ -6958,9 +6978,9 @@ async function doKittyPayout() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Server Log Viewer ─────────────────────────────────────────────────────────
-async function loadLoginActivity() {
+async function loadLoginActivity(options = {}) {
   if (!db) return;
-  await refreshLiveDbSnapshotForReadOnlyView();
+  if (!options.skipServerRefresh) await refreshLiveDbSnapshotForReadOnlyView();
 
   // ── Login Counts (all-time, per player) ──────────────────────────────────
   const excludeTestGolfers = document.getElementById('loginStatsExcludeTest')?.checked ?? true;
@@ -7185,7 +7205,7 @@ async function loadLoginActivity() {
       : r.method === 'password_change' ? '<span style="color:#1565c0">🔑 Password Changed</span>'
       : '<span style="color:#888">← Logout</span>';
     return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
-      <td style="padding:6px 12px;font-weight:600;cursor:pointer;color:var(--green)" onclick="document.getElementById('loginActivityPlayer').value='${player.replace(/'/g,"\\'")}';loadLoginActivity()">${escapeHtml(player || '')}${subPlayerNames.has(player) ? subBadge : ''}</td>
+      <td style="padding:6px 12px;font-weight:600;cursor:pointer;color:var(--green)" onclick="document.getElementById('loginActivityPlayer').value='${player.replace(/'/g,"\\'")}';loadLoginActivity({skipServerRefresh:true})">${escapeHtml(player || '')}${subPlayerNames.has(player) ? subBadge : ''}</td>
       <td style="padding:6px 12px;font-size:12px">${eventLabel}</td>
       <td style="padding:6px 12px;font-size:12px;color:#666">${roleMatch ? roleMatch[1] : ''}</td>
       <td style="padding:6px 12px;font-size:12px;font-family:'DM Mono',monospace;color:#888">${versionMatch ? versionMatch[1] : '—'}</td>
@@ -7194,6 +7214,30 @@ async function loadLoginActivity() {
       <td style="padding:6px 12px;font-size:12px">${localTime}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="7" style="padding:12px;color:#999;text-align:center">No login activity recorded</td></tr>';
+}
+
+async function refreshLoginActivityFromServer(button) {
+  if (!db) return;
+  const btn = button || document.getElementById('loginActivityRefreshBtn');
+  const status = document.getElementById('loginActivityRefreshStatus');
+  const originalText = btn?.textContent || 'Refresh';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
+  }
+  if (status) status.textContent = '';
+  const refreshed = await refreshLiveDbSnapshotForReadOnlyView();
+  await loadLoginActivity({skipServerRefresh:true});
+  if (status) {
+    status.textContent = refreshed
+      ? `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      : 'Refresh failed';
+    status.style.color = refreshed ? '#777' : 'var(--red)';
+  }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 // ── Known legitimate app routes (anything else is "suspicious") ─────────────
