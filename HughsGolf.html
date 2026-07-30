@@ -357,8 +357,19 @@
   .eg-th.ctp-hole { color: #ff8a80; }
   .eg-par { background: #1a3a1a; color: #aaa; font-size: 10px; padding: 2px 6px; text-align: center; }
   .eg-par.ctp-hole { color: #ff8a80; }
+  #entryGrid thead .eg-hdcp {
+    background: #153116;
+    color: var(--gold-light);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 6px;
+    text-align: center;
+  }
 
-  .eg-cell { padding: 2px 2px; text-align: center; border: 1px solid #e8e0d0; width: 44px; max-width: 44px; }
+  .eg-cell { position: relative; padding: 2px 2px; text-align: center; border: 1px solid #e8e0d0; width: 44px; max-width: 44px; }
+  .eg-stroke-dots { position: absolute; top: 2px; right: 2px; display: flex; gap: 2px; z-index: 2; }
+  .eg-stroke-dot { width: 5px; height: 5px; background: #2e7d32; border-radius: 50%; display: block; }
   .admin-btn { padding:8px 20px;border:2px solid var(--border);border-radius:6px;background:white;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:var(--gray); }
   .active-admin-btn { background:var(--green);color:white;border-color:var(--green); }
   .admin-nav { display:flex;gap:8px;flex-wrap:wrap;align-items:center;position:sticky;top:0;background:var(--cream);z-index:50;padding:10px 0 8px;margin-bottom:8px; }
@@ -388,12 +399,18 @@
   }
 
   /* Row backgrounds — only color the player cell, not hole cells */
-  .eg-row-eoy-noshow .eg-player { background: #fff3e0; }
-  .eg-row-eoy-noshow .eg-input  { background: #fff3e0 !important; color: #bf360c; }
+  .eg-row-eoy-noshow .eg-player { background: #ffcdd2; color: #c62828; }
+  .eg-row-eoy-noshow .eg-player .eg-player-name { color: #c62828; text-decoration: line-through; }
+  .eg-row-eoy-noshow .eg-input  { background: #fff5f5 !important; color: #bf360c; }
+  .eg-row-skins .eg-player { background: #fff3c4; }
+  .eg-row-skins .eg-cell,
+  .eg-row-skins .eg-gross,
+  .eg-row-skins .eg-net { background: #fff8e1 !important; }
+  .eg-row-skins .eg-input { background: #fff8e1 !important; }
   .eg-row-noshow .eg-player  { background: #ffcccc; }
   .eg-row-sub .eg-player     { background: #cce5ff; }
   /* Hole cells always white — row color only on player name cell */
-  td.eg-cell { background: white !important; }
+  tr:not(.eg-row-skins) > td.eg-cell { background: white !important; }
 
   .eg-gross { font-family: 'DM Mono',monospace; font-size: 13px; padding: 4px 6px; text-align: center; font-weight: 700; width: 46px; border: 1px solid #e0d8c8; }
   .eg-net   { font-family: 'DM Mono',monospace; font-size: 13px; padding: 4px 6px; text-align: center; color: var(--green); font-weight: 700; width: 46px; border: 1px solid #e0d8c8; }
@@ -464,9 +481,9 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4a7a5a;font-family:'DM Mono',monospace">
-    <span id="appVersionDisplay">v20260715.30-sandbox</span>
-    <span style="color:#335c3d">|</span>
+  <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#d6ead2;font-family:'DM Mono',monospace;font-weight:700">
+    <span id="appVersionDisplay">v20260730.1-sandbox</span>
+    <span style="color:#9bc59a">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
   <span id="weeksLeftBanner" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px"></span>
@@ -519,7 +536,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260715.30-sandbox</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260730.1-sandbox</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -610,6 +627,25 @@
       <div style="margin-bottom:16px">
         <button id="needSubBtn" onclick="showNeedSub()" style="padding:10px 20px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">🔄 Need a Sub</button>
       </div>
+      <div class="card" id="homeAdminLoginCard" style="display:none;margin-bottom:20px">
+        <div class="card-header">
+          <span>Login Activity</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:8px 12px;border-bottom:1px solid var(--border);background:#faf7f2">
+          <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:#333;font-weight:700;cursor:pointer">
+            <input type="checkbox" id="homeLoginIncludeMine" onchange="loadHomeAdminLoginActivity()" style="width:18px;height:18px">
+            Include my logins
+          </label>
+          <button id="homeLoginRefreshBtn" onclick="refreshHomeAdminLoginActivity(this)" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Refresh</button>
+          <span id="homeLoginRefreshStatus" style="font-size:11px;color:#777"></span>
+        </div>
+        <div class="table-wrap" style="max-height:300px;overflow:auto">
+          <table id="homeAdminLoginActivity">
+            <thead><tr><th>Player</th><th>Event</th><th>Role</th><th>IP</th><th>Device</th><th>Time</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
       <div class="grid-3" id="statBoxes"></div>
       <div class="grid-2" style="margin-top:20px">
         <div class="card">
@@ -619,6 +655,18 @@
         <div class="card">
           <div class="card-header">Recent Skins &amp; CTP</div>
           <div style="padding:12px" id="recentSkins"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:20px">
+        <div class="card-header">
+          <span>My Scores</span>
+          <span class="subtitle" id="homeMyScoresSubtitle"></span>
+        </div>
+        <div class="table-wrap" style="max-height:360px;overflow:auto">
+          <table id="homeMyScores">
+            <thead><tr><th>Date</th><th class="ctr">9</th><th class="num">Gross</th><th class="num">Net</th><th class="num">PHdcp</th><th class="num">Hdcp</th><th>Scores</th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -761,10 +809,10 @@
     </div>
 
     <!-- Legend -->
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;font-size:12px;align-items:center">
-      <span style="background:#c8e6c9;padding:2px 10px;border-radius:3px;font-weight:600">In Skins</span>
-      <span style="background:#ffcdd2;padding:2px 10px;border-radius:3px;font-weight:600">No Show</span>
-      <span style="background:#b3e5fc;padding:2px 10px;border-radius:3px;font-weight:600">Sub</span>
+    <div class="report-screen-only" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;font-size:12px;align-items:center">
+      <span id="entryLegendSkins" style="background:#c8e6c9;padding:2px 10px;border-radius:3px;font-weight:600">In Skins</span>
+      <span id="entryLegendNoShow" style="background:#ffcdd2;padding:2px 10px;border-radius:3px;font-weight:600">No Show</span>
+      <span id="entryLegendSub" style="background:#b3e5fc;padding:2px 10px;border-radius:3px;font-weight:600">Sub</span>
       <span style="background:#fdecea;border:2px solid var(--red);color:var(--red);padding:2px 10px;border-radius:3px;font-weight:600">Under Par</span>
       <span style="color:var(--red);font-weight:600;padding:2px 10px">Red = CTP hole</span>
     </div>
@@ -776,7 +824,7 @@
       </table>
     </div>
 
-    <div class="controls" style="margin-top:20px">
+    <div class="controls" id="scoresDateControls" style="display:none;margin-top:20px">
       <div class="filter-group">
         <label>Date</label>
         <select id="scoresDate"></select>
@@ -996,33 +1044,18 @@
     <div id="adminPdfs" style="display:none">
       <div class="card">
         <div class="card-header">PDF Reports</div>
-        <div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+        <div style="padding:16px">
           <div id="pdfEmailSummary" style="grid-column:1/-1;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;font-size:12px;color:var(--gray)"></div>
-          <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#faf8f2">
-            <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Scores Date</label>
-            <select id="pdfScoresDate" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
-            <button onclick="createReportPdf('scores')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;margin-bottom:8px">Print Scores PDF</button>
-            <button onclick="emailReportPdf('scores')" style="width:100%;padding:9px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Email Scores PDF</button>
-          </div>
-          <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#faf8f2">
-            <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Standings As Of</label>
-            <select id="pdfStandAsOf" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
-            <button onclick="createReportPdf('standings')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;margin-bottom:8px">Print Standings PDF</button>
-            <button onclick="emailReportPdf('standings')" style="width:100%;padding:9px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Email Standings PDF</button>
-          </div>
-          <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#faf8f2">
-            <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Matches Week</label>
-            <select id="pdfMatchesDate" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
-            <button onclick="createReportPdf('matches')" style="width:100%;padding:10px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;margin-bottom:8px">Print Matches PDF</button>
-            <button onclick="emailReportPdf('matches')" style="width:100%;padding:9px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Email Matches PDF</button>
-          </div>
-          <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#f3f8f3;grid-column:1/-1">
-            <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Combined Date</label>
-            <select id="pdfCombinedDate" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:13px"></select>
+          <select id="pdfScoresDate" style="display:none"></select>
+          <select id="pdfStandAsOf" style="display:none"></select>
+          <select id="pdfMatchesDate" style="display:none"></select>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#f3f8f3;margin-top:14px">
+            <label style="font-size:11px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">Report Date</label>
+            <select id="pdfCombinedDate" style="width:100%;max-width:320px;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:12px;font-size:13px"></select>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button onclick="previewPdfEmailRecipients()" style="flex:1;min-width:180px;padding:11px 16px;background:white;color:var(--green);border:1px solid var(--green);border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Preview Recipients</button>
-              <button onclick="createReportPdf('combined')" style="flex:1;min-width:220px;padding:12px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Print Combined PDF</button>
-              <button onclick="emailReportPdf('combined')" style="flex:1;min-width:220px;padding:12px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Email Combined PDF</button>
+              <button onclick="createReportPdf('combined')" style="flex:1;min-width:220px;padding:12px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Print PDF</button>
+              <button onclick="emailReportPdf('combined')" style="flex:1;min-width:220px;padding:12px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Email PDF</button>
             </div>
           </div>
         </div>
@@ -1033,7 +1066,7 @@
     <div id="adminPlayers">
       <div id="adminKittyCards" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap"></div>
       <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-        <input id="playerSearch" type="text" placeholder="Search players..." style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:220px">
+        <input id="playerSearch" type="text" placeholder="Search name, email, or phone..." style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:260px">
         <button onclick="openPlayerModal()" style="padding:8px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">+ Add Player</button>
       </div>
       <div style="overflow-x:auto;max-height:600px;overflow-y:auto">
@@ -1239,17 +1272,36 @@
     </div>
     <div id="adminLoginactivity" style="display:none">
       <div class="card" style="margin-bottom:16px">
+        <div class="card-header">📈 League Login Participation</div>
+        <div style="padding:16px">
+          <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:12px">
+              <input type="checkbox" id="loginStatsExcludeTest" onchange="loadLoginActivity({skipServerRefresh:true})" checked style="width:14px;height:14px">
+            Exclude test golfers from login stats
+          </label>
+          <div id="loginParticipationSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px"></div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead><tr>
+                <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Non-Participant</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:center">Team</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:center">Login Access</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Email</th>
+                <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Phone</th>
+              </tr></thead>
+              <tbody id="regularsNoLoginBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
         <div class="card-header">📊 Login Counts</div>
         <div style="padding:16px">
-          <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:4px;cursor:pointer;margin-bottom:10px">
-            <input type="checkbox" id="loginCountsShowDev" onchange="loadLoginActivity()" style="width:14px;height:14px">
-            Show Developer logins
-          </label>
           <table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead><tr>
               <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Player</th>
               <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:right">Total Logins</th>
               <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:right">Failed Logins</th>
+              <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:right">Logouts</th>
               <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:right">Timeouts</th>
               <th style="background:var(--green);color:var(--gold);padding:7px 12px;text-align:left">Last Login</th>
             </tr></thead>
@@ -1273,18 +1325,19 @@
         <div class="card-header">🔑 Login Activity</div>
         <div style="padding:16px">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-            <button onclick="loadLoginActivity()" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">🔄 Refresh</button>
+            <button id="loginActivityRefreshBtn" onclick="refreshLoginActivityFromServer(this)" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">🔄 Refresh</button>
+            <span id="loginActivityRefreshStatus" style="font-size:11px;color:#777"></span>
             <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:4px;cursor:pointer">
-              <input type="checkbox" id="loginActivityShowDev" onchange="loadLoginActivity()" style="width:14px;height:14px">
+              <input type="checkbox" id="loginActivityShowDev" onchange="loadLoginActivity({skipServerRefresh:true})" style="width:14px;height:14px">
               Show Developer logins
             </label>
-            <select id="loginActivityPlayer" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+            <select id="loginActivityPlayer" onchange="loadLoginActivity({skipServerRefresh:true})" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
               <option value="">All players</option>
             </select>
-            <select id="loginActivityDate" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+            <select id="loginActivityDate" onchange="loadLoginActivity({skipServerRefresh:true})" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
               <option value="">All dates</option>
             </select>
-            <select id="loginActivityLimit" onchange="loadLoginActivity()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+            <select id="loginActivityLimit" onchange="loadLoginActivity({skipServerRefresh:true})" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
               <option value="50">Last 50</option>
               <option value="100" selected>Last 100</option>
               <option value="300">Last 300</option>
@@ -1415,7 +1468,7 @@
 
   <!-- Player Scores Modal -->
   <div id="playerScoresModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;align-items:center;justify-content:center">
-    <div style="background:white;border-radius:12px;padding:24px;min-width:380px;max-width:480px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+    <div style="background:white;border-radius:12px;padding:24px;min-width:720px;max-width:min(960px,92vw);max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <div style="font-family:'Bebas Neue',cursive;font-size:22px;color:var(--green)" id="playerScoresTitle"></div>
         <button onclick="document.getElementById('playerScoresModal').style.display='none'" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--gray)">✕</button>
@@ -1426,6 +1479,9 @@
           <th style="background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">9</th>
           <th style="background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Gross</th>
           <th style="background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Net</th>
+          <th style="background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">PHdcp</th>
+          <th style="background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Hdcp</th>
+          <th style="background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Scores</th>
         </tr></thead>
         <tbody id="playerScoresBody"></tbody>
       </table>
@@ -1470,8 +1526,14 @@
 
       <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Send to</div>
       <div style="margin-bottom:8px">
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <label id="needSubSelectAllWrap" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
           <input type="checkbox" id="needSubSelectAll" onchange="toggleAllSubs()"> Select all eligible subs
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:5px;color:#555">
+          <input type="checkbox" id="needSubIncludePast" onchange="renderNeedSubList()"> Include past-year subs
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:5px;color:#555">
+          <input type="checkbox" id="needSubShowNoContact" onchange="renderNeedSubList()"> Show no-contact players
         </label>
       </div>
       <input type="text" id="needSubSearch" placeholder="Search subs..." oninput="filterNeedSubList()" style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px;margin-bottom:6px;box-sizing:border-box">
@@ -1653,22 +1715,55 @@ function postSeasonTestModeEnabled() {
   return !!document.getElementById('entryPostSeason')?.checked;
 }
 
+function storedPostSeasonTestModeEnabled() {
+  if (!canUsePostSeasonTestMode()) return false;
+  if (localStorage.getItem('hg_post_season_default_version')) {
+    localStorage.removeItem('hg_post_season_default_version');
+    localStorage.setItem('hg_post_season_test_mode', 'N');
+  }
+  return localStorage.getItem('hg_post_season_test_mode') === 'Y';
+}
+
+function getPostSeasonDateSet() {
+  const psDates = new Set();
+  if (!db) return psDates;
+  query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND PostSeasonDt IS NOT NULL`).forEach(r => {
+    const p = r.PostSeasonDt.split('/');
+    const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
+    const d2obj = new Date(r.PostSeasonDt);
+    d2obj.setDate(d2obj.getDate()+7);
+    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
+    psDates.add(d1);
+    psDates.add(d2);
+  });
+  return psDates;
+}
+
+function getLatestRegularScoreDate() {
+  const psDates = getPostSeasonDateSet();
+  const scheduleDates = new Set(query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's"`).map(r => String(r.sDate)));
+  const rows = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="Hugh's" AND Gross IS NOT NULL AND Gross != 0 ORDER BY CAST(Date AS INTEGER) DESC`);
+  return rows.map(r => String(r.sDate)).find(d => !psDates.has(d) && scheduleDates.has(d)) || '';
+}
+
 function refreshPostSeasonTestUi() {
   const btn = document.getElementById('postSeasonTestBtn');
   if (!btn) return;
 
   const show = canUsePostSeasonTestMode();
   const enabled = postSeasonTestModeEnabled();
-  btn.style.display = show ? '' : 'none';
+  btn.style.display = show ? 'inline-flex' : 'none';
+  btn.style.alignItems = 'center';
+  btn.style.justifyContent = 'center';
   btn.textContent = enabled ? 'Exit Post Season Test' : 'Test Post Season';
   btn.style.background = enabled ? '#6a1b9a' : '#fff8e1';
   btn.style.borderColor = enabled ? '#6a1b9a' : 'var(--gold)';
   btn.style.color = enabled ? 'white' : '#7a4b00';
 }
 
-async function cleanupPostSeasonTestRefunds() {
+async function cleanupPostSeasonTestRefunds(dateOverride = null) {
   if (!canUsePostSeasonTestMode() || !db) return;
-  const date = document.getElementById('entryDate')?.value;
+  const date = dateOverride || document.getElementById('entryDate')?.value;
   if (!date) return;
 
   const season = parseInt(date.toString().substring(0, 4));
@@ -1692,7 +1787,24 @@ function togglePostSeasonTestMode(forceEnabled = null) {
 
   const next = forceEnabled === null ? !psInput.checked : !!forceEnabled;
   const wasEnabled = psInput.checked;
+  const postSeasonCleanupDate = document.getElementById('entryDate')?.value || '';
   psInput.checked = next;
+  localStorage.setItem('hg_post_season_test_mode', next ? 'Y' : 'N');
+  const exitingPostSeason = wasEnabled && !next;
+  if (exitingPostSeason) {
+    activeEntryPostSeasonContext = null;
+    document.getElementById('postSeasonBanner')?.remove();
+    document.getElementById('entryFutureBanner')?.remove();
+    const head = document.getElementById('entryHead');
+    const body = document.getElementById('entryBody');
+    if (head) head.innerHTML = '';
+    if (body) body.innerHTML = '';
+    const grid = document.getElementById('entryGrid');
+    if (grid) {
+      grid.dataset.postSeason = '0';
+      delete grid.dataset.postSeasonSeason;
+    }
+  }
   entryState = {};
   entryStateDate = null;
   entryStateFb = null;
@@ -1701,9 +1813,21 @@ function togglePostSeasonTestMode(forceEnabled = null) {
   entryManual9 = false;
   refreshPostSeasonTestUi();
   populateEntryDates();
+  if (exitingPostSeason) {
+    const latestScoreDate = getLatestRegularScoreDate();
+    const entrySel = document.getElementById('entryDate');
+    if (latestScoreDate && entrySel && [...entrySel.options].some(o => o.value === latestScoreDate)) {
+      entrySel.value = latestScoreDate;
+    }
+    const scoresSel = document.getElementById('scoresDate');
+    if (latestScoreDate && scoresSel) {
+      scoresSel.innerHTML = `<option value="${latestScoreDate}">${fmtDate(latestScoreDate)}</option>`;
+      scoresSel.value = latestScoreDate;
+    }
+  }
   buildEntryGrid();
   loadScores();
-  if (wasEnabled && !next) cleanupPostSeasonTestRefunds();
+  if (exitingPostSeason) cleanupPostSeasonTestRefunds(postSeasonCleanupDate);
 }
 
 function refreshTestModeUi() {
@@ -1727,11 +1851,38 @@ function refreshTestModeUi() {
   const showOverride = canUseFutureScoreOverride();
   if (overrideGroup) overrideGroup.style.display = showOverride ? '' : 'none';
   if (overrideInput) overrideInput.checked = futureScoreOverrideEnabled();
+  const psInput = document.getElementById('entryPostSeason');
   if (!canUsePostSeasonTestMode()) {
-    const psInput = document.getElementById('entryPostSeason');
     if (psInput) psInput.checked = false;
+    localStorage.removeItem('hg_post_season_test_mode');
+  } else if (psInput) {
+    const shouldBeEnabled = storedPostSeasonTestModeEnabled();
+    if (psInput.checked !== shouldBeEnabled) {
+      psInput.checked = shouldBeEnabled;
+      entryState = {};
+      entryStateDate = null;
+      entryStateFb = null;
+      entryDirty = false;
+      selectedEntrySlotKey = null;
+      if (db && courseData) {
+        populateEntryDates();
+        buildEntryGrid();
+        loadScores();
+      }
+    }
   }
   refreshPostSeasonTestUi();
+  refreshEntryLegend();
+}
+
+function refreshEntryLegend() {
+  const isPostSeason = isPostSeasonEntryMode();
+  const skinsLegend = document.getElementById('entryLegendSkins');
+  const noShowLegend = document.getElementById('entryLegendNoShow');
+  const subLegend = document.getElementById('entryLegendSub');
+  if (skinsLegend) skinsLegend.textContent = isPostSeason ? 'Paid / In Skins' : 'In Skins';
+  if (noShowLegend) noShowLegend.textContent = isPostSeason ? 'Paid, No Score' : 'No Show';
+  if (subLegend) subLegend.style.display = isPostSeason ? 'none' : '';
 }
 
 // ── SQL.js init ──
@@ -1740,6 +1891,7 @@ let sqlReady = false;
 let savedFileHandle = null; // remembered across page loads via IndexedDB
 let SAVE_TOKEN = '';
 let SERVER_DB_MODIFIED_MS = null;
+let READONLY_DB_REFRESH_PROMISE = null;
 
 initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}` }).then(async s => {
   SQL = s;
@@ -1820,6 +1972,32 @@ async function loadDbInfo() {
   } catch(e) {
     el.textContent = 'DB ?';
     el.title = e.message;
+  }
+}
+
+async function refreshLiveDbSnapshotForReadOnlyView() {
+  if (!location.href.startsWith('http') || !SQL) return false;
+  if (READONLY_DB_REFRESH_PROMISE) return READONLY_DB_REFRESH_PROMISE;
+  READONLY_DB_REFRESH_PROMISE = (async () => {
+    const resp = await fetch(`HughsGolf.db?v=${Date.now()}`, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`DB refresh failed: ${resp.status}`);
+    const buf = await resp.arrayBuffer();
+    const nextDb = new SQL.Database(new Uint8Array(buf));
+    const oldDb = db;
+    db = nextDb;
+    try { oldDb?.close?.(); } catch(e) {}
+    document.getElementById('dbStatus').textContent = 'HughsGolf.db';
+    await loadDbInfo();
+    DB_UPDATE_PENDING = false;
+    return true;
+  })();
+  try {
+    return await READONLY_DB_REFRESH_PROMISE;
+  } catch(e) {
+    console.warn('Read-only DB refresh failed:', e);
+    return false;
+  } finally {
+    READONLY_DB_REFRESH_PROMISE = null;
   }
 }
 
@@ -2003,15 +2181,14 @@ async function serverRun(sql, params=[]) {
     });
   }
   try { db.run(sql, params); } catch(e) { console.warn('serverRun local failed:', e); }
-  const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || '';
-  if (sessionToken) {
-    SERVER_RUN_QUEUE = SERVER_RUN_QUEUE
-      .then(() => sendServerSql(serverSql, sessionToken))
-      .catch(e => {
-        console.warn('serverRun server error:', serverSql, e);
-        reportSyncFailure(serverSql, String(e.message || e));
-      });
-  }
+  const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || window._mySessionToken || '';
+  SERVER_RUN_QUEUE = SERVER_RUN_QUEUE
+    .then(() => sendServerSql(serverSql, sessionToken))
+    .catch(e => {
+      console.warn('serverRun server error:', serverSql, e);
+      reportSyncFailure(serverSql, String(e.message || e));
+    });
+  return SERVER_RUN_QUEUE;
 }
 
 // ── Visible sync-failure indicator ────────────────────────────────────────
@@ -2033,6 +2210,26 @@ function parseUtcSqlTimestamp(value) {
 function formatUtcSqlTimestamp(value) {
   const d = parseUtcSqlTimestamp(value);
   return d ? d.toLocaleString() : (value || '');
+}
+
+function getAppVersionText() {
+  return document.getElementById('appVersionDisplay')?.textContent?.trim() || 'unknown';
+}
+
+function auditUserAction(method, text, extraDetails='', level='INFO', userName=null, userRole=null) {
+  if (!db) return Promise.resolve();
+  const now = new Date().toISOString().replace('T',' ').substring(0,19);
+  const playerName = userName || currentUser?.name || 'unknown';
+  const role = userRole || currentUser?.role || 'unknown';
+  const device = typeof detectDevice === 'function' ? detectDevice() : 'unknown';
+  const details = [
+    `role=${role}`,
+    `version=${getAppVersionText()}`,
+    `device=${device}`,
+    extraDetails
+  ].filter(Boolean).join(' ');
+  return serverRun(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+    [now, level, method, 'HughsGolf', text || `${playerName} ${method}`, details, now]);
 }
 
 function reportSyncFailure(context, errMsg) {
@@ -2145,10 +2342,10 @@ function onDbLoaded() {
   refreshTab('skins');
   refreshTab('handicaps');
   refreshTab('schedule');
+  refreshTestModeUi();
   refreshTab('scores');
   buildTableList();
   initEntry();
-  refreshTestModeUi();
 }
 
 function populatePrizeMoneySeasons() {
@@ -2592,7 +2789,7 @@ function refreshTab(tab) {
   if (tab === 'home') loadHome();
   if (tab === 'standings') loadStandings();
   if (tab === 'stableford') { loadStablefordTab(); loadSfStandings(); }
-  if (tab === 'scores') { if (!courseData) initEntry(); else reRenderEntry(); loadScores(); }
+  if (tab === 'scores') { if (!courseData) initEntry(); else reRenderEntry(); }
   if (tab === 'skins') { initSkinsTab(); loadCtpsTab(); }
   if (tab === 'noshows') loadNoShows();
   if (tab === 'handicaps') loadHandicaps();
@@ -2656,7 +2853,7 @@ function populateSeasonDropdowns() {
   populatePrizeMoneyDates();
   document.getElementById('prizemoneyDate').addEventListener('change', loadPrizeMoney);
 
-  document.getElementById('standSeason').addEventListener('change', () => { populateStandAsOf(); loadStandings(); });
+  document.getElementById('standSeason').addEventListener('change', () => { currentHalfManual = false; populateStandAsOf(); loadStandings(); });
   document.getElementById('standView').addEventListener('change', loadStandings);
   document.getElementById('standAsOf').addEventListener('change', loadStandings);
   document.getElementById('schedSeason').addEventListener('change', loadSchedule);
@@ -2700,6 +2897,137 @@ function loadHome() {
   // Recent skins - latest date with skin data in Payments
   const latestSkinDate = query("SELECT MAX(Date) as d FROM Payments WHERE Desc='Skin'")[0]?.d;
   loadRecentSkins(latestSkinDate);
+  loadHomePlayerScores();
+  loadHomeAdminLoginActivity();
+}
+
+function getPlayerScoreHistory(player) {
+  if (!player) return [];
+  return query(`
+    SELECT s.Date, s.FrontBack, s.Gross, s.Net, h.PHdcp, h.Hdcp,
+           s."1",s."2",s."3",s."4",s."5",s."6",s."7",s."8",s."9"
+    FROM Scores s
+    LEFT JOIN Handicaps h ON h.Player = s.Player AND h.League = s.League
+      AND h.Date = (SELECT MAX(h2.Date) FROM Handicaps h2 WHERE h2.Player = s.Player AND h2.League = s.League AND h2.Date <= s.Date)
+    WHERE s.Player=? AND s.Gross IS NOT NULL AND s.Gross != 0
+    ORDER BY CAST(s.Date AS INTEGER) DESC,
+             CASE s.FrontBack WHEN 'Back' THEN 2 WHEN 'Front' THEN 1 ELSE 0 END DESC
+  `, [player]);
+}
+
+function renderPlayerScoreHistoryRows(rows) {
+  return rows.map((r,i) => {
+    const holeScores = [1,2,3,4,5,6,7,8,9].map(n => r[String(n)] ?? '').join(' ');
+    return `
+      <tr style="border-bottom:1px solid #f0ebe0;background:${i%2?'#faf7f2':'white'}">
+        <td style="padding:7px 12px">${fmtDate(r.Date)}</td>
+        <td style="padding:7px 12px;text-align:center;color:var(--gray);font-size:11px">${escapeHtml(r.FrontBack || '')}</td>
+        <td style="padding:7px 12px;text-align:center;font-family:'DM Mono',monospace">${r.Gross || ''}</td>
+        <td style="padding:7px 12px;text-align:center;font-family:'DM Mono',monospace;font-weight:600;color:var(--green)">${r.Net || ''}</td>
+        <td style="padding:7px 12px;text-align:center;font-family:'DM Mono',monospace;color:var(--gray)">${r.PHdcp ?? ''}</td>
+        <td style="padding:7px 12px;text-align:center;font-family:'DM Mono',monospace;color:var(--gray)">${r.Hdcp ?? ''}</td>
+        <td style="padding:7px 12px;font-family:'DM Mono',monospace;font-size:12px;color:#333">${escapeHtml(holeScores)}</td>
+      </tr>`;
+  }).join('');
+}
+
+function loadHomePlayerScores() {
+  const player = currentUser?.name || '';
+  const subtitle = document.getElementById('homeMyScoresSubtitle');
+  const body = document.querySelector('#homeMyScores tbody');
+  if (!body) return;
+  const rows = getPlayerScoreHistory(player);
+  if (subtitle) subtitle.textContent = player ? `${player} - ${rows.length} rounds` : '';
+  body.innerHTML = rows.length
+    ? renderPlayerScoreHistoryRows(rows)
+    : '<tr><td colspan="7" style="padding:12px;text-align:center;color:var(--gray)">No scores found</td></tr>';
+}
+
+function getLogActivityPlayer(row) {
+  const text = String(row?.text || '');
+  const match = row?.method === 'login' ? text.match(/^(.+) logged in$/)
+    : row?.method === 'login_failed' ? text.match(/^(.+) failed login/)
+    : row?.method === 'logout' ? text.match(/^(.+) logged out$/)
+    : row?.method === 'session_timeout' ? text.match(/^(.+) (?:session expired|session timed out)/)
+    : row?.method === 'needSub' ? text.match(/^(.+) requested a sub/)
+    : row?.method === 'password_set' ? text.match(/^(.+) set initial password$/)
+    : row?.method === 'password_change' ? text.match(/^(.+) changed password$/)
+    : text.match(/^(.+?) /);
+  return match ? match[1] : text;
+}
+
+function renderLogActivityEvent(row) {
+  const attemptMatch = row.details?.match(/attempt=(\d+\/\d+)/);
+  const sentMatch = row.details?.match(/sent=(\d+)/);
+  const forMatch = row.text?.match(/for (.+) on/);
+  if (row.method === 'login') return '<span style="color:#2e7d32">Login</span>';
+  if (row.method === 'logout') return '<span style="color:#666">Logout</span>';
+  if (row.method === 'session_timeout') return '<span style="color:#e65100">Timeout</span>';
+  if (row.method === 'login_failed') return `<span style="color:#c62828">Failed${attemptMatch ? ` (${attemptMatch[1]})` : ''}</span>`;
+  if (row.method === 'needSub') return `<span style="color:#6a1b9a">Sub Request${forMatch ? ` for ${escapeHtml(forMatch[1])}` : ''}${sentMatch ? ` - ${sentMatch[1]} sent` : ''}</span>`;
+  if (row.method === 'password_set') return '<span style="color:#1565c0">Password Set</span>';
+  if (row.method === 'password_change') return '<span style="color:#1565c0">Password Changed</span>';
+  return escapeHtml(row.method || '');
+}
+
+function loadHomeAdminLoginActivity() {
+  const card = document.getElementById('homeAdminLoginCard');
+  const body = document.querySelector('#homeAdminLoginActivity tbody');
+  if (!card || !body) return;
+  const isAdmin = currentUser?.role === 'officer' || currentUser?.role === 'developer';
+  card.style.display = isAdmin ? '' : 'none';
+  if (!isAdmin) return;
+
+  const includeMine = document.getElementById('homeLoginIncludeMine')?.checked || false;
+  const currentName = String(currentUser?.name || '').trim();
+  const rawRows = query(`
+    SELECT log_time, method, text, details
+    FROM LogTable
+    WHERE method IN ('login','logout','session_timeout','login_failed','needSub','password_set','password_change')
+    ORDER BY log_time DESC
+  `);
+  const rows = rawRows
+    .filter(r => includeMine || getLogActivityPlayer(r) !== currentName);
+
+  body.innerHTML = rows.map((r,i) => {
+    const player = getLogActivityPlayer(r);
+    const roleMatch = r.details?.match(/role=(\w+)/);
+    const ipMatch = r.details?.match(/ip=([\d.a-fA-F:]+)/);
+    const deviceMatch = r.details?.match(/device=(\S+)/);
+    const deviceLabel = deviceMatch ? decodeURIComponent(deviceMatch[1]) : '';
+    return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
+      <td style="padding:6px 12px;font-weight:600">${escapeHtml(player || '')}</td>
+      <td style="padding:6px 12px;font-size:12px">${renderLogActivityEvent(r)}</td>
+      <td style="padding:6px 12px;font-size:12px;color:#666">${escapeHtml(roleMatch ? roleMatch[1] : '')}</td>
+      <td style="padding:6px 12px;font-size:11px;color:#666;font-family:'DM Mono',monospace">${escapeHtml(ipMatch ? ipMatch[1] : '')}</td>
+      <td style="padding:6px 12px;font-size:11px;color:#666">${escapeHtml(deviceLabel)}</td>
+      <td style="padding:6px 12px;font-size:12px">${r.log_time ? formatUtcSqlTimestamp(r.log_time) : ''}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="padding:12px;color:#999;text-align:center">No login activity recorded</td></tr>';
+}
+
+async function refreshHomeAdminLoginActivity(button) {
+  if (!db) return;
+  const btn = button || document.getElementById('homeLoginRefreshBtn');
+  const status = document.getElementById('homeLoginRefreshStatus');
+  const originalText = btn?.textContent || 'Refresh';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
+  }
+  if (status) status.textContent = '';
+  const refreshed = await refreshLiveDbSnapshotForReadOnlyView();
+  loadHomeAdminLoginActivity();
+  if (status) {
+    status.textContent = refreshed
+      ? `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      : 'Refresh failed';
+    status.style.color = refreshed ? '#777' : 'var(--red)';
+  }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 function loadRecentSkins(date) {
@@ -2734,6 +3062,7 @@ function loadRecentSkins(date) {
 
 // ── STANDINGS ──
 let currentHalf = '1';
+let currentHalfManual = false;
 
 function populateStandAsOf() {
   const year = document.getElementById('standSeason').value;
@@ -2754,7 +3083,7 @@ function loadStandings() {
   document.getElementById('halfTabs').style.display = isSplit ? 'flex' : 'none';
 
   // Auto-detect current half based on today's date vs midpoint
-  if (isSplit && year == new Date().getFullYear()) {
+  if (isSplit && !currentHalfManual && year == new Date().getFullYear()) {
     const todayInt2 = (() => { const d = new Date(); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); })();
     const sched2 = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= '${year}0101' AND Date < '${parseInt(year)+1}0101' ORDER BY Date`);
     const mid2 = sched2.length ? parseInt(sched2[Math.floor(sched2.length/2)].sDate) : null;
@@ -2762,12 +3091,12 @@ function loadStandings() {
       const detectedHalf = todayInt2 < mid2 ? '1' : '2';
       if (currentHalf !== detectedHalf) {
         currentHalf = detectedHalf;
-        document.querySelectorAll('.half-tab').forEach(t => {
-          t.classList.toggle('active', t.dataset.half === currentHalf);
-        });
       }
     }
   }
+  document.querySelectorAll('.half-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.half === currentHalf);
+  });
 
   // Get schedule dates for this year to determine split point
   const schedDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= '${year}0101' AND Date < '${parseInt(year)+1}0101' ORDER BY Date`);
@@ -2909,6 +3238,7 @@ document.querySelectorAll('.half-tab').forEach(t => {
     document.querySelectorAll('.half-tab').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
     currentHalf = t.dataset.half;
+    currentHalfManual = true;
     loadStandings();
   });
 });
@@ -2989,11 +3319,31 @@ function refreshDateDropdown(selectId, sql, params=[], includeBlankOption=null) 
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+function entryGridLooksPostSeason() {
+  const grid = document.getElementById('entryGrid');
+  if (!grid) return false;
+  const heads = [...grid.querySelectorAll('thead th')].map(th => th.textContent.trim().toUpperCase());
+  return grid.dataset.postSeason === '1' ||
+         (heads.includes('18') && heads.includes('OUT') && heads.includes('IN'));
+}
+
+function isPostSeasonEntryMode() {
+  return !!activeEntryPostSeasonContext ||
+         !!document.getElementById('entryPostSeason')?.checked ||
+         entryGridLooksPostSeason() ||
+         !!document.getElementById('postSeasonBanner');
+}
+
 function getActivePostSeasonScoreContext() {
-  const psMode = document.getElementById('entryPostSeason')?.checked;
+  if (activeEntryPostSeasonContext) return activeEntryPostSeasonContext;
+  const grid = document.getElementById('entryGrid');
+  const psMode = isPostSeasonEntryMode();
   const entryDate = document.getElementById('entryDate')?.value;
-  if (!entryDate) return null;
-  const season = parseInt(String(entryDate).substring(0, 4));
+  const entrySeason = entryDate ? parseInt(String(entryDate).substring(0, 4)) : null;
+  const fallbackSeason = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's" AND PostSeasonDt IS NOT NULL`)[0]?.s;
+  const gridSeason = grid?.dataset.postSeasonSeason ? parseInt(grid.dataset.postSeasonSeason) : null;
+  const season = psMode ? (gridSeason || entrySeason || fallbackSeason) : entrySeason;
+  if (!season) return null;
   const lp = query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
   const psDates = parsePostSeasonDates(lp?.PostSeasonDt);
   if (!psDates) return null;
@@ -3008,16 +3358,47 @@ function getActivePostSeasonScoreContext() {
   return { season, week1: psDates.week1, week2: psDates.week2 };
 }
 
+function forcePostSeasonContextFromVisibleEntry() {
+  const has18HoleState = Object.values(entryState || {}).some(st =>
+    st && Array.isArray(st.holes) && st.holes.length >= 18
+  );
+  const entrySel = document.getElementById('entryDate');
+  const entryLabel = entrySel?.selectedOptions?.[0]?.textContent || '';
+  const selectedPostSeasonDate = entryLabel.toLowerCase().includes('post season');
+  if (!entryGridLooksPostSeason() && !has18HoleState && !selectedPostSeasonDate) return null;
+
+  const entryDate = document.getElementById('entryDate')?.value;
+  const stateSeason = entryStateDate ? parseInt(String(entryStateDate).substring(0, 4)) : null;
+  const entrySeason = entryDate ? parseInt(String(entryDate).substring(0, 4)) : null;
+  const fallbackSeason = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's" AND PostSeasonDt IS NOT NULL`)[0]?.s;
+  const season = stateSeason || entrySeason || fallbackSeason;
+  if (!season) return null;
+
+  const lp = query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
+  const psDates = parsePostSeasonDates(lp?.PostSeasonDt);
+  if (!psDates) return null;
+
+  activeEntryPostSeasonContext = { season, week1: psDates.week1, week2: psDates.week2 };
+  return activeEntryPostSeasonContext;
+}
+
+function setScoresDateControlsVisible(visible) {
+  const controls = document.getElementById('scoresDateControls');
+  if (controls) controls.style.display = 'none';
+}
+
 function syncScoresDateForEntryContext() {
   const ctx = getActivePostSeasonScoreContext();
   const sel = document.getElementById('scoresDate');
   if (!sel) return;
   if (ctx) {
+    setScoresDateControlsVisible(false);
     const html = `<option value="${ctx.week1}">${ctx.season} Post Season - ${fmtDate(ctx.week1)} + ${fmtDate(ctx.week2)}</option>`;
     if (sel.innerHTML !== html) sel.innerHTML = html;
     sel.value = String(ctx.week1);
     return;
   }
+  setScoresDateControlsVisible(true);
   const entryDate = document.getElementById('entryDate')?.value;
   if (entryDate) {
     const html = `<option value="${entryDate}">${fmtDate(entryDate)}</option>`;
@@ -3056,10 +3437,71 @@ function mergeLiveRegularScoreRows(rows, date) {
   });
 }
 
+let postSeasonScoresRefreshTimer = null;
+function schedulePostSeasonScoresRefresh(delayMs = 100) {
+  clearTimeout(postSeasonScoresRefreshTimer);
+  postSeasonScoresRefreshTimer = setTimeout(() => {
+    postSeasonScoresRefreshTimer = null;
+    loadScores();
+  }, delayMs);
+}
+
+let scoreClassRefreshTimer = null;
+function scheduleScoreClassRefresh(nine, delayMs = 140) {
+  clearTimeout(scoreClassRefreshTimer);
+  scoreClassRefreshTimer = setTimeout(() => {
+    scoreClassRefreshTimer = null;
+    try { applyCellClasses(nine); } catch (err) { console.warn('applyCellClasses failed after deferred score refresh:', err); }
+  }, delayMs);
+}
+
+function collectVisiblePostSeasonScoreRows() {
+  if (!entryGridLooksPostSeason() || !entryState) return [];
+
+  const rows = [];
+  document.querySelectorAll('#entryGrid tbody tr[data-slotkey]').forEach(tr => {
+    const key = tr.dataset.slotkey;
+    const st = entryState[key];
+    const inputs = [...tr.querySelectorAll('input.eg-input')].slice(0, 18);
+    if (!st || !inputs.length) return;
+
+    const holes = inputs.map(inp => (inp.value || '').trim());
+    const liveState = { ...st, holes };
+    const totals = getPostSeasonEntryTotals(liveState);
+    if (!totals.frontComplete && !totals.backComplete) return;
+
+    const player = liveState.active || liveState.sub || liveState.regular;
+    if (!player) return;
+
+    const hdcp = parseInt(liveState.phdcp) || 0;
+    const rounds = (totals.frontComplete ? 1 : 0) + (totals.backComplete ? 1 : 0);
+    const totalGross = totals.frontComplete && totals.backComplete ? totals.frontGross + totals.backGross : null;
+    const totalNet = totals.frontComplete && totals.backComplete
+      ? (totals.frontGross - hdcp) + (totals.backGross - hdcp)
+      : null;
+    rows.push({
+      Player: player,
+      FrontGross: totals.frontComplete ? totals.frontGross : null,
+      FrontNet: totals.frontComplete ? totals.frontGross - hdcp : null,
+      BackGross: totals.backComplete ? totals.backGross : null,
+      BackNet: totals.backComplete ? totals.backGross - hdcp : null,
+      Gross: totalGross,
+      Hdcp: hdcp,
+      Net: totalNet,
+      FrontBack: [
+        totals.frontComplete ? 'Front' : '',
+        totals.backComplete ? 'Back' : ''
+      ].filter(Boolean).join('+'),
+      Rounds: rounds
+    });
+  });
+  return rows;
+}
+
 function mergeLivePostSeasonScoreRows(rows) {
-  if (!entryState || !entryStateDate) return rows;
+  if (!entryState) return rows;
   const psCtx = getActivePostSeasonScoreContext();
-  if (!psCtx || ![psCtx.week1, psCtx.week2].includes(parseInt(entryStateDate))) return rows;
+  if (!psCtx) return rows;
 
   const merged = new Map(rows.map(r => [r.Player, { ...r }]));
   Object.values(entryState).forEach(st => {
@@ -3070,6 +3512,9 @@ function mergeLivePostSeasonScoreRows(rows) {
     const hdcp = parseInt(st.phdcp) || 0;
     const rounds = (totals.frontComplete ? 1 : 0) + (totals.backComplete ? 1 : 0);
     const totalGross = totals.frontComplete && totals.backComplete ? totals.frontGross + totals.backGross : null;
+    const totalNet = totals.frontComplete && totals.backComplete
+      ? (totals.frontGross - hdcp) + (totals.backGross - hdcp)
+      : null;
     merged.set(st.active, {
       Player: st.active,
       FrontGross: totals.frontGross || null,
@@ -3078,7 +3523,7 @@ function mergeLivePostSeasonScoreRows(rows) {
       BackNet: totals.backComplete ? totals.backGross - hdcp : null,
       Gross: totalGross,
       Hdcp: hdcp,
-      Net: totalGross ? totalGross - hdcp : null,
+      Net: totalNet,
       FrontBack: [
         totals.frontComplete ? 'Front' : '',
         totals.backComplete ? 'Back' : ''
@@ -3086,6 +3531,7 @@ function mergeLivePostSeasonScoreRows(rows) {
       Rounds: rounds
     });
   });
+  collectVisiblePostSeasonScoreRows().forEach(r => merged.set(r.Player, r));
 
   return [...merged.values()].sort((a, b) => {
     const aFull = parseInt(a.Rounds) >= 2;
@@ -3104,16 +3550,34 @@ function mergeLivePostSeasonScoreRows(rows) {
 
 function loadScores() {
   if (!db) return;
-  const psCtx = getActivePostSeasonScoreContext();
+  let psCtx = getActivePostSeasonScoreContext() || forcePostSeasonContextFromVisibleEntry();
   if (psCtx) {
     syncScoresDateForEntryContext();
   } else if (document.getElementById('entryDate')?.value) {
     syncScoresDateForEntryContext();
+    psCtx = forcePostSeasonContextFromVisibleEntry();
   } else {
     refreshDateDropdown('scoresDate', "SELECT DISTINCT Date as sDate FROM Scores ORDER BY Date DESC LIMIT 60");
   }
   const date = document.getElementById('scoresDate').value;
   if (!date) return;
+  window.hgLastScoresLoadDebug = {
+    isPostSeasonEntryMode: isPostSeasonEntryMode(),
+    entryDate: document.getElementById('entryDate')?.value || '',
+    entryDateLabel: document.getElementById('entryDate')?.selectedOptions?.[0]?.textContent || '',
+    scoresDate: date,
+    entryStateDate,
+    entryStateFb,
+    activeEntryPostSeasonContext,
+    psCtx,
+    entryGridPostSeason: entryGridLooksPostSeason(),
+    scoreRowsInMemory: Object.values(entryState || {}).filter(st => st && Array.isArray(st.holes) && st.active && st.holes.some(v => parseInt(v) > 0)).map(st => ({
+      player: st.active,
+      filled: st.holes.filter(v => parseInt(v) > 0).length,
+      frontFilled: st.holes.slice(0, 9).filter(v => parseInt(v) > 0).length,
+      backFilled: st.holes.slice(9, 18).filter(v => parseInt(v) > 0).length
+    }))
+  };
   document.getElementById('scoresSubtitle').textContent = psCtx
     ? `${psCtx.season} Post Season - 18-hole net`
     : fmtDate(date);
@@ -3128,7 +3592,7 @@ function loadScores() {
            MAX(CASE WHEN s.FrontBack='Back' THEN s.Net END) as BackNet,
            CASE WHEN COUNT(DISTINCT s.FrontBack) >= 2 THEN SUM(COALESCE(s.Gross,0)) END as Gross,
            MAX(COALESCE(h.Hdcp,h.PHdcp,0)) as Hdcp,
-           CASE WHEN COUNT(DISTINCT s.FrontBack) >= 2 THEN SUM(COALESCE(s.Gross,0)) - MAX(COALESCE(h.Hdcp,h.PHdcp,0)) END as Net,
+           CASE WHEN COUNT(DISTINCT s.FrontBack) >= 2 THEN SUM(COALESCE(s.Net,0)) END as Net,
            GROUP_CONCAT(s.FrontBack, '+') as FrontBack,
            COUNT(DISTINCT s.FrontBack) as Rounds
     FROM Scores s
@@ -3138,7 +3602,7 @@ function loadScores() {
       AND s.Gross IS NOT NULL AND s.Gross != 0
     GROUP BY s.Player
     ORDER BY CASE WHEN COUNT(*) >= 2 THEN 0 ELSE 1 END,
-             SUM(COALESCE(s.Gross,0)) - MAX(COALESCE(h.Hdcp,h.PHdcp,0)) ASC,
+             SUM(COALESCE(s.Net,0)) ASC,
              SUM(COALESCE(s.Gross,0)) ASC,
              s.Player
   `) : query(`
@@ -3158,7 +3622,7 @@ function loadScores() {
   const scoresTable = document.getElementById('scoresTable');
   if (scoresTable) delete scoresTable.dataset.sortable;
   document.querySelector('#scoresTable thead tr').innerHTML = psCtx
-    ? '<th>Player</th><th class="num">1-9 Gross</th><th class="num">1-9 Net</th><th class="num">10-18 Gross</th><th class="num">10-18 Net</th><th class="num">18 Gross</th><th class="num">18 Net</th><th class="num">Hdcp</th><th class="ctr">Holes</th>'
+    ? '<th>Player</th><th class="num">Front Gross</th><th class="num">Front Net</th><th class="num">Back Gross</th><th class="num">Back Net</th><th class="num">18 Gross</th><th class="num">18 Net</th><th class="num">Hdcp</th><th class="ctr">Holes</th>'
     : '<th>Player</th><th class="num">Gross</th><th class="num">Net</th><th class="ctr">9</th><th class="num">PHdcp</th><th class="num">Hdcp</th>';
   // Attach sort listeners directly
   document.querySelectorAll('#scoresTable thead th').forEach((th, i) => {
@@ -3172,7 +3636,13 @@ function loadScores() {
     const tr = document.createElement('tr');
     const last5 = last5Map[r.Player] || null;
 
-    tr.appendChild(Object.assign(document.createElement('td'), { textContent: r.Player }));
+    const playerCell = Object.assign(document.createElement('td'), { textContent: r.Player || '' });
+    playerCell.style.cursor = 'pointer';
+    playerCell.style.color = 'var(--green)';
+    playerCell.style.fontWeight = '700';
+    playerCell.title = `Click to view ${r.Player}'s score history`;
+    playerCell.addEventListener('click', () => showPlayerScores(r.Player));
+    tr.appendChild(playerCell);
     if (psCtx) {
       tr.appendChild(Object.assign(document.createElement('td'), { className: 'num score-gross', textContent: r.FrontGross ?? '' }));
       tr.appendChild(Object.assign(document.createElement('td'), { className: 'num score-net', textContent: r.FrontNet ?? '' }));
@@ -3738,7 +4208,7 @@ function loadLeaders() {
   const pointsRows = query(`SELECT Player, SUM(Points) as total FROM Matches WHERE League="${league}" AND Points IS NOT NULL${dateFilterM} GROUP BY Player ORDER BY total DESC`);
 
   // F9/B9 Avg
-  const f9Rows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND FrontBack='Front' AND Gross IS NOT NULL AND Gross != 0${dateFilter} GROUP BY Player HAVING cnt >= 3 ORDER BY avg ASC`);
+  const f9Rows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND FrontBack='Front' AND Gross IS NOT NULL AND Gross != 0${dateFilter} GROUP BY Player HAVING cnt >= 1 ORDER BY avg ASC`);
 
   // No Shows — matches Attendance tab logic: only count dates where the round actually happened
   const noShowCounts = {};
@@ -3775,7 +4245,7 @@ function loadLeaders() {
   });
   window._noShowDates = noShowDates; // expose for click-to-view
   const noShowRows = Object.entries(noShowCounts).map(([Player, cnt]) => ({ Player, cnt })).sort((a,b) => b.cnt - a.cnt);
-  const b9Rows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND FrontBack='Back' AND Gross IS NOT NULL AND Gross != 0${dateFilter} GROUP BY Player HAVING cnt >= 3 ORDER BY avg ASC`);
+  const b9Rows = query(`SELECT Player, AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE League="${league}" AND FrontBack='Back' AND Gross IS NOT NULL AND Gross != 0${dateFilter} GROUP BY Player HAVING cnt >= 1 ORDER BY avg ASC`);
 
   // Hole-by-hole stats: Eagles, Birdies, Pars, Bogeys, DoubleBogeys, Others
   // Uses current course pars (front/back) — assumes consistent course across seasons
@@ -4380,13 +4850,22 @@ function loadNoShows() {
 
   const season = sel.value;
   const view   = document.getElementById('noshowView').value;
+  const psExclude = new Set();
+  const psRow = query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND Season=${season} AND PostSeasonDt IS NOT NULL`)[0];
+  if (psRow?.PostSeasonDt) {
+    const psDates = parsePostSeasonDates(psRow.PostSeasonDt);
+    if (psDates) {
+      psExclude.add(String(psDates.week1));
+      psExclude.add(String(psDates.week2));
+    }
+  }
 
   // Get all played dates for this season
   const playedDates = query(`
     SELECT DISTINCT Date as sDate FROM Scores 
     WHERE League="Hugh's" AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     ORDER BY Date
-  `).map(r => r.sDate||r.Date);
+  `).map(r => r.sDate||r.Date).filter(date => !psExclude.has(String(date)));
 
   // Get all team players for this season
   const teamPlayers = query(`SELECT Player, Team, Grade FROM Teams WHERE Year=${season} ORDER BY Team, Grade`);
@@ -4424,6 +4903,9 @@ function loadNoShows() {
   noshows.forEach(n => { byPlayerCount[n.player] = (byPlayerCount[n.player]||0) + 1; });
   const worstPlayer  = Object.entries(byPlayerCount).sort((a,b)=>b[1]-a[1])[0];
   const weeksPlayed  = playedDates.length;
+  const postSeasonGiftFilter = psExclude.size
+    ? `AND m.Date NOT IN (${[...psExclude].map(d => `'${String(d).replace(/'/g,"''")}'`).join(',')})`
+    : '';
 
   // Gift points — points earned because opponent was a no-show
   const giftRows = query(`
@@ -4442,6 +4924,7 @@ function loadNoShows() {
         AND sub.Grade=(SELECT Grade FROM Teams WHERE Player=m.Opponent AND Year=${season})
     WHERE m.Date >= '${season}0101' AND m.Date < '${parseInt(season)+1}0101'
     AND m.Points > 0 AND m.Opponent IS NOT NULL
+    ${postSeasonGiftFilter}
     AND s.Player IS NULL AND sub.Player IS NULL
     GROUP BY t.Team
     ORDER BY gift_total DESC
@@ -5442,13 +5925,14 @@ function printableClone(element) {
 
     replacement.textContent = source.value || '';
     if (source.classList.contains('eg-input')) {
-      replacement.style.cssText = 'display:inline-block;width:38px;height:28px;line-height:26px;text-align:center;border:1px solid #c8c0b0;border-radius:4px;background:white;color:var(--dark);font-family:"DM Mono",monospace;font-weight:700;font-size:14px;';
+      replacement.style.cssText = 'display:inline-block;position:relative;width:38px;height:28px;line-height:26px;text-align:center;border:1px solid #c8c0b0;border-radius:4px;background:white;color:var(--dark);font-family:"DM Mono",monospace;font-weight:700;font-size:14px;z-index:1;';
     } else {
       replacement.style.cssText = 'display:inline-block;min-width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:white;color:var(--dark);font-size:12px;';
     }
     target.replaceWith(replacement);
   });
 
+  clone.querySelectorAll('.controls, .half-tabs, .report-screen-only').forEach(el => el.remove());
   clone.querySelectorAll('button').forEach(el => el.remove());
   clone.querySelectorAll('[style]').forEach(el => {
     el.style.position = '';
@@ -5466,9 +5950,14 @@ function openReportPrintWindow(title, subtitle, bodyHtml) {
     alert('Popup blocked. Allow popups for HughsGolf to create PDFs.');
     return;
   }
+  win.document.write(reportHtmlDocument(title, subtitle, bodyHtml, true));
+  win.document.close();
+}
+
+function reportHtmlDocument(title, subtitle, bodyHtml, autoPrint=false) {
   const pageStyles = Array.from(document.querySelectorAll('style')).map(s => s.textContent).join('\n');
   const generated = new Date().toLocaleString();
-  win.document.write(`<!doctype html>
+  return `<!doctype html>
 <html>
 <head>
   <title>${title}</title>
@@ -5481,11 +5970,14 @@ function openReportPrintWindow(title, subtitle, bodyHtml) {
     .pdf-meta { color: var(--gray); font-size: 11px; margin-bottom: 14px; font-family: 'DM Mono', monospace; }
     .pdf-page .section { display: block !important; }
     .pdf-page .card { box-shadow: none; border: 1px solid var(--border); break-inside: avoid; }
-    .pdf-page .controls { break-inside: avoid; }
+    .pdf-page .controls, .pdf-page .half-tabs, .pdf-page .report-screen-only { display: none !important; }
     .pdf-page .table-wrap, .pdf-page div[style*="overflow-x"] { overflow: visible !important; }
     .pdf-page table { page-break-inside: auto; }
     .pdf-page tr { page-break-inside: avoid; page-break-after: auto; }
     .pdf-page input, .pdf-page select { border: 1px solid var(--border); background: white; color: var(--dark); }
+    .pdf-page .eg-cell { position: relative !important; padding-top: 8px !important; }
+    .pdf-page .eg-stroke-dots { position: absolute !important; top: 1px !important; right: 4px !important; left: auto !important; bottom: auto !important; display: flex !important; }
+    .pdf-page .eg-stroke-dot { display: block !important; }
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .pdf-title, .pdf-meta { break-after: avoid; }
@@ -5498,10 +5990,9 @@ function openReportPrintWindow(title, subtitle, bodyHtml) {
     <div class="pdf-meta">${subtitle}${subtitle ? ' · ' : ''}Generated ${generated}</div>
     ${bodyHtml}
   </main>
-  <script>window.onload = () => setTimeout(() => window.print(), 250);<\/script>
+  ${autoPrint ? '<script>window.onload = () => setTimeout(() => window.print(), 250);<\\/script>' : ''}
 </body>
-</html>`);
-  win.document.close();
+</html>`;
 }
 
 function copySelectOptions(sourceId, targetId, fallbackSql=null) {
@@ -5596,6 +6087,16 @@ function reportTextFromSections(reports) {
     const fallback = (r.source?.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
     return `${r.title}\n${r.subtitle || ''}\n\n${tableBlocks.join('\n\n') || fallback}`;
   }).join('\n\n\n');
+}
+
+function reportHtmlFromSections(reports, title, subtitle) {
+  const bodyHtml = reports.map((r, i) => `
+    <section style="${i ? 'break-before:page;page-break-before:always;' : ''}">
+      ${reports.length > 1 ? `<div class="pdf-title">${r.title}</div><div class="pdf-meta">${r.subtitle || ''}</div>` : ''}
+      ${printableClone(r.source)}
+    </section>
+  `).join('');
+  return reportHtmlDocument(title, subtitle || '', bodyHtml, false);
 }
 
 function reportPdfFilename(kind, subtitle) {
@@ -5732,16 +6233,19 @@ function buildReportPdfPayload(kind) {
       title: "Hugh's Golf Reports",
       subtitle: 'Combined report',
       text: reportTextFromSections(reports),
+      html: reportHtmlFromSections(reports, "Hugh's Golf Reports", 'Combined report'),
       filename: reportPdfFilename('combined', selectedOptionText('pdfCombinedDate'))
     };
   }
 
   if (!source || !source.textContent.trim()) return null;
+  const reports = [{ title, subtitle, source }];
   return {
-    reports: [{ title, subtitle, source }],
+    reports,
     title,
     subtitle,
-    text: reportTextFromSections([{ title, subtitle, source }]),
+    text: reportTextFromSections(reports),
+    html: reportHtmlFromSections(reports, title, subtitle),
     filename: reportPdfFilename(kind, subtitle)
   };
 }
@@ -5756,6 +6260,7 @@ async function emailReportPdf(kind) {
     title: payload.title,
     subtitle: payload.subtitle,
     text: payload.text,
+    html: payload.html,
     filename: payload.filename
   });
 }
@@ -5808,7 +6313,7 @@ function saveScheduleSnapshot(season) {
   scheduleSnapshot = {
     season,
     schedule: rows,
-    lp: query(`SELECT EndDate, PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0]
+    lp: query(`SELECT EndDate, PostSeasonDt, Rainouts FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0]
   };
   document.getElementById('scheduleUndoBtn').style.display = '';
   console.log('Snapshot saved:', rows.length, 'rows');
@@ -5826,7 +6331,7 @@ function undoScheduleChange() {
        r['10'],r['11'],r['12'],r['13'],r['14'],r['15'],r['16'],r['17'],r['18'],
        r['19'],r['20'],r['21'],r['22'],r['23'],r['24'],r.FrontBack||null,r.Status||null]);
   });
-  if (lp) serverRun(`UPDATE LeagueParms SET EndDate=?, PostSeasonDt=? WHERE Name="Hugh's" AND Season=${season}`, [lp.EndDate, lp.PostSeasonDt]);
+  if (lp) serverRun(`UPDATE LeagueParms SET EndDate=?, PostSeasonDt=?, Rainouts=? WHERE Name="Hugh's" AND Season=${season}`, [lp.EndDate, lp.PostSeasonDt, lp.Rainouts]);
   scheduleSnapshot = null;
   document.getElementById('scheduleUndoBtn').style.display = 'none';
   loadScheduleBuilder();
@@ -5882,31 +6387,15 @@ function shouldReloadForPendingDbUpdate() {
 }
 
 function showStaleDbSavePrompt(serverModifiedMs) {
-  if (STALE_DB_SAVE_BLOCKED && document.getElementById('staleDbSaveModal')) return;
-  STALE_DB_SAVE_BLOCKED = true;
+  STALE_DB_SAVE_BLOCKED = false;
   _savePending = false;
-  DB_UPDATE_PENDING = true;
+  DB_UPDATE_PENDING = false;
   if (serverModifiedMs) {
     SERVER_DB_MODIFIED_MS = serverModifiedMs;
     SERVER_DB_MODIFIED = serverModifiedMs / 1000;
   }
-  const scoresActive = document.getElementById('tab-scores')?.classList.contains('active');
-  if (scoresActive || entryDirty) {
-    console.warn('Full DB save blocked because newer server data exists; score entry server-side writes were left intact.');
-    return;
-  }
-  if (document.getElementById('staleDbSaveModal')) return;
-  const modal = document.createElement('div');
-  modal.id = 'staleDbSaveModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:100000;display:flex;align-items:center;justify-content:center';
-  modal.innerHTML = `
-    <div style="background:white;border-radius:12px;padding:32px;max-width:460px;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,0.4)">
-      <div style="font-size:38px;margin-bottom:12px">⚠</div>
-      <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:#c62828;margin-bottom:10px">Reload Needed</div>
-      <div style="font-size:15px;color:#333;line-height:1.45;margin-bottom:22px">Someone else saved newer league data before this browser saved. Your save was blocked so their changes would not be overwritten.</div>
-      <button onclick="location.reload(true)" style="width:100%;padding:12px;background:#1a472a;color:white;border:none;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">Reload Now</button>
-    </div>`;
-  document.body.appendChild(modal);
+  loadDbInfo();
+  console.warn('Full DB save skipped because newer server data exists. No reload prompt was shown.');
 }
 
 async function checkServerVersion() {
@@ -6121,16 +6610,15 @@ async function confirmMarkPaid() {
   const baseComment = (existing?.Comment || '').replace(/\s*\[notified:[^\]]*\]/, '');
   const newComment = baseComment + notifyTag;
 
-  serverRun(`UPDATE Payments SET DatePaid=?, Comment=? WHERE League="Hugh's" AND Player=? AND Date=? AND Desc=? AND Detail=?`,
+  await serverRun(`UPDATE Payments SET DatePaid=?, Comment=? WHERE League="Hugh's" AND Player=? AND Date=? AND Desc=? AND Detail=?`,
     [now, newComment, player, date, desc, detail]);
 
   // Log it
   const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
-  serverRun(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+  await serverRun(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
     [logTime, 'INFO', 'markPaid', 'HughsGolf', `Marked ${desc} ${detail} paid to ${player}`, `amount=$${amount.toFixed(2)} by=${currentUser.name} notified=${notifyTag||'none'}`, logTime]);
 
   const keepPrizeMoneyDate = document.getElementById('prizemoneyDate')?.value || '';
-  await saveDBToServer();
   loadPrizeMoney({ keepDate: keepPrizeMoneyDate, reopenHeld: true });
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6164,11 +6652,23 @@ function subContactBadge(p) {
   return `<span title="${escapeHtml(detail)}" style="margin-left:auto;font-size:10px;background:#e8f5e9;color:#1b5e20;border:1px solid #c8e6c9;border-radius:10px;padding:1px 7px;white-space:nowrap">${methods.join(' + ')}</span>`;
 }
 
+let needSubCandidates = [];
+let needSubSeason = null;
+
 function showNeedSub() {
   document.getElementById('needSubModal').style.display = 'flex';
   document.getElementById('needSubError').style.display = 'none';
   document.getElementById('needSubSuccess').style.display = 'none';
-  document.getElementById('needSubSelectAll').checked = false;
+  const canSelectAllSubs = currentUser?.role === 'officer' || currentUser?.role === 'developer';
+  const selectAllWrap = document.getElementById('needSubSelectAllWrap');
+  const selectAllCb = document.getElementById('needSubSelectAll');
+  if (selectAllWrap) selectAllWrap.style.display = canSelectAllSubs ? 'flex' : 'none';
+  if (selectAllCb) {
+    selectAllCb.checked = false;
+    selectAllCb.disabled = !canSelectAllSubs;
+  }
+  document.getElementById('needSubIncludePast').checked = false;
+  document.getElementById('needSubShowNoContact').checked = false;
   document.getElementById('needSubSearch').value = '';
   // Show skip email option for developers only
   const skipDiv = document.getElementById('needSubSkipEmailDiv');
@@ -6177,6 +6677,7 @@ function showNeedSub() {
   if (skipCb) skipCb.checked = false;
 
   const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
+  needSubSeason = parseInt(season);
 
   // "Requesting sub for" dropdown
   const forSel = document.getElementById('needSubFor');
@@ -6190,39 +6691,22 @@ function showNeedSub() {
   const dateSel = document.getElementById('needSubDate');
   dateSel.innerHTML = dates.map(d => `<option value="${d.sDate}">${fmtDate(d.sDate)}</option>`).join('');
 
-  // Eligible subs = players NOT on Teams for current season
-  // Prioritize those who've already played a round this season
-  const subs = query(`
+  // Eligible sub candidates = non-roster players who have subbed now or in prior years.
+  needSubCandidates = query(`
     SELECT p.Player, p.Email, p.Phone, p.CellCarrier,
-      (SELECT COUNT(*) FROM Scores s WHERE s.Player = p.Player AND s.League="Hugh's" AND s.Date >= ${season}0101) as PlayedCount
+      (SELECT COUNT(*) FROM Subs su WHERE su.Player = p.Player AND su.League="Hugh's" AND su.Date >= ${season}0101 AND su.Date < ${parseInt(season)+1}0101) as SubCount,
+      (SELECT COUNT(*) FROM Scores s WHERE s.Player = p.Player AND s.League="Hugh's" AND s.Date >= ${season}0101 AND s.Date < ${parseInt(season)+1}0101) as PlayedCount,
+      (SELECT MAX(CAST(su2.Date AS INTEGER)) FROM Subs su2 WHERE su2.Player = p.Player AND su2.League="Hugh's" AND CAST(su2.Date AS INTEGER) < ${season}0101) as LastSubDate
     FROM Players p
     WHERE p.Player NOT IN (SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season})
       AND COALESCE(p.BlockSubs,'N') != 'Y'
-    ORDER BY PlayedCount DESC, p.Player
+      AND (
+        EXISTS (SELECT 1 FROM Subs su WHERE su.Player = p.Player AND su.League="Hugh's" AND su.Date >= ${season}0101 AND su.Date < ${parseInt(season)+1}0101)
+        OR EXISTS (SELECT 1 FROM Subs su2 WHERE su2.Player = p.Player AND su2.League="Hugh's" AND CAST(su2.Date AS INTEGER) < ${season}0101)
+      )
+    ORDER BY SubCount DESC, PlayedCount DESC, LastSubDate DESC, p.Player
   `);
-  const listEl = document.getElementById('needSubList');
-  if (!subs.length) {
-    listEl.innerHTML = '<div style="color:#999">No eligible subs found.</div>';
-  } else {
-    let html = '';
-    let inHasPlayed = true;
-    subs.forEach((p, i) => {
-      const hasPlayed = p.PlayedCount > 0;
-      if (i === 0 && !hasPlayed) inHasPlayed = false;
-      if (inHasPlayed && !hasPlayed && i > 0) {
-        html += `<div style="border-top:1px solid #eee;margin:6px 0 4px;padding-top:4px;font-size:10px;color:#999;text-transform:uppercase">Haven't played this season</div>`;
-        inHasPlayed = false;
-      }
-      const contactBadge = subContactBadge(p);
-      html += `
-      <label style="display:flex;align-items:center;gap:6px;padding:2px 0;cursor:pointer">
-        <input type="checkbox" class="needSubCheck" value="${p.Player}">
-        <span>${p.Player}${hasPlayed ? ` <span style="color:#888;font-size:10px">(played ${p.PlayedCount}x this season)</span>` : ''}</span>
-        ${contactBadge}
-      </label>`;
-    });
-    listEl.innerHTML = html;
-  }
+  renderNeedSubList();
 
   // Pre-fill message
   const dateLabel = dates.length ? fmtDate(dates[0].sDate) : '[date]';
@@ -6242,17 +6726,69 @@ function showNeedSub() {
   forSel.onchange = updateMsg;
 }
 
+function renderNeedSubList() {
+  const listEl = document.getElementById('needSubList');
+  if (!listEl) return;
+
+  const includePast = document.getElementById('needSubIncludePast')?.checked || false;
+  const showNoContact = document.getElementById('needSubShowNoContact')?.checked || false;
+  const search = (document.getElementById('needSubSearch')?.value || '').toLowerCase();
+  const selectAllCb = document.getElementById('needSubSelectAll');
+  if (selectAllCb) selectAllCb.checked = false;
+
+  const visible = needSubCandidates.filter(p => {
+    const currentYearSub = parseInt(p.SubCount || 0) > 0;
+    const contactable = !!p.Email || hasValidTextContact(p);
+    if (!currentYearSub && !includePast) return false;
+    if (!contactable && !showNoContact) return false;
+    if (search && !String(p.Player || '').toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  if (!visible.length) {
+    const hints = [];
+    if (!includePast) hints.push('turn on past-year subs');
+    if (!showNoContact) hints.push('show no-contact players');
+    listEl.innerHTML = `<div style="color:#999;padding:4px">No eligible contactable subs found${hints.length ? `; ${hints.join(' or ')} if needed.` : '.'}</div>`;
+    return;
+  }
+
+  let html = '';
+  let shownPastHeader = false;
+  visible.forEach(p => {
+    const currentYearSub = parseInt(p.SubCount || 0) > 0;
+    const playedCount = parseInt(p.PlayedCount || 0);
+    const contactable = !!p.Email || hasValidTextContact(p);
+    if (!currentYearSub && !shownPastHeader) {
+      html += `<div style="border-top:1px solid #eee;margin:7px 0 4px;padding-top:5px;font-size:10px;color:#777;text-transform:uppercase;font-weight:700">Past-year subs</div>`;
+      shownPastHeader = true;
+    }
+    const meta = currentYearSub
+      ? `subbed ${p.SubCount}x this season${playedCount && playedCount !== parseInt(p.SubCount || 0) ? `, played ${playedCount}x` : ''}`
+      : `last subbed ${fmtDate(p.LastSubDate)}`;
+    const contactBadge = subContactBadge(p);
+    const dimStyle = contactable ? '' : 'opacity:0.6;';
+    const cursor = contactable ? 'pointer' : 'not-allowed';
+    html += `
+      <label data-sub-name="${escapeHtml(p.Player || '')}" style="display:flex;align-items:center;gap:6px;padding:2px 0;cursor:${cursor};${dimStyle}">
+        <input type="checkbox" class="needSubCheck" value="${escapeHtml(p.Player || '')}" ${contactable ? '' : 'disabled'}>
+        <span>${escapeHtml(p.Player || '')} <span style="color:#888;font-size:10px">(${escapeHtml(meta)})</span></span>
+        ${contactBadge}
+      </label>`;
+  });
+  listEl.innerHTML = html;
+}
+
 function toggleAllSubs() {
+  if (!(currentUser?.role === 'officer' || currentUser?.role === 'developer')) return;
   const checked = document.getElementById('needSubSelectAll').checked;
-  document.querySelectorAll('.needSubCheck').forEach(cb => cb.checked = checked);
+  document.querySelectorAll('.needSubCheck:not(:disabled)').forEach(cb => {
+    if (cb.closest('label')?.style.display !== 'none') cb.checked = checked;
+  });
 }
 
 function filterNeedSubList() {
-  const search = document.getElementById('needSubSearch').value.toLowerCase();
-  document.querySelectorAll('#needSubList label').forEach(label => {
-    const name = label.textContent.toLowerCase();
-    label.style.display = name.includes(search) ? '' : 'none';
-  });
+  renderNeedSubList();
 }
 
 async function doNeedSub() {
@@ -6404,36 +6940,139 @@ async function doKittyPayout() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Server Log Viewer ─────────────────────────────────────────────────────────
-function loadLoginActivity() {
+async function loadLoginActivity(options = {}) {
   if (!db) return;
+  if (!options.skipServerRefresh) await refreshLiveDbSnapshotForReadOnlyView();
 
   // ── Login Counts (all-time, per player) ──────────────────────────────────
-  const countsShowDev = document.getElementById('loginCountsShowDev')?.checked;
-  const devDeveloperNames = countsShowDev ? [] : query(`SELECT Player FROM Players WHERE Officer='Developer'`).map(r => r.Player);
+  const excludeTestGolfers = document.getElementById('loginStatsExcludeTest')?.checked ?? true;
+  const historicalLeaguePlayers = new Set([
+    ...query(`SELECT DISTINCT Player FROM Teams WHERE Player IS NOT NULL AND Player != ''`).map(r => r.Player),
+    ...query(`SELECT DISTINCT Player FROM Subs WHERE Player IS NOT NULL AND Player != ''`).map(r => r.Player)
+  ]);
+  const isTestGolfer = (player) => {
+    if (!excludeTestGolfers) return false;
+    const name = String(player || '').trim();
+    if (!name) return false;
+    const playerRow = query(`SELECT 1 FROM Players WHERE Player=? LIMIT 1`, [name]);
+    return playerRow.length > 0 && !historicalLeaguePlayers.has(name);
+  };
+  const includeLoginStatPlayer = (player) => !isTestGolfer(player);
+  const getLoginActivityPlayer = (row) => {
+    const text = String(row?.text || '');
+    const match = row?.method === 'login' ? text.match(/^(.+) logged in$/)
+      : row?.method === 'login_failed' ? text.match(/^(.+) failed login/)
+      : row?.method === 'logout' ? text.match(/^(.+) logged out$/)
+      : row?.method === 'session_timeout' ? text.match(/^(.+) (?:session expired|session timed out)/)
+      : row?.method === 'needSub' ? text.match(/^(.+) requested a sub/)
+      : row?.method === 'password_set' ? text.match(/^(.+) set initial password$/)
+      : row?.method === 'password_change' ? text.match(/^(.+) changed password$/)
+      : text.match(/^(.+?) /);
+    return match ? match[1] : text;
+  };
+  const subBadge = '<span style="background:#b3e5fc;color:#01579b;font-size:10px;padding:1px 4px;border-radius:3px;margin-left:4px">SUB</span>';
+
+  const currentSeason = query(`SELECT MAX(Year) as y FROM Teams WHERE League="Hugh's"`)[0]?.y || new Date().getFullYear();
+  const regularRows = query(`
+    SELECT t.Player, t.Team, t.Grade, COALESCE(p.Login,'N') as Login, COALESCE(p.Email,'') as Email, COALESCE(p.Phone,'') as Phone, COALESCE(p.Officer,'') as Officer
+    FROM Teams t
+    LEFT JOIN Players p ON p.Player=t.Player
+    WHERE t.League="Hugh's" AND t.Year=?
+    ORDER BY t.Team, t.Grade
+  `, [currentSeason]).filter(r => includeLoginStatPlayer(r.Player));
+  const regularNames = new Set(regularRows.map(r => r.Player));
+  const subRowsRaw = query(`
+    SELECT s.Player, s.Team, s.Grade, s.Date as LastSubDate,
+           COALESCE(p.Login,'N') as Login, COALESCE(p.Email,'') as Email, COALESCE(p.Phone,'') as Phone, COALESCE(p.Officer,'') as Officer
+    FROM Subs s
+    LEFT JOIN Players p ON p.Player=s.Player
+    WHERE s.League="Hugh's" AND CAST(s.Date AS TEXT) LIKE ?
+    ORDER BY s.Date DESC, s.Player
+  `, [`${currentSeason}%`]).filter(r => includeLoginStatPlayer(r.Player) && !regularNames.has(r.Player));
+  const seenSubNames = new Set();
+  const subRows = subRowsRaw
+    .filter(r => {
+      if (seenSubNames.has(r.Player)) return false;
+      seenSubNames.add(r.Player);
+      return true;
+    })
+    .map(r => ({ ...r, IsSub: true }));
+  const loginParticipants = [...regularRows.map(r => ({ ...r, IsSub: false })), ...subRows];
+  const subPlayerNames = new Set(subRows.map(r => r.Player));
+  const loginEventsAll = query(`
+    SELECT REPLACE(text,' logged in','') as Player, COUNT(*) as cnt, MAX(log_time) as lastLogin
+    FROM LogTable WHERE method='login'
+    GROUP BY REPLACE(text,' logged in','')
+  `).filter(r => includeLoginStatPlayer(r.Player));
+  const loginByPlayer = new Map(loginEventsAll.map(r => [r.Player, r]));
+  const loggedParticipants = loginParticipants.filter(r => loginByPlayer.has(r.Player));
+  const participantsNoLogin = loginParticipants.filter(r => !loginByPlayer.has(r.Player));
+  const participationPct = loginParticipants.length ? Math.round((loggedParticipants.length / loginParticipants.length) * 100) : 0;
+  const totalLoginEvents = loginEventsAll
+    .reduce((sum, r) => sum + (parseInt(r.cnt) || 0), 0);
+  const lastLeagueLogin = loginEventsAll
+    .map(r => r.lastLogin)
+    .filter(Boolean)
+    .sort()
+    .pop();
+
+  const summaryEl = document.getElementById('loginParticipationSummary');
+  if (summaryEl) {
+    const card = (label, value, sub='', accent='var(--green)') => `
+      <div style="background:#fff;border:1px solid var(--border);border-left:4px solid ${accent};border-radius:6px;padding:10px 12px">
+        <div style="font-family:'Bebas Neue',cursive;font-size:28px;line-height:1;color:${accent}">${value}</div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:700;margin-top:4px">${label}</div>
+        ${sub ? `<div style="font-size:11px;color:#777;margin-top:3px">${sub}</div>` : ''}
+      </div>`;
+    summaryEl.innerHTML = [
+      card('Participation', `${participationPct}%`, `${loggedParticipants.length} of ${loginParticipants.length} participants`, participationPct >= 80 ? 'var(--green)' : participationPct >= 50 ? '#b8860b' : 'var(--red)'),
+      card('Participants Logged In', loggedParticipants.length, `Season ${currentSeason}`),
+      card('Non-Participants', participantsNoLogin.length, 'Current regulars/subs not logged in', participantsNoLogin.length ? 'var(--red)' : 'var(--green)'),
+      card('Login Events', totalLoginEvents, lastLeagueLogin ? `Last: ${formatUtcSqlTimestamp(lastLeagueLogin)}` : 'No login history')
+    ].join('');
+  }
+
+  const noLoginEl = document.getElementById('regularsNoLoginBody');
+  if (noLoginEl) {
+    noLoginEl.innerHTML = participantsNoLogin.map((r,i) => `
+      <tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
+        <td style="padding:6px 12px;font-weight:600">${escapeHtml(r.Player || '')}${r.IsSub ? subBadge : ''}</td>
+        <td style="padding:6px 12px;text-align:center;font-family:'DM Mono',monospace">${escapeHtml(String(r.Team || ''))}${escapeHtml(r.Grade || '')}</td>
+        <td style="padding:6px 12px;text-align:center">${r.Login === 'Y' ? '<span style="color:#2e7d32;font-weight:700">Y</span>' : '<span style="color:#c62828;font-weight:700">N</span>'}</td>
+        <td style="padding:6px 12px;color:#666">${escapeHtml(r.Email || '')}</td>
+        <td style="padding:6px 12px;color:#666;font-family:'DM Mono',monospace;font-size:12px">${escapeHtml(r.Phone || '')}</td>
+      </tr>`).join('') || `<tr><td colspan="5" style="padding:10px;color:#2e7d32;text-align:center;font-size:12px">All current regulars/subs have logged in</td></tr>`;
+  }
+
   const loginCounts = query(`
     SELECT REPLACE(text,' logged in','') as Player, COUNT(*) as cnt, MAX(log_time) as lastLogin
     FROM LogTable WHERE method='login'
     GROUP BY REPLACE(text,' logged in','')
     ORDER BY lastLogin DESC
-  `).filter(r => countsShowDev || !devDeveloperNames.includes(r.Player));
+  `).filter(r => includeLoginStatPlayer(r.Player));
   const failedCountsByPlayer = {};
-  query(`SELECT text, COUNT(*) as cnt FROM LogTable WHERE method='login_failed' GROUP BY text`).forEach(r => {
-    failedCountsByPlayer[r.text] = r.cnt;
+  query(`SELECT REPLACE(text,' failed login attempt','') as Player, COUNT(*) as cnt FROM LogTable WHERE method='login_failed' GROUP BY REPLACE(text,' failed login attempt','')`).forEach(r => {
+    failedCountsByPlayer[r.Player] = r.cnt;
+  });
+  const logoutCountsByPlayer = {};
+  query(`SELECT REPLACE(text,' logged out','') as Player, COUNT(*) as cnt FROM LogTable WHERE method='logout' GROUP BY REPLACE(text,' logged out','')`).forEach(r => {
+    logoutCountsByPlayer[r.Player] = r.cnt;
   });
   const timeoutCountsByPlayer = {};
-  query(`SELECT REPLACE(text,' session timed out','') as Player, COUNT(*) as cnt FROM LogTable WHERE method='session_timeout' GROUP BY REPLACE(text,' session timed out','')`).forEach(r => {
+  query(`SELECT REPLACE(REPLACE(text,' session expired (inactivity)',''),' session timed out','') as Player, COUNT(*) as cnt FROM LogTable WHERE method='session_timeout' GROUP BY REPLACE(REPLACE(text,' session expired (inactivity)',''),' session timed out','')`).forEach(r => {
     timeoutCountsByPlayer[r.Player] = r.cnt;
   });
   const countsEl = document.getElementById('loginCountsBody');
   if (countsEl) {
     if (!loginCounts.length) {
-      countsEl.innerHTML = '<tr><td colspan="5" style="padding:8px;color:#999;text-align:center;font-size:12px">No login history yet</td></tr>';
+      countsEl.innerHTML = '<tr><td colspan="6" style="padding:8px;color:#999;text-align:center;font-size:12px">No login history yet</td></tr>';
     } else {
       countsEl.innerHTML = loginCounts.map((r,i) => `
         <tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
-          <td style="padding:6px 12px;font-weight:600">${r.Player}</td>
+          <td style="padding:6px 12px;font-weight:600">${escapeHtml(r.Player || '')}${subPlayerNames.has(r.Player) ? subBadge : ''}</td>
           <td style="padding:6px 12px;text-align:right">${r.cnt}</td>
           <td style="padding:6px 12px;text-align:right${(failedCountsByPlayer[r.Player]||0)>0?';color:#c62828':''}">${failedCountsByPlayer[r.Player] || 0}</td>
+          <td style="padding:6px 12px;text-align:right${(logoutCountsByPlayer[r.Player]||0)>0?';color:#666':''}">${logoutCountsByPlayer[r.Player] || 0}</td>
           <td style="padding:6px 12px;text-align:right${(timeoutCountsByPlayer[r.Player]||0)>0?';color:#e65100':''}">${timeoutCountsByPlayer[r.Player] || 0}</td>
           <td style="padding:6px 12px">${r.lastLogin ? formatUtcSqlTimestamp(r.lastLogin) : '—'}</td>
         </tr>`).join('');
@@ -6444,6 +7083,7 @@ function loadLoginActivity() {
   const sessionsAvailable = activeSessionsEnabled();
   const activeSessions = sessionsAvailable
     ? query(`SELECT Player, ActiveSession FROM Players WHERE ActiveSession IS NOT NULL AND ActiveSession != ''`)
+        .filter(r => includeLoginStatPlayer(r.Player))
     : [];
   const activeEl = document.getElementById('currentlyLoggedInBody');
   if (activeEl) {
@@ -6462,7 +7102,7 @@ function loadLoginActivity() {
           ? `<span style="color:#e65100;font-size:11px">⚠ likely timed out (${ageText})</span>`
           : `<span style="color:#2e7d32;font-size:11px">● active${sinceMin!==null?` (${sinceMin}m ago)`:''}</span>`;
         return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
-          <td style="padding:6px 12px;font-weight:600">${r.Player}</td>
+          <td style="padding:6px 12px;font-weight:600">${escapeHtml(r.Player || '')}${subPlayerNames.has(r.Player) ? subBadge : ''}</td>
           <td style="padding:6px 12px">${statusBadge}</td>
         </tr>`;
       }).join('');
@@ -6471,18 +7111,23 @@ function loadLoginActivity() {
 
   // Populate player filter dropdown (once)
   const playerSel = document.getElementById('loginActivityPlayer');
-  if (playerSel && playerSel.options.length <= 1) {
-    const players = query(`SELECT DISTINCT Player FROM Players WHERE Login='Y' ORDER BY Player`);
+  const previousPlayer = playerSel ? playerSel.value : '';
+  if (playerSel) {
+    const players = query(`SELECT DISTINCT Player FROM Players WHERE Login='Y' ORDER BY Player`)
+      .filter(r => includeLoginStatPlayer(r.Player));
     playerSel.innerHTML = '<option value="">All players</option>' +
       players.map(r => `<option value="${r.Player}">${r.Player}</option>`).join('');
+    if ([...playerSel.options].some(o => o.value === previousPlayer)) playerSel.value = previousPlayer;
   }
   const selectedPlayer = playerSel ? playerSel.value : '';
 
   const dateSel = document.getElementById('loginActivityDate');
-  if (dateSel && dateSel.options.length <= 1) {
-    const dates = query(`SELECT DISTINCT date(log_time) as d FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed','needSub') AND log_time IS NOT NULL AND log_time != '' ORDER BY d DESC`);
+  const previousDate = dateSel ? dateSel.value : '';
+  if (dateSel) {
+    const dates = query(`SELECT DISTINCT date(log_time) as d FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed','needSub','password_set','password_change') AND log_time IS NOT NULL AND log_time != '' ORDER BY d DESC`);
     dateSel.innerHTML = '<option value="">All dates</option>' +
       dates.filter(r => r.d).map(r => `<option value="${r.d}">${r.d}</option>`).join('');
+    if ([...dateSel.options].some(o => o.value === previousDate)) dateSel.value = previousDate;
   }
   const selectedDate = dateSel ? dateSel.value : '';
 
@@ -6500,14 +7145,11 @@ function loadLoginActivity() {
       devFilter = `AND NOT EXISTS (SELECT 1 FROM Players WHERE Officer='Developer' AND text LIKE Player||'%')`;
     }
   }
-  const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed','needSub') ${playerFilter} ${dateFilter} ${devFilter} ORDER BY log_time DESC LIMIT ${limit}`);
+  const rows = query(`SELECT log_time, method, text, details FROM LogTable WHERE method IN ('login','logout','session_timeout','login_failed','needSub','password_set','password_change') ${playerFilter} ${dateFilter} ${devFilter} ORDER BY log_time DESC LIMIT ${limit}`)
+    .filter(r => includeLoginStatPlayer(getLoginActivityPlayer(r)));
   const tbody = document.getElementById('loginActivityBody');
   tbody.innerHTML = rows.map((r,i) => {
-    const isLogin = r.method === 'login';
-    const playerMatch = isLogin ? r.text?.match(/^(.+) logged in$/)
-      : r.method === 'login_failed' ? r.text?.match(/^(.+) failed login/)
-      : r.text?.match(/^(.+) (?:logged out|session expired)/);
-    const player = playerMatch ? playerMatch[1] : r.text;
+    const player = getLoginActivityPlayer(r);
     const roleMatch = r.details?.match(/role=(\w+)/);
     const versionMatch = r.details?.match(/version=([\w.]+)/);
     const ipMatch = r.details?.match(/ip=([\d.a-fA-F:]+)/);
@@ -6521,9 +7163,11 @@ function loadLoginActivity() {
       : r.method === 'session_timeout' ? '<span style="color:#e65100">⏱ Timeout</span>'
       : r.method === 'login_failed' ? `<span style="color:#c62828">✗ Failed${attemptMatch?` (${attemptMatch[1]})`:''}</span>`
       : r.method === 'needSub' ? `<span style="color:#6a1b9a">🔄 Sub Request${forMatch?` for ${forMatch[1]}`:''}${sentMatch?` → ${sentMatch[1]} sent`:''}</span>`
+      : r.method === 'password_set' ? '<span style="color:#1565c0">🔑 Password Set</span>'
+      : r.method === 'password_change' ? '<span style="color:#1565c0">🔑 Password Changed</span>'
       : '<span style="color:#888">← Logout</span>';
     return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
-      <td style="padding:6px 12px;font-weight:600;cursor:pointer;color:var(--green)" onclick="document.getElementById('loginActivityPlayer').value='${player.replace(/'/g,"\\'")}';loadLoginActivity()">${player}</td>
+      <td style="padding:6px 12px;font-weight:600;cursor:pointer;color:var(--green)" onclick="document.getElementById('loginActivityPlayer').value='${player.replace(/'/g,"\\'")}';loadLoginActivity({skipServerRefresh:true})">${escapeHtml(player || '')}${subPlayerNames.has(player) ? subBadge : ''}</td>
       <td style="padding:6px 12px;font-size:12px">${eventLabel}</td>
       <td style="padding:6px 12px;font-size:12px;color:#666">${roleMatch ? roleMatch[1] : ''}</td>
       <td style="padding:6px 12px;font-size:12px;font-family:'DM Mono',monospace;color:#888">${versionMatch ? versionMatch[1] : '—'}</td>
@@ -6531,7 +7175,31 @@ function loadLoginActivity() {
       <td style="padding:6px 12px;font-size:11px;color:#666">${deviceLabel}</td>
       <td style="padding:6px 12px;font-size:12px">${localTime}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="6" style="padding:12px;color:#999;text-align:center">No login activity recorded</td></tr>';
+  }).join('') || '<tr><td colspan="7" style="padding:12px;color:#999;text-align:center">No login activity recorded</td></tr>';
+}
+
+async function refreshLoginActivityFromServer(button) {
+  if (!db) return;
+  const btn = button || document.getElementById('loginActivityRefreshBtn');
+  const status = document.getElementById('loginActivityRefreshStatus');
+  const originalText = btn?.textContent || 'Refresh';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
+  }
+  if (status) status.textContent = '';
+  const refreshed = await refreshLiveDbSnapshotForReadOnlyView();
+  await loadLoginActivity({skipServerRefresh:true});
+  if (status) {
+    status.textContent = refreshed
+      ? `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      : 'Refresh failed';
+    status.style.color = refreshed ? '#777' : 'var(--red)';
+  }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 // ── Known legitimate app routes (anything else is "suspicious") ─────────────
@@ -6556,8 +7224,9 @@ function resetLogDropdowns() {
   });
 }
 
-function loadServerLog() {
+async function loadServerLog() {
   if (!db) return;
+  await refreshLiveDbSnapshotForReadOnlyView();
 
   const dateVal = document.getElementById('logDateFilter')?.value || '';
   const levelVal = document.getElementById('logLevelFilter')?.value || '';
@@ -6565,7 +7234,8 @@ function loadServerLog() {
   const searchVal = (document.getElementById('logSearch')?.value || '').trim().toLowerCase();
 
   const dateSel = document.getElementById('logDateFilter');
-  if (dateSel && dateSel.options.length <= 1) {
+  if (dateSel) {
+    dateSel.innerHTML = '<option value="">All dates</option>';
     try {
       const dates = db.exec("SELECT DISTINCT date(log_time) as d FROM LogTable WHERE d IS NOT NULL ORDER BY d DESC");
       if (dates.length && dates[0].values) {
@@ -6581,7 +7251,8 @@ function loadServerLog() {
   }
 
   const levelSel = document.getElementById('logLevelFilter');
-  if (levelSel && levelSel.options.length <= 1) {
+  if (levelSel) {
+    levelSel.innerHTML = '<option value="">All levels</option>';
     try {
       const levels = db.exec("SELECT DISTINCT level FROM LogTable WHERE level IS NOT NULL ORDER BY level");
       if (levels.length && levels[0].values) {
@@ -6597,7 +7268,8 @@ function loadServerLog() {
   }
 
   const sourceSel = document.getElementById('logSourceFilter');
-  if (sourceSel && sourceSel.options.length <= 1) {
+  if (sourceSel) {
+    sourceSel.innerHTML = '<option value="">All sources</option>';
     try {
       const sources = db.exec("SELECT DISTINCT source FROM LogTable WHERE source IS NOT NULL ORDER BY source");
       if (sources.length && sources[0].values) {
@@ -6888,6 +7560,10 @@ async function deleteSelectedBackups() {
 
 
 function showGallusSubmit() {
+  if (!(currentUser?.role === 'officer' || currentUser?.role === 'developer')) {
+    alert('Only officers can submit/import rounds.');
+    return;
+  }
   document.getElementById('gallusSubmitModal').style.display = 'flex';
   document.getElementById('gallusSubmitUrl').value = '';
   document.getElementById('gallusSubmitError').style.display = 'none';
@@ -6895,6 +7571,7 @@ function showGallusSubmit() {
 }
 
 function doGallusSubmit() {
+  if (!(currentUser?.role === 'officer' || currentUser?.role === 'developer')) return;
   let input = document.getElementById('gallusSubmitUrl').value.trim();
   const errEl  = document.getElementById('gallusSubmitError');
   const okEl   = document.getElementById('gallusSubmitSuccess');
@@ -7174,7 +7851,7 @@ async function doGallusConfirm() {
   reRenderEntry();
 
   // Save + auto-pay for each imported player whose score is now complete
-  const nine = document.getElementById('entryPostSeason')?.checked
+  const nine = isPostSeasonEntryMode()
     ? courseData.all18
     : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front);
   for (const key of importedKeys) {
@@ -7392,6 +8069,38 @@ function tryTrustedAutoLogin() {
   return true;
 }
 
+async function refreshDbBeforeLogin(errEl) {
+  if (!location.href.startsWith('http')) return true;
+  if (!SQL) {
+    if (errEl) {
+      errEl.textContent = 'League database is still loading. Try again in a moment.';
+      errEl.style.display = 'block';
+    }
+    return false;
+  }
+
+  if (errEl) {
+    errEl.textContent = 'Refreshing latest league data...';
+    errEl.style.display = 'block';
+  }
+
+  await loadSaveToken();
+  const refreshed = await refreshLiveDbSnapshotForReadOnlyView();
+  if (!refreshed) {
+    if (errEl) {
+      errEl.textContent = 'Could not refresh the latest league data. Please reload and try again.';
+      errEl.style.display = 'block';
+    }
+    return false;
+  }
+
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
+  return true;
+}
+
 async function doLogin() {
   const name = document.getElementById('loginName').value;
   const password = document.getElementById('loginPassword').value;
@@ -7407,6 +8116,7 @@ async function doLogin() {
 
   if (!name) { errEl.textContent = 'Please select your name.'; errEl.style.display = 'block'; return; }
   if (!password) { errEl.textContent = 'Please enter your password.'; errEl.style.display = 'block'; return; }
+  if (!(await refreshDbBeforeLogin(errEl))) return;
 
   // Try with Password column, fall back if it doesn't exist
   let player;
@@ -7487,11 +8197,15 @@ async function doSetPassword() {
   if (p1 !== p2) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = 'block'; return; }
 
   const hash = await hashPassword(p1);
-  serverRun(`UPDATE Players SET Password=? WHERE Player=?`, [hash, name]);
+  await serverRun(`UPDATE Players SET Password=? WHERE Player=?`, [hash, name]);
+  const player = query(`SELECT Player, Officer, Password FROM Players WHERE Player=?`, [name])[0];
+  const officerKey = String(player?.Officer || '').trim().toLowerCase();
+  const role = officerKey === 'developer' ? 'developer' :
+               (officerKey === 'president' || officerKey === 'secretary') ? 'officer' : 'player';
+  await auditUserAction('password_set', `${name} set initial password`, 'source=first-login', 'INFO', name, role);
   saveDBToServer();
 
-  const player = query(`SELECT Player, Officer, Password FROM Players WHERE Player=?`, [name])[0];
-  loginSuccess(player);
+  await loginSuccess(player);
 }
 
 function detectDevice() {
@@ -7801,9 +8515,11 @@ function applyRoleAccess() {
   // Show/hide entry save/clear buttons based on role
   const entrySaveBtn  = document.getElementById('entrySave');
   const entryClearBtn = document.getElementById('entryClear');
+  const gallusSubmitBtn = document.getElementById('gallusSubmitBtn');
   const isOfficer = role === 'developer' || role === 'officer';
   if (entrySaveBtn)  entrySaveBtn.style.display  = isOfficer ? '' : 'none';
   if (entryClearBtn) entryClearBtn.style.display = isOfficer ? '' : 'none';
+  if (gallusSubmitBtn) gallusSubmitBtn.style.display = isOfficer ? '' : 'none';
   refreshTestModeUi();
   updateEntryClearButton();
   const psCheckbox = document.getElementById('entryPostSeason');
@@ -7815,8 +8531,6 @@ function applyRoleAccess() {
     entry9.disabled = !isOfficer;
     entry9.title = '';
   }
-  const gallusSubmitBtn = document.getElementById('gallusSubmitBtn');
-  if (gallusSubmitBtn) gallusSubmitBtn.style.display = '';
 }
 
 function showChangePw() {
@@ -7848,7 +8562,8 @@ async function doChangePw() {
   }
 
   const newHash = await hashPassword(new1);
-  serverRun(`UPDATE Players SET Password=? WHERE Player=?`, [newHash, currentUser.name]);
+  await serverRun(`UPDATE Players SET Password=? WHERE Player=?`, [newHash, currentUser.name]);
+  await auditUserAction('password_change', `${currentUser.name} changed password`, 'source=self-service');
   saveDBToServer();
   document.getElementById('changePwModal').style.display = 'none';
   alert('Password changed successfully.');
@@ -7926,7 +8641,7 @@ function loadScheduleBuilder() {
 
   const dates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= '${iSeason}0101' AND Date < '${iSeason+1}0101' ORDER BY Date`).map(r=>r.sDate);
   const teams = query(`SELECT Team, Player, Grade FROM Teams WHERE Year=${season} AND League="Hugh's" ORDER BY Team, Grade`);
-  const lp = query(`SELECT EndDate, PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
+  const lp = query(`SELECT EndDate, PostSeasonDt, Rainouts FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
 
   // Build team map: Team -> {A, B}
   const teamMap = {};
@@ -8016,10 +8731,17 @@ function loadScheduleBuilder() {
     <span><span style="display:inline-block;width:12px;height:12px;background:#2e7d32;border:1px solid #ccc;margin-right:4px"></span>Played</span>
     <span><span style="display:inline-block;width:12px;height:12px;background:#8b0000;border:1px solid #ccc;margin-right:4px"></span>Not played</span>
     <span><span style="display:inline-block;width:12px;height:12px;background:#1a3a1a;border:1px solid #ccc;margin-right:4px"></span>Upcoming</span>
-    <span style="margin-left:16px;color:var(--gray)">End: <strong>${lp?.EndDate||'?'}</strong> &nbsp;|&nbsp; Post Season: <strong>${lp?.PostSeasonDt||'?'}</strong></span>
+    <span style="margin-left:16px;color:var(--gray)">End: <strong>${lp?.EndDate||'?'}</strong> &nbsp;|&nbsp; Post Season: <strong>${lp?.PostSeasonDt||'?'}</strong> &nbsp;|&nbsp; Rainouts: <strong>${lp?.Rainouts || 0}</strong></span>
   </div>`;
 
   document.getElementById('scheduleBuilder').innerHTML = html;
+}
+
+function incrementRainouts(season) {
+  const lp = query(`SELECT Rainouts FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0] || {};
+  const rainouts = parseInt(lp.Rainouts || 0, 10) + 1;
+  serverRun(`UPDATE LeagueParms SET Rainouts=? WHERE Name="Hugh's" AND Season=${season}`, [String(rainouts)]);
+  logIt('Rainouts updated', `season=${season} rainouts=${rainouts}`);
 }
 
 function rainOutDate(date, season) {
@@ -8033,10 +8755,37 @@ function rainOutDate(date, season) {
   }
 }
 
+function refreshScoresAfterRainout(removedDate) {
+  if (!db) return;
+  const entrySel = document.getElementById('entryDate');
+  const removed = String(removedDate || '');
+  populateEntryDates();
+
+  if (entrySel && entrySel.value === removed) {
+    const latestRegular = getLatestRegularScoreDate();
+    if (latestRegular && [...entrySel.options].some(o => o.value === latestRegular)) {
+      entrySel.value = latestRegular;
+    } else if (entrySel.options.length) {
+      entrySel.selectedIndex = 0;
+    }
+  }
+
+  entryState = {};
+  entryStateDate = null;
+  entryStateFb = null;
+  entryDirty = false;
+  selectedEntrySlotKey = null;
+  entryManual9 = false;
+  if (courseData) buildEntryGrid();
+  loadScores();
+}
+
 function skipWeek(date, season) {
   saveScheduleSnapshot(season);
   serverRun(`DELETE FROM Schedule WHERE Date='${date}' AND League="Hugh's"`);
+  incrementRainouts(season);
   loadScheduleBuilder();
+  refreshScoresAfterRainout(date);
   alert(`${fmtDate(date)} removed from schedule. Click Undo to revert.`);
 }
 
@@ -8062,6 +8811,7 @@ function extendSchedule(date, season) {
   }
 
   serverRun(`DELETE FROM Schedule WHERE Date='${String(date)}' AND League="Hugh's"`);
+  incrementRainouts(season);
   const afterDel = query(`SELECT Date as sDate FROM Schedule WHERE Date='${String(date)}' AND League="Hugh's"`);
   logIt(`after DELETE`, `date=${date} stillExists=${afterDel.length > 0}`);
 
@@ -8101,6 +8851,7 @@ function extendSchedule(date, season) {
 
   logIt('extendSchedule complete', `date=${date} removed`);
   loadScheduleBuilder();
+  refreshScoresAfterRainout(date);
   saveDBToServer();
 }
 
@@ -8315,7 +9066,8 @@ function loadAdminKitty() {
 
 function loadAdminPlayers() {
   loadAdminKitty();
-  const search = document.getElementById('playerSearch').value.toLowerCase();
+  const search = (document.getElementById('playerSearch').value || '').trim().toLowerCase();
+  const searchDigits = search.replace(/\D/g, '');
   const rows = query(`SELECT * FROM Players ORDER BY LastName, FirstName`);
   const season = query("SELECT MAX(Season) as s FROM LeagueParms WHERE Name=\"Hugh's\""  )[0]?.s;
   const teamMap = {};
@@ -8332,7 +9084,20 @@ function loadAdminPlayers() {
 
   const tbody = document.getElementById('playersBody');
   tbody.innerHTML = '';
-  rows.filter(r => !search || r.Player?.toLowerCase().includes(search)).forEach(r => {
+  rows.filter(r => {
+    if (!search) return true;
+    const phoneDigits = String(r.Phone || '').replace(/\D/g, '');
+    const textHaystack = [
+      r.Player,
+      r.FirstName,
+      r.LastName,
+      r.Email,
+      r.Phone,
+      r.CellCarrier
+    ].map(v => String(v || '').toLowerCase()).join(' ');
+    return textHaystack.includes(search) ||
+      (searchDigits.length >= 3 && phoneDigits.includes(searchDigits));
+  }).forEach(r => {
     const tr = document.createElement('tr');
     tr.style.borderBottom = '1px solid #f0ebe0';
     const lastLogin = lastLoginMap[r.Player];
@@ -8816,16 +9581,12 @@ function loadAdminTeams() {
 }
 
 function showPlayerScores(player) {
-  const rows = query(`SELECT Date, FrontBack, Gross, Net FROM Scores WHERE Player=? AND Gross IS NOT NULL AND Gross != 0 ORDER BY Date DESC`, [player]);
+  const rows = getPlayerScoreHistory(player);
   document.getElementById('playerScoresTitle').textContent = player;
   const tbody = document.getElementById('playerScoresBody');
-  tbody.innerHTML = rows.map((r,i) => `
-    <tr style="border-bottom:1px solid #f0ebe0;background:${i%2?'#faf7f2':'white'}">
-      <td style="padding:7px 12px">${fmtDate(r.Date)}</td>
-      <td style="padding:7px 12px;text-align:center;color:var(--gray);font-size:11px">${r.FrontBack||''}</td>
-      <td style="padding:7px 12px;text-align:center;font-family:'DM Mono',monospace">${r.Gross||''}</td>
-      <td style="padding:7px 12px;text-align:center;font-family:'DM Mono',monospace;font-weight:600;color:var(--green)">${r.Net||''}</td>
-    </tr>`).join('') || '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--gray)">No scores found</td></tr>';
+  tbody.innerHTML = rows.length
+    ? renderPlayerScoreHistoryRows(rows)
+    : '<tr><td colspan="7" style="padding:12px;text-align:center;color:var(--gray)">No scores found</td></tr>';
 
   // Summary
   if (rows.length) {
@@ -8834,6 +9595,8 @@ function showPlayerScores(player) {
     const minNet   = Math.min(...rows.map(r=>r.Net||99));
     document.getElementById('playerScoresSummary').textContent =
       `${rows.length} rounds · Avg Gross: ${avgGross} · Avg Net: ${avgNet} · Best Net: ${minNet}`;
+  } else {
+    document.getElementById('playerScoresSummary').textContent = '';
   }
   document.getElementById('playerScoresModal').style.display = 'flex';
 }
@@ -8993,6 +9756,7 @@ let entryDirty = false;
 let entryLast9Value = null;
 let entryManual9 = false;
 let selectedEntrySlotKey = null;
+let activeEntryPostSeasonContext = null;
 
 function parsePostSeasonDates(postSeasonDt) {
   if (!postSeasonDt) return null;
@@ -9117,6 +9881,69 @@ function getPostSeasonPaymentStatus(player, date) {
   return { ...ctx, eligible, weekOnly, fullRows };
 }
 
+function hasPostSeasonScore(player, date, frontBack) {
+  return query(`SELECT 1
+    FROM Scores
+    WHERE League="Hugh's"
+      AND Player=?
+      AND CAST(Date AS INTEGER)=CAST(? AS INTEGER)
+      AND FrontBack=?
+      AND COALESCE(CAST(Gross AS REAL),0) > 0
+    LIMIT 1`, [player, date, frontBack]).length > 0;
+}
+
+function recalcPostSeasonEoyRefunds(season) {
+  const lp = query(`SELECT PostSeasonDt, "EOY Skins" as EoySkins FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
+  if (!lp?.PostSeasonDt) return { noShows: new Set(), changed: false };
+
+  const psDates = parsePostSeasonDates(lp.PostSeasonDt);
+  if (!psDates) return { noShows: new Set(), changed: false };
+
+  const fullAmt = parseFloat(lp.EoySkins || 20);
+  const weekAmt = fullAmt / 2;
+  const week1Players = getEoySkinPlayersForWeek(season, 1);
+  const week2Players = getEoySkinPlayersForWeek(season, 2);
+  const eoyPlayers = new Set([...week1Players, ...week2Players]);
+  const noShows = new Set();
+
+  eoyPlayers.forEach(player => {
+    const paid = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as amt
+      FROM Payments
+      WHERE Player=?
+        AND League="Hugh's"
+        AND "Desc"='EOY Skins'
+        AND Detail='Payment'
+        AND Date >= ${season}0101
+        AND Date < ${season+1}0101`, [player])[0]?.amt || 0);
+
+    let refund = 0;
+    let missed = 0;
+    const playedWeek1 = !week1Players.has(player) || hasPostSeasonScore(player, psDates.week1, 'Front');
+    const playedWeek2 = !week2Players.has(player) || hasPostSeasonScore(player, psDates.week2, 'Back');
+
+    if (week1Players.has(player) && !playedWeek1) { refund += weekAmt; missed++; }
+    if (week2Players.has(player) && !playedWeek2) { refund += weekAmt; missed++; }
+    refund = Math.min(refund, paid);
+
+    serverRun(`DELETE FROM Payments
+      WHERE League="Hugh's"
+        AND Player=?
+        AND "Desc"='EOY Skins'
+        AND Detail='Refund'
+        AND Date IN (${psDates.week1},${psDates.week2})`, [player]);
+
+    if (refund > 0) {
+      const comment = missed === 2 ? 'Missed both post-season weeks' : (playedWeek1 ? 'Missed post-season week 2' : 'Missed post-season week 1');
+      serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,Comment)
+        VALUES ("Hugh's",?,?,'EOY Skins','Refund',?,?)`, [player, psDates.week1, -refund, comment]);
+    }
+
+    if (!playedWeek1 && !playedWeek2) noShows.add(player);
+  });
+
+  return { noShows, changed: true };
+}
+
 function calcEoySkins(season, silent=false) {
   const lp = query(`SELECT PostSeasonDt, SkinsPS FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
   if (!lp?.PostSeasonDt) { alert('No post season date found for ' + season); return; }
@@ -9131,6 +9958,10 @@ function calcEoySkins(season, silent=false) {
   const eoyWeek2Players = getEoySkinPlayersForWeek(season, 2);
   const eoyPlayers = new Set([...eoyWeek1Players, ...eoyWeek2Players]);
   if (!eoyPlayers.size) { alert('No eligible EOY Skins payers found for ' + season); return; }
+
+  // Refunds depend on the current score rows, so update them before any skin-winner early return.
+  const refundInfo = recalcPostSeasonEoyRefunds(season);
+  window.eoyNoShows = refundInfo.noShows;
 
   // Check if results already exist — just load them
   const psD1check = psDate1;
@@ -9186,29 +10017,7 @@ function calcEoySkins(season, silent=false) {
     }).filter(Boolean);
   }
 
-  // Find EOY payers who didn't play either week — issue refunds
-  const allScorePlayers = new Set(
-    query(`SELECT DISTINCT Player FROM Scores WHERE Date IN (${psDate1},${psDate2}) AND League="Hugh's"`).map(r=>r.Player)
-  );
-  const noShows = [...eoyPlayers].filter(p => !allScorePlayers.has(p));
-
-  // Create refund records for no-shows
-  noShows.forEach(p => {
-    const paid = query(`SELECT SUM(Earned) as amt FROM Payments WHERE Player=? AND League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [p])[0]?.amt || 0;
-    if (paid > 0) {
-      // Check if refund already exists
-      const exists = query(`SELECT 1 FROM Payments WHERE Player=? AND League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund' AND Date IN (${psDate1},${psDate2})`, [p]).length;
-      if (!exists) {
-        serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned) VALUES ("Hugh's",?,?,'EOY Skins','Refund',?)`,
-          [p, psDate1, -paid]);
-      }
-    }
-    eoyPlayers.delete(p); // Remove from pot calculation
-  });
-
-  // Store no-shows for grid highlighting
-  window.eoyNoShows = new Set(noShows);
-  const w1Fb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${psDate1} AND League="Hugh's" LIMIT 1`)[0]?.FrontBack || 'Back';
+  const w1Fb = 'Front';
   const w1Hcps = w1Fb === 'Back' ? backHcps : frontHcps;
   const w1HoleNums = w1Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w1Scores = {};
@@ -9222,7 +10031,7 @@ function calcEoySkins(season, silent=false) {
   const w1Pot = Object.keys(w1Scores).length * skinPerPlayer;
 
   // Week 2 scores (second date)
-  const w2Fb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${psDate2} AND League="Hugh's" LIMIT 1`)[0]?.FrontBack || 'Front';
+  const w2Fb = 'Back';
   const w2Hcps = w2Fb === 'Back' ? backHcps : frontHcps;
   const w2HoleNums = w2Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w2Scores = {};
@@ -9277,13 +10086,13 @@ function calcEoySkins(season, silent=false) {
   query(`SELECT Player, Detail FROM Payments WHERE ${skinWinDateFilter} AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`)
     .forEach(r => { window.skinWinnerCells[`${r.Player}-${r.Detail.replace('#','')}`] = true; });
 
-  applyCellClasses(document.getElementById('entryPostSeason')?.checked ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front));
+  applyCellClasses(isPostSeasonEntryMode() ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front));
 
   if (!silent) alert(`✓ EOY Skins calculated!\n${totalSkins} skins @ $${skinValue.toFixed(2)} each`);
 }
 
 function populateEntryDates() {
-  const isPS = document.getElementById('entryPostSeason')?.checked;
+  const isPS = isPostSeasonEntryMode();
   const sel  = document.getElementById('entryDate');
   const prev = sel.value;
 
@@ -9395,23 +10204,36 @@ function loadCourse(name) {
   };
 }
 
+function isEntryHeaderCtpHole(nine, index) {
+  const holeNum = nine?.nums?.[index];
+  return Number(nine?.pars?.[index]) === 3 || ctpHoles.includes(holeNum);
+}
+
+function displayNineHoleStrokeIndex(hcp) {
+  const n = parseInt(hcp);
+  return Number.isFinite(n) && n > 0 ? Math.ceil(n / 2) : '—';
+}
+
 function reRenderEntry() {
   if (!db || !courseData || !Object.keys(entryState).length) { buildEntryGrid(); return; }
   // Only re-render from state if the date and 9 match what state was built for
   const currentDate = document.getElementById('entryDate').value;
   const currentFb   = document.getElementById('entry9').value;
+  const isPostSeason = isPostSeasonEntryMode();
+  if (isPostSeason) { buildEntryGrid(); return; }
   if (currentDate !== entryStateDate || currentFb !== entryStateFb) { buildEntryGrid(); return; }
 
-  const isPostSeason = document.getElementById('entryPostSeason')?.checked || false;
   const nine = isPostSeason ? courseData.all18 : (currentFb === 'Back' ? courseData.back : courseData.front);
   const slots = Object.values(entryState).map(st => ({
     team: st.team, grade: st.grade, group: st.group,
     regular: st.regular, sub: st.sub, active: st.active, inSkins: st.inSkins
   }));
   renderEntryGrid(slots, nine, false, isPostSeason);
+  loadScores();
+  if (isPostSeason) setTimeout(loadScores, 0);
   entryDirty = false;
   entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
-  applyCellClasses(nine);
+  try { applyCellClasses(nine); } catch (e) { console.warn('applyCellClasses failed after entry render:', e); }
   const par9 = nine.pars.reduce((a,b)=>a+b,0);
   Object.values(entryState).forEach(st => {
     const key   = st.slotKey;
@@ -9426,7 +10248,6 @@ function reRenderEntry() {
     const inputs = document.querySelectorAll(`input[data-slotkey="${key}"]`);
     st.holes.forEach((v, i) => { if (inputs[i] && v) inputs[i].value = v; });
   });
-  loadScores();
 }
 
 function updateEntryClearButton() {
@@ -9454,9 +10275,9 @@ function buildEntryGrid() {
   if (!db || !courseData) return;
   selectedEntrySlotKey = null;
   updateEntryClearButton();
-  const date   = document.getElementById('entryDate').value;
+  let date   = document.getElementById('entryDate').value;
   const league = "Hugh's";
-  const season = parseInt(date.toString().substring(0,4));
+  let season = parseInt(date.toString().substring(0,4));
   // Check if this is a post season date (check all seasons)
   const psRows = query(`SELECT PostSeasonDt, SkinsPS, ClosestPS FROM LeagueParms WHERE Name="Hugh's" AND PostSeasonDt IS NOT NULL`);
   let isPostSeason = false, lp = null;
@@ -9467,7 +10288,27 @@ function buildEntryGrid() {
     const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
     if (date === d1 || date === d2) { isPostSeason = true; lp = r; break; }
   }
+  const psTestMode = !!document.getElementById('entryPostSeason')?.checked;
+  if (!isPostSeason && psTestMode) {
+    const fallbackSeason = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's" AND PostSeasonDt IS NOT NULL`)[0]?.s;
+    season = season || fallbackSeason;
+    lp = query(`SELECT PostSeasonDt, SkinsPS, ClosestPS, Start9, StartDate FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0] || lp;
+    const psDates = parsePostSeasonDates(lp?.PostSeasonDt);
+    if (psDates) {
+      isPostSeason = true;
+      date = String(psDates.week1);
+      const entrySel = document.getElementById('entryDate');
+      if (entrySel) {
+        if (![...entrySel.options].some(o => o.value === date)) populateEntryDates();
+        entrySel.value = date;
+      }
+    }
+  }
   if (!lp) lp = query(`SELECT PostSeasonDt, SkinsPS, ClosestPS, Start9, StartDate FROM LeagueParms WHERE Name="Hugh's" AND Season=${season}`)[0];
+  const activePsDates = isPostSeason && lp?.PostSeasonDt ? parsePostSeasonDates(lp.PostSeasonDt) : null;
+  activeEntryPostSeasonContext = activePsDates
+    ? { season, week1: activePsDates.week1, week2: activePsDates.week2 }
+    : null;
 
   // Auto-detect Front/Back for regular season dates unless the user just chose a side.
   if (!isPostSeason && !entryManual9) {
@@ -9702,10 +10543,11 @@ function buildEntryGrid() {
   }
 
   renderEntryGrid(slots, nine, blockFutureScores, isPostSeason);
+  loadScores();
+  if (isPostSeason) setTimeout(loadScores, 0);
   entryDirty = false;
   entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
-  applyCellClasses(nine);
-  loadScores();
+  try { applyCellClasses(nine); } catch (e) { console.warn('applyCellClasses failed after entry build:', e); }
   if (isPostSeason) calcEoySkins(season, true); // true = silent (no confirm/alert)
   if (blockFutureScores) {
     // Always disable score inputs for future dates
@@ -9794,39 +10636,23 @@ async function toggleEntryPaid(player, date, markPaid) {
 
 
 function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
+  refreshEntryLegend();
   const head = document.getElementById('entryHead');
   const body = document.getElementById('entryBody');
+  const grid = document.getElementById('entryGrid');
   const gridDate = document.getElementById('entryDate').value;
   const gridSeason = parseInt((gridDate || '').toString().substring(0,4));
+  if (grid) {
+    grid.dataset.postSeason = isPostSeason ? '1' : '0';
+    if (isPostSeason && gridSeason) grid.dataset.postSeasonSeason = String(gridSeason);
+    else delete grid.dataset.postSeasonSeason;
+  }
   const psContext = isPostSeason ? getPostSeasonContextForDate(gridDate) : null;
   const paidPlayers = isPostSeason && psContext
     ? getEoySkinPlayersForWeek(gridSeason, psContext.week)
     : new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League="Hugh's" AND CAST(Date AS INTEGER)=CAST(${gridDate||0} AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment'`).map(r=>r.Player));
 
-  // For post season, sort: 18-hole first (by net), then 9-hole, then no scores
-  if (isPostSeason) {
-    slots = [...slots].sort((a, b) => {
-      const stA = entryState[`${a.team}-${a.grade}`];
-      const stB = entryState[`${b.team}-${b.grade}`];
-      const aHoles = stA?.holes?.filter(h=>h!=='').length || 0;
-      const bHoles = stB?.holes?.filter(h=>h!=='').length || 0;
-      const aFull = aHoles >= 18, bFull = bHoles >= 18;
-      const aAny  = aHoles > 0,  bAny  = bHoles > 0;
-      if (aFull && !bFull) return -1;
-      if (!aFull && bFull) return 1;
-      if (aFull && bFull) {
-        const aNet = stA.holes.reduce((s,v)=>s+(parseInt(v)||0),0) - stA.phdcp;
-        const bNet = stB.holes.reduce((s,v)=>s+(parseInt(v)||0),0) - stB.phdcp;
-        return aNet - bNet;
-      }
-      if (aAny && !bAny) return -1;
-      if (!aAny && bAny) return 1;
-      return 0;
-    });
-  }
-
   // Fixed column widths via colgroup
-  const grid = document.getElementById('entryGrid');
   const oldCg = grid.querySelector('colgroup');
   if (oldCg) oldCg.remove();
   const cg = document.createElement('colgroup');
@@ -9845,23 +10671,23 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
   grid.insertBefore(cg, grid.firstChild);
 
   // Header: hole numbers
-  let h1 = '<tr><th class="eg-th" style="position:sticky;left:0;z-index:3;min-width:160px;text-align:left;padding-left:8px">Player</th>';
+  let h1 = '<tr><th class="eg-th" style="position:sticky;left:0;z-index:3;min-width:160px;text-align:left;padding-left:8px">Player <span style="color:#ffb3c1;font-size:10px;font-weight:700">(X No Show)</span></th>';
   if (isPostSeason) {
     // Front 9 holes
-    nine.nums.slice(0,9).forEach(n => {
-      const isCTP = ctpHoles.includes(n);
+    nine.nums.slice(0,9).forEach((n, i) => {
+      const isCTP = isEntryHeaderCtpHole(nine, i);
       h1 += `<th class="eg-th${isCTP?' ctp-hole':''}" style="font-size:10px">${n}</th>`;
     });
     h1 += '<th class="eg-th-label">Out</th>';
     // Back 9 holes
-    nine.nums.slice(9,18).forEach(n => {
-      const isCTP = ctpHoles.includes(n);
+    nine.nums.slice(9,18).forEach((n, i) => {
+      const isCTP = isEntryHeaderCtpHole(nine, i + 9);
       h1 += `<th class="eg-th${isCTP?' ctp-hole':''}" style="font-size:10px">${n}</th>`;
     });
     h1 += '<th class="eg-th-label">In</th><th class="eg-th-label">Net</th></tr>';
   } else {
-    nine.nums.forEach(n => {
-      const isCTP = ctpHoles.includes(n);
+    nine.nums.forEach((n, i) => {
+      const isCTP = isEntryHeaderCtpHole(nine, i);
       h1 += `<th class="eg-th${isCTP?' ctp-hole':''}">${n}</th>`;
     });
     h1 += '<th class="eg-th-label">Gross</th><th class="eg-th-label">Net</th><th class="eg-th-label">PHdcp</th><th class="eg-th-label">Hdcp</th></tr>';
@@ -9871,51 +10697,60 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
   let h2 = '<tr><td class="eg-par" style="position:sticky;left:0;z-index:3;background:#1a3a1a;text-align:left;padding-left:8px;font-size:10px;color:#aaa">Par</td>';
   if (isPostSeason) {
     nine.pars.slice(0,9).forEach((p,i) => {
-      const isCTP = ctpHoles.includes(nine.nums[i]);
+      const isCTP = isEntryHeaderCtpHole(nine, i);
       h2 += `<td class="eg-par${isCTP?' ctp-hole':''}">${p}</td>`;
     });
     h2 += '<td class="eg-par">36</td>';
     nine.pars.slice(9,18).forEach((p,i) => {
-      const isCTP = ctpHoles.includes(nine.nums[i+9]);
+      const isCTP = isEntryHeaderCtpHole(nine, i + 9);
       h2 += `<td class="eg-par${isCTP?' ctp-hole':''}">${p}</td>`;
     });
     h2 += '<td class="eg-par">36</td><td class="eg-par">—</td></tr>';
   } else {
     nine.pars.forEach((p,i) => {
-      const isCTP = ctpHoles.includes(nine.nums[i]);
+      const isCTP = isEntryHeaderCtpHole(nine, i);
       h2 += `<td class="eg-par${isCTP?' ctp-hole':''}">${p}</td>`;
     });
     h2 += '<td class="eg-par">—</td><td class="eg-par">—</td><td class="eg-par">—</td><td class="eg-par">—</td></tr>';
   }
-  head.innerHTML = h1 + h2;
+
+  // Header: league 9-hole stroke index, derived from the 18-hole course SI.
+  let h3 = '<tr><td class="eg-hdcp" style="position:sticky;left:0;z-index:3;background:#153116;text-align:left;padding-left:8px;font-size:10px">Stroke Index</td>';
+  if (isPostSeason) {
+    nine.hcps.slice(0,9).forEach((h,i) => {
+      h3 += `<td class="eg-hdcp">${displayNineHoleStrokeIndex(h)}</td>`;
+    });
+    h3 += '<td class="eg-hdcp">—</td>';
+    nine.hcps.slice(9,18).forEach((h,i) => {
+      h3 += `<td class="eg-hdcp">${displayNineHoleStrokeIndex(h)}</td>`;
+    });
+    h3 += '<td class="eg-hdcp">—</td><td class="eg-hdcp">—</td></tr>';
+  } else {
+    nine.hcps.forEach((h,i) => {
+      h3 += `<td class="eg-hdcp">${displayNineHoleStrokeIndex(h)}</td>`;
+    });
+    h3 += '<td class="eg-hdcp">—</td><td class="eg-hdcp">—</td><td class="eg-hdcp">—</td><td class="eg-hdcp">—</td></tr>';
+  }
+  head.innerHTML = h1 + h2 + h3;
 
   body.innerHTML = '';
   const par9 = nine.pars.reduce((a,b)=>a+b,0);
   let lastGroup = null;
   let shownSeparator = false;
-  let shownNoShowSep = false;
 
   slots.forEach(slot => {
     const key = `${slot.team}-${slot.grade}`;
     const st  = entryState[key];
     const holesEntered = st?.holes?.filter(h=>h!=='').length || 0;
 
-    // Post season separators
-    if (isPostSeason && !shownSeparator && holesEntered > 0 && holesEntered < 18) {
+    // Regular entry separators only; post-season keeps the full roster scorecard in team order.
+    if (!isPostSeason && !shownSeparator && holesEntered > 0 && holesEntered < 18) {
       shownSeparator = true;
       const sepCols = nine.nums.length + 4;
       const sep = document.createElement('tr');
       sep.innerHTML = `<td colspan="${sepCols}" style="background:#5c4033;color:#ffcc99;font-family:'Bebas Neue',cursive;font-size:13px;letter-spacing:1px;padding:3px 10px">⛳ Skins Only (9 Holes)</td>`;
       body.appendChild(sep);
     }
-    if (isPostSeason && !shownNoShowSep && holesEntered === 0) {
-      shownNoShowSep = true;
-      const sepCols = nine.nums.length + 4;
-      const sep = document.createElement('tr');
-      sep.innerHTML = `<td colspan="${sepCols}" style="background:#555;color:#ffaaaa;font-family:'Bebas Neue',cursive;font-size:13px;letter-spacing:1px;padding:3px 10px">✗ No Show</td>`;
-      body.appendChild(sep);
-    }
-
     // Group separator row (skip for post season - sorted by net not group)
     if (!isPostSeason && slot.group !== lastGroup) {
       lastGroup = slot.group;
@@ -9932,9 +10767,12 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       ? `<button onclick="toggleEntryPaid('${activePlayerName.replace(/'/g,"\\'")}','${gridDate}',false)" style="font-size:9px;padding:1px 6px;border:1px solid #2e7d32;border-radius:3px;background:#e8f5e9;color:#2e7d32;cursor:pointer;${currentUser?.role==='player'?'pointer-events:none':''}" title="Click to unmark paid">✓ Paid</button>`
       : `<button onclick="${payAction}" style="font-size:9px;padding:1px 6px;border:1px solid #ccc;border-radius:3px;background:#fafafa;color:#888;cursor:pointer;${currentUser?.role==='player'?'display:none':''}" title="Click to mark paid">Pay</button>`
     ) : '';
-    const isEoyNoShow = isPostSeason && (window.eoyNoShows || new Set()).has(slot.active || slot.regular);
+    const eoyNoShows = window.eoyNoShows || new Set();
+    const postSeasonPaidNoScore = isPostSeason && holesEntered === 0 && (isPaid || st.inSkins);
+    const isEoyNoShow = isPostSeason && (postSeasonPaidNoScore || eoyNoShows.has(slot.active || slot.regular) || eoyNoShows.has(activePlayerName));
     const isNoShow = !isPostSeason && holesEntered === 0 && !isFuture && !isSub;
     const rowClass = isEoyNoShow ? 'eg-row-eoy-noshow' : isNoShow ? 'eg-row-noshow' : (st.inSkins && isSub) ? 'eg-row-skins eg-row-sub' : st.inSkins ? 'eg-row-skins' : isSub ? 'eg-row-sub' : '';
+    const playerNameStyle = isEoyNoShow ? 'text-decoration:line-through;color:#c62828' : !slot.inSkins ? 'text-decoration:line-through;color:#999' : '';
 
     const tr = document.createElement('tr');
     tr.className = rowClass;
@@ -9953,7 +10791,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       playerTd.innerHTML = `
         <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
           ${teamLabel}
-          <span style="font-weight:600;${!slot.inSkins?'text-decoration:line-through;color:#999':''}">${slot.sub}</span>
+          <span class="eg-player-name" style="font-weight:600;${playerNameStyle}">${slot.sub}</span>
           <span style="font-size:10px;background:#b3e5fc;color:#01579b;padding:1px 5px;border-radius:3px">SUB</span>
           <span style="font-size:10px;color:#888">for ${slot.regular}</span>
           ${paidBadge}
@@ -9964,7 +10802,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       playerTd.innerHTML = `
         <div style="display:flex;align-items:center;gap:4px">
           ${teamLabel}
-          <span style="font-weight:600;${!slot.inSkins?'text-decoration:line-through;color:#999':''}">${slot.regular}</span>
+          <span class="eg-player-name" style="font-weight:600;${playerNameStyle}">${slot.regular}</span>
           ${paidBadge}
           <button onclick="openSubPicker('${key}')" style="margin-left:auto;font-size:10px;padding:1px 8px;border:1px solid #90caf9;border-radius:3px;background:#e3f2fd;cursor:pointer;color:#1565c0;${isPostSeason||currentUser?.role==='player'?'display:none':''}">Sub</button>
         </div>`;
@@ -10041,10 +10879,10 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       // Green dot(s) for stroke holes
       if (isStroke > 0) {
         const dotWrap = document.createElement('span');
-        dotWrap.style.cssText = 'position:absolute;top:2px;right:2px;display:flex;gap:2px';
+        dotWrap.className = 'eg-stroke-dots';
         for (let d = 0; d < isStroke; d++) {
           const dot = document.createElement('span');
-          dot.style.cssText = 'width:5px;height:5px;background:#2e7d32;border-radius:50%;display:block';
+          dot.className = 'eg-stroke-dot';
           dotWrap.appendChild(dot);
         }
         td.appendChild(dotWrap);
@@ -10482,7 +11320,9 @@ function computeSkinTies(nine, isPostSeason) {
   const holeMins   = Array(holeCount).fill(null);
   const holeCounts = Array(holeCount).fill(0);
 
-  const players = Object.values(entryState).filter(st => st.inSkins);
+  const players = Object.values(entryState).filter(st =>
+    st && Array.isArray(st.holes) && st.inSkins
+  );
 
   players.forEach(st => {
     st.holes.forEach((v, hi) => {
@@ -10518,6 +11358,43 @@ function computeSkinTies(nine, isPostSeason) {
   }, new Map());
 }
 
+function computeLiveSkinWinners(nine, isPostSeason) {
+  const winners = new Map();
+  const players = Object.values(entryState).filter(st =>
+    st && Array.isArray(st.holes) && st.slotKey && st.inSkins
+  );
+
+  nine.nums.forEach((holeNum, hi) => {
+    const scored = [];
+    players.forEach(st => {
+      const gross = parseInt(st.holes[hi]);
+      if (!Number.isFinite(gross) || gross <= 0) return;
+
+      let strokes = 0;
+      if (isPostSeason) {
+        const isBack = hi >= 9;
+        const halfHcps = nine.hcps.slice(isBack ? 9 : 0, isBack ? 18 : 9);
+        const halfSorted = [...halfHcps].map((s,i)=>({s,i:i+(isBack?9:0)})).sort((a,b)=>a.s-b.s).map(x=>x.i);
+        if (halfSorted.slice(0, Math.min(st.phdcp,9)).includes(hi)) strokes++;
+        if (st.phdcp > 9 && halfSorted.slice(0, st.phdcp-9).includes(hi)) strokes++;
+      } else {
+        const sortedIdx = [...nine.hcps].map((si,i)=>({si,i})).sort((a,b)=>a.si-b.si).map(x=>x.i);
+        if (sortedIdx.slice(0, Math.min(st.phdcp, 9)).includes(hi)) strokes++;
+        if (st.phdcp > 9 && sortedIdx.slice(0, st.phdcp - 9).includes(hi)) strokes++;
+      }
+
+      scored.push({ st, net: gross - strokes });
+    });
+
+    if (!scored.length) return;
+    const minNet = Math.min(...scored.map(x => x.net));
+    const low = scored.filter(x => x.net === minNet);
+    if (low.length === 1) winners.set(`${low[0].st.slotKey}-${hi}`, true);
+  });
+
+  return winners;
+}
+
 function applyCellClasses(nine) {
   // For post season, check both dates for skin payments
   const psRows = db ? query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND PostSeasonDt IS NOT NULL`) : [];
@@ -10537,9 +11414,11 @@ function applyCellClasses(nine) {
       : query(`SELECT 1 FROM Payments WHERE ${skinDateCheck} AND "Desc"='Skin' AND Detail='Payment' LIMIT 1`).length > 0));
 
   const tiedHoles = skinPaymentsExist ? computeSkinTies(nine, isPS) : new Map();
-  const skinWinners = window.skinWinnerCells || {};
+  const skinWinners = isPS ? {} : (window.skinWinnerCells || {});
+  const liveSkinWinners = isPS ? computeLiveSkinWinners(nine, isPS) : new Map();
 
   Object.values(entryState).forEach(st => {
+    if (!st || !Array.isArray(st.holes) || !st.slotKey) return;
     st.holes.forEach((v, hi) => {
       const inp = document.querySelector(`input[data-slotkey="${st.slotKey}"][data-hi="${hi}"]`);
       if (!inp) return;
@@ -10552,7 +11431,7 @@ function applyCellClasses(nine) {
       td.classList.remove('birdie-cell', 'eagle-cell', 'skin-winner-cell', 'skin-tie-cell');
 
       if (skinPaymentsExist) {
-        if (skinWinners[`${st.active}-${holeNum}`] && !isNaN(parseInt(v))) {
+        if ((skinWinners[`${st.active}-${holeNum}`] || liveSkinWinners.has(`${st.slotKey}-${hi}`)) && !isNaN(parseInt(v))) {
           td.classList.add('skin-winner-cell');
         } else if (st.inSkins && tiedHoles.has(hi) && !isNaN(parseInt(v))) {
           let strokes = 0;
@@ -10631,13 +11510,14 @@ function getPostSeasonEntryTotals(st) {
   const frontComplete = frontVals.length === 9;
   const backComplete = backVals.length === 9;
   const totalGross = frontComplete && backComplete ? frontGross + backGross : '';
-  const totalNet = totalGross ? totalGross - (parseInt(st.phdcp) || 0) : '';
+  const hdcp = parseInt(st.phdcp) || 0;
+  const totalNet = totalGross ? (frontGross - hdcp) + (backGross - hdcp) : '';
   return { frontGross, backGross, frontComplete, backComplete, totalGross, totalNet };
 }
 
 function updateCompletedEntryHandicap(key, nine, writeDb = true) {
   const st = entryState[key];
-  if (!st || document.getElementById('entryPostSeason')?.checked) return null;
+  if (!st || isPostSeasonEntryMode()) return null;
 
   const gross = calcGross(st.holes);
   if (!gross) return null;
@@ -10686,7 +11566,7 @@ function onScoreInput(e) {
   const hi  = parseInt(inp.dataset.hi);
   const par = parseInt(inp.dataset.par);
   const val = inp.value.trim();
-  const isPS = document.getElementById('entryPostSeason')?.checked;
+  const isPS = isPostSeasonEntryMode();
   const nine = isPS ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front);
   const par9 = nine.pars.reduce((a,b)=>a+b,0);
 
@@ -10717,9 +11597,9 @@ function onScoreInput(e) {
     if (nEl) { nEl.textContent = net || ''; nEl.className = 'eg-net' + (net && net < par9 ? ' under' : ''); }
   }
 
-  // Recompute styling
-  applyCellClasses(nine);
-  if (isPS) loadScores();
+  if (isPS) schedulePostSeasonScoresRefresh();
+  // Recompute heavier winner/tie styling after typing settles.
+  scheduleScoreClassRefresh(nine);
 
   const psHalfComplete = isPS && (
     st.holes.slice(0, 9).every(v => parseInt(v) > 0) ||
@@ -10831,7 +11711,7 @@ async function savePlayerScoreNow(key, gross, net) {
   const league = "Hugh's";
 
   const h = st.holes;
-  const isPS = document.getElementById('entryPostSeason')?.checked;
+  const isPS = isPostSeasonEntryMode();
 
   if (isPS) {
     const frontDate = entryState._psFrontDate || entryState._psDate1 || date;
@@ -10841,28 +11721,40 @@ async function savePlayerScoreNow(key, gross, net) {
     const frontDone = front9H.every(v => parseInt(v) > 0);
     const backDone  = back9H.every(v => parseInt(v) > 0);
 
-    if (frontDone) {
+    let savedHalf = false;
+    const frontSig = front9H.join('-');
+    const backSig = back9H.join('-');
+
+    if (frontDone && st._lastSavedFrontSig !== frontSig) {
       const front9Gross = front9H.reduce((a,v)=>a+(parseInt(v)||0),0);
       const front9Net = calcNet(front9H, courseData.front.pars, courseData.front.hcps, st.phdcp);
       serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Front' AND League=?`, [playerName, frontDate, league]);
       serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [league, playerName, frontDate, 'Front', front9H[0]||null, front9H[1]||null, front9H[2]||null, front9H[3]||null, front9H[4]||null,
          front9H[5]||null, front9H[6]||null, front9H[7]||null, front9H[8]||null, front9Gross, front9Net]);
+      st._lastSavedFrontSig = frontSig;
+      savedHalf = true;
     }
 
-    if (backDone) {
+    if (backDone && st._lastSavedBackSig !== backSig) {
       const back9Gross = back9H.reduce((a,v)=>a+(parseInt(v)||0),0);
       const back9Net = calcNet(back9H, courseData.back.pars, courseData.back.hcps, st.phdcp);
       serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Back' AND League=?`, [playerName, backDate, league]);
       serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [league, playerName, backDate, 'Back', back9H[0]||null, back9H[1]||null, back9H[2]||null, back9H[3]||null, back9H[4]||null,
          back9H[5]||null, back9H[6]||null, back9H[7]||null, back9H[8]||null, back9Gross, back9Net]);
+      st._lastSavedBackSig = backSig;
+      savedHalf = true;
     }
 
     const season = parseInt(date.toString().substring(0,4));
-    if (frontDone || backDone) calcEoySkins(season, true);
-    await SERVER_RUN_QUEUE;
-    loadScores();
+    if (savedHalf) {
+      calcEoySkins(season, true);
+      await SERVER_RUN_QUEUE;
+      loadScores();
+    } else {
+      schedulePostSeasonScoresRefresh();
+    }
     return;
   }
 
@@ -10962,14 +11854,14 @@ function onScorePaste(e) {
   const text = (e.clipboardData || window.clipboardData).getData('text').trim();
   if (text.length >= 9 && /^\d+$/.test(text)) {
     e.preventDefault();
-    const isPS = document.getElementById('entryPostSeason')?.checked;
+    const isPS = isPostSeasonEntryMode();
     const maxCells = isPS ? 18 : 9;
     distributeScores(key, text.slice(0, maxCells - hi), e.target);
   }
 }
 
 function distributeScores(key, scoreDigits, firstInp) {
-  const isPS = document.getElementById('entryPostSeason')?.checked;
+  const isPS = isPostSeasonEntryMode();
   const nine = isPS ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front);
   const par9 = nine.pars.reduce((a,b)=>a+b,0);
   const digits = scoreDigits.split('');
@@ -11006,8 +11898,8 @@ function distributeScores(key, scoreDigits, firstInp) {
   }
   if (gross && !isPS) updateCompletedEntryHandicap(key, nine, true);
   if (isPS) savePlayerScoreNow(key, gross, net);
-  applyCellClasses(nine);
-  if (isPS) loadScores();
+  scheduleScoreClassRefresh(nine, 80);
+  if (isPS) schedulePostSeasonScoresRefresh(80);
 }
 
 // Save DB with updated scores
@@ -11153,6 +12045,7 @@ document.getElementById('entryClear')?.addEventListener('click', async ()=>{
     if (date === d1 || date === d2) { isPS2 = true; break; }
   }
   const nine2 = fb === 'Back' ? courseData.back : courseData.front;
+  const activeNine = isPS2 ? courseData.all18 : nine2;
 
   // Clear scores from DB for the selected player/date only.
   if (isPS2) {
@@ -11171,6 +12064,8 @@ document.getElementById('entryClear')?.addEventListener('click', async ()=>{
     inp.classList.remove('under-par');
   });
   st.holes = Array(isPS2 ? 18 : 9).fill('');
+  delete st._lastSavedFrontSig;
+  delete st._lastSavedBackSig;
   const row = document.querySelector(`#entryGrid tr[data-slotkey="${CSS.escape(key)}"]`);
   row?.querySelectorAll('.eg-gross,.eg-net').forEach(el => {
     el.textContent = '';
@@ -11184,10 +12079,12 @@ document.getElementById('entryClear')?.addEventListener('click', async ()=>{
     hEl.style.fontWeight = '';
   }
 
-  applyCellClasses(nine2);
+  applyCellClasses(activeNine);
   if (date) calcMatchesForDate(date);
   if (date) saveSkinWinnersForDate(date);
   await SERVER_RUN_QUEUE;
+  loadScores();
+  scheduleScoreClassRefresh(activeNine, 0);
   entryDirty = false;
   entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
   selectEntrySlot(null);

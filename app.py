@@ -7,6 +7,7 @@ Run: /share/CACHEDEV2_DATA/.qpkg/Python3/opt/python3/bin/python3 app.py
 import os
 import shutil
 import datetime
+import json
 import random
 import shlex
 import string
@@ -14,6 +15,7 @@ import smtplib
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -37,10 +39,11 @@ DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260715.30-sandbox'
+VERSION    = '20260730.1-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
+PDF_RENDERER_URL = os.environ.get('HUGHSGOLF_PDF_RENDERER_URL', 'http://127.0.0.1:3009/render')
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -520,6 +523,38 @@ def notify_login():
     sent_to = []
     errors = []
 
+    def ensure_first_login_audit():
+        """The SMS is sent server-side, so keep a server-side audit row with it."""
+        now = now_local().strftime('%Y-%m-%d %H:%M:%S')
+        login_text = f'{player} logged in'
+        details = f'role={role} version={version} ip={ip} device=server-notify first_login_sms=1'
+        try:
+            with DB_WRITE_LOCK:
+                conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+                cur.execute("SELECT FirstLoginAt FROM Players WHERE Player=?", (player,))
+                player_row = cur.fetchone()
+                if player_row and not player_row['FirstLoginAt']:
+                    cur.execute("UPDATE Players SET FirstLoginAt=? WHERE Player=?", (now, player))
+                cur.execute("""
+                    SELECT id FROM LogTable
+                    WHERE method='login'
+                      AND text=?
+                      AND log_time >= datetime(?, '-10 minutes')
+                    LIMIT 1
+                """, (login_text, now))
+                if not cur.fetchone():
+                    cur.execute("""
+                        INSERT INTO LogTable (log_time, level, method, source, text, details, created_at)
+                        VALUES (?, 'INFO', 'login', 'HughsGolfServer', ?, ?, ?)
+                    """, (now, login_text, details, now))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f'notify_login audit error: {e}')
+            errors.append(f'Audit failed: {e}')
+
     try:
         msg = MIMEText(body_text)
         msg['From'] = gmail_user
@@ -534,6 +569,7 @@ def notify_login():
         errors.append(f'Email failed: {e}')
 
     if first_login:
+        ensure_first_login_audit()
         try:
             conn = sqlite3.connect(DB_PATH)
             conn.row_factory = sqlite3.Row
@@ -566,6 +602,7 @@ def notify_login():
         else:
             errors.append('Developer phone/carrier not set in Players table')
 
+    print(f'[{now_local():%H:%M:%S}] notify_login for {player}: first_login={first_login}, sent={",".join(sent_to) or "none"}')
     return jsonify({'ok': len(errors) == 0, 'sentTo': sent_to, 'errors': errors})
 
 
@@ -795,6 +832,73 @@ def build_text_pdf(title, subtitle, body_text):
     return bytes(output)
 
 
+def render_html_pdf_via_service(html):
+    """Render report HTML through the optional local PDF renderer service."""
+    if not PDF_RENDERER_URL:
+        raise RuntimeError('PDF renderer service is not configured')
+
+    payload = json.dumps({'html': html}).encode('utf-8')
+    req = urllib.request.Request(
+        PDF_RENDERER_URL,
+        data=payload,
+        headers={'Content-Type': 'application/json'},
+        method='POST'
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        content_type = resp.headers.get('Content-Type', '')
+        data = resp.read()
+        if resp.status != 200 or 'application/pdf' not in content_type:
+            raise RuntimeError(f'PDF renderer returned HTTP {resp.status}: {data[:300].decode("utf-8", "replace")}')
+        return data
+
+
+def render_html_pdf_locally(html):
+    """Render report HTML to PDF using local Playwright/Chromium when installed."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as e:
+        raise RuntimeError(f'Playwright is not installed: {e}') from e
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        html_path = os.path.join(tmpdir, 'report.html')
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html)
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-dev-shm-usage']
+            )
+            page = browser.new_page(viewport={'width': 1400, 'height': 900})
+            page.goto('file://' + html_path, wait_until='networkidle')
+            pdf_bytes = page.pdf(
+                format='Letter',
+                landscape=True,
+                print_background=True,
+                margin={'top': '0.3in', 'right': '0.3in', 'bottom': '0.3in', 'left': '0.3in'}
+            )
+            browser.close()
+            return pdf_bytes
+
+
+def render_html_pdf(html):
+    """Render report HTML to PDF, preferring the QNAP/container renderer."""
+    service_error = None
+    if PDF_RENDERER_URL:
+        try:
+            return render_html_pdf_via_service(html), 'renderer-service', None
+        except Exception as e:
+            service_error = str(e)
+            print(f'PDF renderer service failed, trying local Playwright: {e}')
+
+    try:
+        return render_html_pdf_locally(html), 'playwright-local', service_error
+    except Exception as e:
+        if service_error:
+            raise RuntimeError(f'PDF renderer service failed: {service_error}; local Playwright failed: {e}') from e
+        raise
+
+
 @app.route('/send-report-pdf', methods=['POST'])
 def send_report_pdf():
     """Email a generated report PDF to players opted into EmailStats."""
@@ -802,12 +906,13 @@ def send_report_pdf():
     title = str(body.get('title') or "Hugh's Golf Report").strip()
     subtitle = str(body.get('subtitle') or '').strip()
     report_text = str(body.get('text') or '').strip()
+    report_html = str(body.get('html') or '').strip()
     filename = str(body.get('filename') or 'hughs-golf-report.pdf').strip().replace('/', '-').replace('\\', '-')
     if not filename.lower().endswith('.pdf'):
         filename += '.pdf'
 
-    if not report_text:
-        return jsonify({'ok': False, 'error': 'No report text to send'}), 400
+    if not report_text and not report_html:
+        return jsonify({'ok': False, 'error': 'No report content to send'}), 400
 
     gmail_user, gmail_pw = get_gmail_creds()
     if not gmail_user or not gmail_pw:
@@ -832,9 +937,22 @@ def send_report_pdf():
     if not recipients:
         return jsonify({'ok': False, 'error': 'No players with EmailStats=Y and an email address'}), 404
 
-    pdf_bytes = build_text_pdf(title, subtitle, report_text)
+    pdf_engine = 'text'
+    pdf_warning = None
+    if report_html:
+        try:
+            pdf_bytes, pdf_engine, pdf_warning = render_html_pdf(report_html)
+        except Exception as e:
+            pdf_warning = str(e)
+            print(f'HTML PDF render failed, falling back to text PDF: {e}')
+            pdf_bytes = build_text_pdf(title, subtitle, report_text)
+    else:
+        pdf_bytes = build_text_pdf(title, subtitle, report_text)
+
     subject = f"Hugh's Golf League - {title}"
     body_text = f"{title}\n{subtitle}\n\nAttached is the latest Hugh's Golf report PDF."
+    if pdf_warning and pdf_engine == 'text':
+        body_text += "\n\nNote: server HTML PDF rendering is not installed yet, so this email used the fallback text PDF."
     sent_count = 0
     failed = []
 
@@ -859,8 +977,8 @@ def send_report_pdf():
     except Exception as e:
         return jsonify({'ok': False, 'error': f'Email failed: {e}'}), 500
 
-    print(f'[{now_local():%H:%M:%S}] Report PDF "{title}" sent to {sent_count}/{len(recipients)} EmailStats player(s)')
-    return jsonify({'ok': True, 'sent_count': sent_count, 'recipient_count': len(recipients), 'failed': failed})
+    print(f'[{now_local():%H:%M:%S}] Report PDF "{title}" sent to {sent_count}/{len(recipients)} EmailStats player(s) via {pdf_engine}')
+    return jsonify({'ok': True, 'sent_count': sent_count, 'recipient_count': len(recipients), 'failed': failed, 'pdf_engine': pdf_engine, 'warning': pdf_warning})
 
 
 @app.route('/notify-payout', methods=['POST'])
