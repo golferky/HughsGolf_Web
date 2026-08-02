@@ -36,17 +36,26 @@ app = Flask(__name__)
 # ── Config ────────────────────────────────────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
-BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
+BACKUP_ROOT_DIR = os.path.join(BASE_DIR, 'backups')
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260730.2-sandbox'
+VERSION    = '20260802.2-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
 PDF_RENDERER_URL = os.environ.get('HUGHSGOLF_PDF_RENDERER_URL', 'http://127.0.0.1:3009/render')
+LIVE_DB_PATH = os.environ.get('HUGHSGOLF_LIVE_DB', '/Users/garyscudder/HughsGolfLive/HughsGolf.db')
 # ─────────────────────────────────────────────────────────────────────────────
 
-os.makedirs(BACKUP_DIR, exist_ok=True)
+def backup_env_name():
+    return 'sandbox' if 'sandbox' in VERSION.lower() else 'live'
+
+def backup_dir():
+    path = os.path.join(BACKUP_ROOT_DIR, backup_env_name())
+    os.makedirs(path, exist_ok=True)
+    return path
+
+os.makedirs(backup_dir(), exist_ok=True)
 
 def db_modified_ms():
     """Current DB modified time in milliseconds, or 0 if no DB exists."""
@@ -289,14 +298,15 @@ def save_db():
 
         if os.path.exists(DB_PATH):
             ts = now_local().strftime('%Y%m%d_%H%M%S')
-            backup = os.path.join(BACKUP_DIR, f'HughsGolf_{ts}.db')
+            env_backup_dir = backup_dir()
+            backup = os.path.join(env_backup_dir, f'HughsGolf_{ts}.db')
             shutil.copy2(DB_PATH, backup)
             backups = sorted(
-                [f for f in os.listdir(BACKUP_DIR) if f.endswith('.db')],
+                [f for f in os.listdir(env_backup_dir) if f.endswith('.db')],
                 reverse=True
             )
             for old in backups[20:]:
-                os.remove(os.path.join(BACKUP_DIR, old))
+                os.remove(os.path.join(env_backup_dir, old))
 
         tmp = DB_PATH + '.tmp'
         with open(tmp, 'wb') as f:
@@ -320,9 +330,9 @@ def backup_list():
         limit = 40
 
     try:
-        os.makedirs(BACKUP_DIR, exist_ok=True)
-        files = [f for f in os.listdir(BACKUP_DIR) if f.endswith('.db')]
-        files_full = [(f, os.path.join(BACKUP_DIR, f)) for f in files]
+        env_backup_dir = backup_dir()
+        files = [f for f in os.listdir(env_backup_dir) if f.endswith('.db')]
+        files_full = [(f, os.path.join(env_backup_dir, f)) for f in files]
         files_full.sort(key=lambda x: os.path.getmtime(x[1]), reverse=True)
         files_full = files_full[:limit]
 
@@ -355,15 +365,64 @@ def backup_list():
                 entry['error'] = f'Could not read: {e}'
             backups.append(entry)
 
-        return jsonify({'ok': True, 'backups': backups})
+        return jsonify({'ok': True, 'backupEnv': backup_env_name(), 'backupDir': env_backup_dir, 'backups': backups})
     except Exception as e:
         print(f'[{now_local():%H:%M:%S}] backup_list error: {e}')
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
+@app.route('/create-backup', methods=['POST'])
+def create_backup():
+    """Create a manual checkpoint backup of the current DB."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    if not os.path.exists(DB_PATH):
+        return jsonify({'ok': False, 'error': 'Current database not found'}), 404
+
+    try:
+        with DB_WRITE_LOCK:
+            env_backup_dir = backup_dir()
+            ts = now_local().strftime('%Y%m%d_%H%M%S')
+            backup_name = f'HughsGolf_{ts}_manual-checkpoint.db'
+            shutil.copy2(DB_PATH, os.path.join(env_backup_dir, backup_name))
+        print(f'[{now_local():%H:%M:%S}] Created manual backup {backup_name}')
+        return jsonify({'ok': True, 'backup': backup_name})
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] create_backup error: {e}')
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/refresh-sandbox-from-live', methods=['POST'])
+def refresh_sandbox_from_live():
+    """Replace the sandbox DB with the live DB after saving a sandbox safety backup."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    if 'sandbox' not in VERSION.lower():
+        return jsonify({'ok': False, 'error': 'This action is only allowed on the sandbox server'}), 400
+    if not os.path.isfile(LIVE_DB_PATH):
+        return jsonify({'ok': False, 'error': f'Live DB not found: {LIVE_DB_PATH}'}), 404
+
+    try:
+        with DB_WRITE_LOCK:
+            env_backup_dir = backup_dir()
+            ts = now_local().strftime('%Y%m%d_%H%M%S')
+            safety_name = f'HughsGolf_{ts}_pre-live-refresh.db'
+            safety_path = os.path.join(env_backup_dir, safety_name)
+            if os.path.exists(DB_PATH):
+                shutil.copy2(DB_PATH, safety_path)
+            shutil.copy2(LIVE_DB_PATH, DB_PATH)
+        print(f'[{now_local():%H:%M:%S}] Refreshed sandbox DB from live DB {LIVE_DB_PATH} (safety copy: {safety_name})')
+        return jsonify({'ok': True, 'source': LIVE_DB_PATH, 'safetyBackup': safety_name})
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] refresh_sandbox_from_live error: {e}')
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
 @app.route('/restore-backup', methods=['POST'])
 def restore_backup():
-    """Restore a backup file over the live DB, saving the current live DB first."""
+    """Restore a backup file over the current DB, saving the current DB first."""
     token = request.headers.get('X-Save-Token', '')
     if token != SAVE_TOKEN:
         return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
@@ -371,16 +430,17 @@ def restore_backup():
     filename = os.path.basename(body.get('filename', ''))
     if not filename:
         return jsonify({'ok': False, 'error': 'No filename provided'}), 400
-    src = os.path.join(BACKUP_DIR, filename)
+    env_backup_dir = backup_dir()
+    src = os.path.join(env_backup_dir, filename)
     if not os.path.isfile(src):
         return jsonify({'ok': False, 'error': 'Backup not found'}), 404
 
     try:
         with DB_WRITE_LOCK:
-            os.makedirs(BACKUP_DIR, exist_ok=True)
+            env_backup_dir = backup_dir()
             ts = now_local().strftime('%Y%m%d_%H%M%S')
             safety_name = f'HughsGolf_{ts}_pre-restore.db'
-            safety_path = os.path.join(BACKUP_DIR, safety_name)
+            safety_path = os.path.join(env_backup_dir, safety_name)
             if os.path.exists(DB_PATH):
                 shutil.copy2(DB_PATH, safety_path)
             shutil.copy2(src, DB_PATH)
@@ -401,7 +461,7 @@ def delete_backup():
     filename = os.path.basename(body.get('filename', ''))
     if not filename:
         return jsonify({'ok': False, 'error': 'No filename provided'}), 400
-    path = os.path.join(BACKUP_DIR, filename)
+    path = os.path.join(backup_dir(), filename)
     if not os.path.isfile(path):
         return jsonify({'ok': False, 'error': 'Backup not found'}), 404
 
@@ -908,6 +968,16 @@ def send_report_pdf():
     report_text = str(body.get('text') or '').strip()
     report_html = str(body.get('html') or '').strip()
     filename = str(body.get('filename') or 'hughs-golf-report.pdf').strip().replace('/', '-').replace('\\', '-')
+    requested_recipients = body.get('recipients') or []
+    requested_keys = set()
+    if isinstance(requested_recipients, list):
+        for recipient in requested_recipients:
+            if not isinstance(recipient, dict):
+                continue
+            player_key = str(recipient.get('Player') or recipient.get('player') or '').strip()
+            email_key = str(recipient.get('Email') or recipient.get('email') or '').strip().lower()
+            if player_key and email_key:
+                requested_keys.add((player_key, email_key))
     if not filename.lower().endswith('.pdf'):
         filename += '.pdf'
 
@@ -929,12 +999,22 @@ def send_report_pdf():
               AND TRIM(Email) != ''
             ORDER BY Player
         """)
-        recipients = cur.fetchall()
+        recipient_rows = cur.fetchall()
         conn.close()
     except Exception as e:
         return jsonify({'ok': False, 'error': f'Recipient lookup failed: {e}'}), 500
 
+    if requested_keys:
+        recipients = [
+            r for r in recipient_rows
+            if (str(r['Player']).strip(), str(r['Email']).strip().lower()) in requested_keys
+        ]
+    else:
+        recipients = recipient_rows
+
     if not recipients:
+        if requested_keys:
+            return jsonify({'ok': False, 'error': 'No selected recipients matched EmailStats players with email addresses'}), 400
         return jsonify({'ok': False, 'error': 'No players with EmailStats=Y and an email address'}), 404
 
     pdf_engine = 'text'
@@ -977,7 +1057,7 @@ def send_report_pdf():
     except Exception as e:
         return jsonify({'ok': False, 'error': f'Email failed: {e}'}), 500
 
-    print(f'[{now_local():%H:%M:%S}] Report PDF "{title}" sent to {sent_count}/{len(recipients)} EmailStats player(s) via {pdf_engine}')
+    print(f'[{now_local():%H:%M:%S}] Report PDF "{title}" sent to {sent_count}/{len(recipients)} selected EmailStats player(s) via {pdf_engine}')
     return jsonify({'ok': True, 'sent_count': sent_count, 'recipient_count': len(recipients), 'failed': failed, 'pdf_engine': pdf_engine, 'warning': pdf_warning})
 
 
@@ -1249,7 +1329,7 @@ def update_duckdns():
 
 
 def clear_stale_sessions():
-    """Periodically clear ActiveSession for players inactive for over 2 hours."""
+    """Periodically clear inactive player sessions; officers/developers stay signed in."""
     while True:
         time.sleep(1800)  # run every 30 minutes
         try:
@@ -1260,6 +1340,7 @@ def clear_stale_sessions():
             cur.execute("""
                 UPDATE Players SET ActiveSession=NULL
                 WHERE ActiveSession IS NOT NULL
+                AND COALESCE(Officer, '') NOT IN ('Developer', 'President', 'Secretary')
                 AND Player NOT IN (
                     SELECT DISTINCT text FROM (
                         SELECT REPLACE(text, ' logged in', '') as text, MAX(log_time) as lt

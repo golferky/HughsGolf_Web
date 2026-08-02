@@ -2,3 +2,4 @@ HughsGolf.db
 HughsGolf_before_*.db
 backups/
 .DS_Store
+.venv_pdf/

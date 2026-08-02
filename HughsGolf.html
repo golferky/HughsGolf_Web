@@ -482,7 +482,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#d6ead2;font-family:'DM Mono',monospace;font-weight:700">
-    <span id="appVersionDisplay">v20260730.2-sandbox</span>
+    <span id="appVersionDisplay">v20260802.2-sandbox</span>
     <span style="color:#9bc59a">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -536,7 +536,7 @@
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260730.2-sandbox</span></div>
+    <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260802.2-sandbox</span></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -1250,6 +1250,8 @@
         <div style="padding:16px">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
             <button onclick="loadBackups()" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">Refresh</button>
+            <button onclick="createBackupCheckpoint()" style="padding:6px 14px;background:white;color:var(--green);border:1px solid var(--green);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Create checkpoint</button>
+            <button onclick="refreshSandboxFromLive()" id="refreshSandboxFromLiveBtn" style="padding:6px 14px;background:#5e1a8a;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Refresh sandbox from live DB</button>
             <button onclick="deleteSelectedBackups()" id="deleteSelectedBackupsBtn" disabled style="padding:6px 14px;background:#c62828;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:not-allowed;opacity:.45">Delete selected</button>
             <span id="backupStatus" style="font-size:11px;color:#888"></span>
           </div>
@@ -2233,6 +2235,87 @@ function auditUserAction(method, text, extraDetails='', level='INFO', userName=n
     [now, level, method, 'HughsGolf', text || `${playerName} ${method}`, details, now]);
 }
 
+function ensureDbChangeLogTable() {
+  if (!db) return Promise.resolve();
+  const sql = `CREATE TABLE IF NOT EXISTS DbChangeLog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    changed_at TEXT NOT NULL,
+    actor TEXT,
+    role TEXT,
+    action TEXT NOT NULL,
+    table_name TEXT NOT NULL,
+    record_key TEXT,
+    summary TEXT,
+    before_json TEXT,
+    after_json TEXT,
+    source TEXT,
+    version TEXT,
+    device TEXT
+  )`;
+  if (window._dbChangeLogReady) return Promise.resolve();
+  window._dbChangeLogReady = true;
+  return serverRun(sql);
+}
+
+function auditDbChange(action, tableName, recordKey, summary, beforeObj=null, afterObj=null, source='HughsGolf') {
+  if (!db) return Promise.resolve();
+  ensureDbChangeLogTable();
+  const now = new Date().toISOString().replace('T',' ').substring(0,19);
+  const actor = currentUser?.name || 'unknown';
+  const role = currentUser?.role || 'unknown';
+  const version = getAppVersionText();
+  const device = typeof detectDevice === 'function' ? detectDevice() : 'unknown';
+  const toJson = obj => obj ? JSON.stringify(obj) : '';
+  auditUserAction('DB_CHANGE', summary || `${action} ${tableName} ${recordKey || ''}`,
+    `table=${tableName} action=${action} key=${recordKey || ''}`, 'INFO');
+  return serverRun(`INSERT INTO DbChangeLog (changed_at, actor, role, action, table_name, record_key, summary, before_json, after_json, source, version, device)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [now, actor, role, action, tableName, recordKey || '', summary || '', toJson(beforeObj), toJson(afterObj), source, version, device]);
+}
+
+function cleanAuditValue(v) {
+  return v === null || v === undefined ? '' : String(v);
+}
+
+function playerAuditSnapshotFromRow(row) {
+  if (!row) return null;
+  return {
+    FirstName: cleanAuditValue(row.FirstName),
+    LastName: cleanAuditValue(row.LastName),
+    Player: cleanAuditValue(row.Player),
+    Email: cleanAuditValue(row.Email),
+    Phone: cleanAuditValue(row.Phone),
+    CellCarrier: cleanAuditValue(row.CellCarrier),
+    EmailStats: cleanAuditValue(row.EmailStats),
+    TextStats: cleanAuditValue(row.TextStats),
+    Login: cleanAuditValue(row.Login),
+    BlockSubs: cleanAuditValue(row.BlockSubs)
+  };
+}
+
+function playerAuditSnapshotFromForm() {
+  return {
+    FirstName: document.getElementById('pmFirstName').value.trim(),
+    LastName: document.getElementById('pmLastName').value.trim(),
+    Player: `${document.getElementById('pmFirstName').value.trim()} ${document.getElementById('pmLastName').value.trim()}`.trim(),
+    Email: document.getElementById('pmEmail').value.trim(),
+    Phone: document.getElementById('pmPhone').value.trim(),
+    CellCarrier: document.getElementById('pmCarrier').value,
+    EmailStats: document.getElementById('pmEmailStats').checked ? 'Y' : 'N',
+    TextStats: document.getElementById('pmTextStats').checked ? 'Y' : 'N',
+    Login: document.getElementById('pmLogin').checked ? 'Y' : 'N',
+    BlockSubs: document.getElementById('pmBlockSubs').checked ? 'Y' : 'N'
+  };
+}
+
+function summarizeObjectChanges(beforeObj, afterObj) {
+  if (!beforeObj || !afterObj) return '';
+  return Object.keys(afterObj)
+    .filter(k => cleanAuditValue(beforeObj[k]) !== cleanAuditValue(afterObj[k]))
+    .map(k => `${k}: "${cleanAuditValue(beforeObj[k])}" -> "${cleanAuditValue(afterObj[k])}"`)
+    .join('; ');
+}
+
 function reportSyncFailure(context, errMsg) {
   SYNC_FAILURES++;
   updateSyncFailBadge();
@@ -2333,6 +2416,7 @@ function onDbLoaded() {
     ImportedBy TEXT,
     ImportedAt TEXT
   )`);
+  ensureDbChangeLogTable();
   // globalSaveBtn visibility is controlled by applyRoleAccess after login
   populateSeasonDropdowns();
   snapshotDB();
@@ -5945,7 +6029,17 @@ function printableClone(element) {
     el.style.top = '';
     el.style.zIndex = '';
     el.style.maxHeight = '';
+    el.style.height = '';
     el.style.overflow = '';
+    el.style.overflowX = '';
+    el.style.overflowY = '';
+  });
+  clone.querySelectorAll('.card, .table-wrap, #scoresTable, #scoresTable tbody').forEach(el => {
+    el.style.maxHeight = 'none';
+    el.style.height = 'auto';
+    el.style.overflow = 'visible';
+    el.style.overflowX = 'visible';
+    el.style.overflowY = 'visible';
   });
   return clone.outerHTML;
 }
@@ -5975,10 +6069,13 @@ function reportHtmlDocument(title, subtitle, bodyHtml, autoPrint=false) {
     .pdf-title { margin: 0 0 12px; color: var(--green); font-family: 'Bebas Neue', cursive; font-size: 26px; letter-spacing: 1px; }
     .pdf-meta { color: var(--gray); font-size: 11px; margin-bottom: 14px; font-family: 'DM Mono', monospace; }
     .pdf-page .section { display: block !important; }
-    .pdf-page .card { box-shadow: none; border: 1px solid var(--border); break-inside: avoid; }
+    .pdf-page .card { box-shadow: none; border: 1px solid var(--border); overflow: visible !important; break-inside: auto; page-break-inside: auto; }
+    .pdf-page .card-header { break-after: avoid; page-break-after: avoid; }
     .pdf-page .controls, .pdf-page .half-tabs, .pdf-page .report-screen-only { display: none !important; }
-    .pdf-page .table-wrap, .pdf-page div[style*="overflow-x"] { overflow: visible !important; }
+    .pdf-page .table-wrap, .pdf-page div[style*="overflow-x"] { overflow: visible !important; overflow-x: visible !important; overflow-y: visible !important; max-height: none !important; height: auto !important; }
     .pdf-page table { page-break-inside: auto; }
+    .pdf-page thead { display: table-header-group; }
+    .pdf-page tfoot { display: table-footer-group; }
     .pdf-page tr { page-break-inside: avoid; page-break-after: auto; }
     .pdf-page input, .pdf-page select { border: 1px solid var(--border); background: white; color: var(--dark); }
     .pdf-page .eg-cell { position: relative !important; padding-top: 8px !important; }
@@ -6043,6 +6140,17 @@ function getPdfEmailRecipients() {
       AND Email IS NOT NULL
       AND TRIM(Email) != ''
     ORDER BY Player`);
+}
+
+function pdfScoreDateOptionsHtml(limit=80) {
+  if (!db) return '';
+  return query(`SELECT DISTINCT Date as sDate
+    FROM Scores
+    WHERE Gross IS NOT NULL AND Gross != 0
+    ORDER BY CAST(Date AS INTEGER) DESC
+    LIMIT ${parseInt(limit) || 80}`)
+    .map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`)
+    .join('');
 }
 
 function updatePdfEmailSummary() {
@@ -6122,44 +6230,112 @@ function reportPdfFilename(kind, subtitle) {
 }
 
 async function offerReportPdfEmail(payload) {
+  return openPdfRecipientPicker(payload);
+}
+
+function selectedPdfRecipients() {
+  return Array.from(document.querySelectorAll('.pdf-recipient-check:checked')).map(cb => ({
+    Player: cb.dataset.player || '',
+    Email: cb.dataset.email || ''
+  })).filter(r => r.Player && r.Email);
+}
+
+function updatePdfRecipientCount() {
+  const checks = Array.from(document.querySelectorAll('.pdf-recipient-check'));
+  const selected = checks.filter(cb => cb.checked).length;
+  const countEl = document.getElementById('pdfRecipientPickCount');
+  if (countEl) countEl.textContent = `${selected} of ${checks.length} selected`;
+  const sendBtn = document.getElementById('pdfRecipientSendBtn');
+  if (sendBtn) sendBtn.disabled = selected === 0;
+}
+
+function togglePdfRecipientSelection(checked) {
+  document.querySelectorAll('.pdf-recipient-check').forEach(cb => cb.checked = checked);
+  updatePdfRecipientCount();
+}
+
+function closePdfRecipientPicker() {
+  document.getElementById('pdfRecipientPickerModal')?.remove();
+  window.pendingPdfEmailPayload = null;
+}
+
+function openPdfRecipientPicker(payload=null) {
   const recipients = getPdfEmailRecipients();
   if (!recipients.length) {
     alert('No players have Email Stats checked with a valid email address.');
     return false;
   }
-  const names = recipients.slice(0, 12).map(r => r.Player).join('\n');
-  const more = recipients.length > 12 ? `\n...and ${recipients.length - 12} more` : '';
-  if (!confirm(`Ready to email this PDF report to ${recipients.length} player(s) with Email Stats checked?\n\n${names}${more}`)) return false;
+  window.pendingPdfEmailPayload = payload;
+  document.getElementById('pdfRecipientPickerModal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'pdfRecipientPickerModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:12px;width:min(620px,92vw);max-height:84vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.35)">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-family:'Bebas Neue',cursive;font-size:24px;color:var(--green)">PDF Email Recipients</div>
+          <div id="pdfRecipientPickCount" style="font-size:12px;color:var(--gray)"></div>
+        </div>
+        <button onclick="closePdfRecipientPicker()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--gray)">✕</button>
+      </div>
+      <div style="padding:12px 20px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <button onclick="togglePdfRecipientSelection(true)" style="padding:6px 12px;border:1px solid var(--green);border-radius:5px;background:white;color:var(--green);font-weight:700;cursor:pointer">Select All</button>
+        <button onclick="togglePdfRecipientSelection(false)" style="padding:6px 12px;border:1px solid var(--border);border-radius:5px;background:white;color:#333;font-weight:700;cursor:pointer">Clear All</button>
+      </div>
+      <div style="padding:8px 20px;overflow:auto;max-height:52vh">
+        ${recipients.map((r, i) => `
+          <label style="display:grid;grid-template-columns:26px minmax(120px,1fr) minmax(160px,1.35fr);gap:8px;align-items:center;padding:8px 6px;border-bottom:1px solid #f0ebe0;background:${i%2?'#faf7f2':'white'};cursor:pointer">
+            <input type="checkbox" class="pdf-recipient-check" checked onchange="updatePdfRecipientCount()" data-player="${escapeHtml(r.Player)}" data-email="${escapeHtml(r.Email)}" style="width:16px;height:16px">
+            <span style="font-weight:700;color:var(--dark)">${escapeHtml(r.Player)}</span>
+            <span style="font-size:12px;color:var(--gray);overflow-wrap:anywhere">${escapeHtml(r.Email)}</span>
+          </label>
+        `).join('')}
+      </div>
+      <div style="padding:14px 20px;display:flex;gap:10px;border-top:1px solid var(--border)">
+        ${payload ? '<button id="pdfRecipientSendBtn" onclick="sendSelectedReportPdf()" style="flex:2;padding:11px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer">Email Selected</button>' : ''}
+        <button onclick="closePdfRecipientPicker()" style="flex:1;padding:11px 16px;background:white;color:#333;border:1px solid var(--border);border-radius:6px;font-weight:700;cursor:pointer">${payload ? 'Cancel' : 'Close'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  updatePdfRecipientCount();
+  return true;
+}
+
+async function sendSelectedReportPdf() {
+  const payload = window.pendingPdfEmailPayload;
+  if (!payload) return;
+  const recipients = selectedPdfRecipients();
+  if (!recipients.length) {
+    alert('Pick at least one recipient.');
+    return;
+  }
 
   try {
     const resp = await fetch('/send-report-pdf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ ...payload, recipients })
     });
     const json = await resp.json();
     if (!resp.ok || !json.ok) throw new Error(json.error || `HTTP ${resp.status}`);
-    alert(`PDF emailed to ${json.sent_count}/${json.recipient_count} player(s).${json.failed?.length ? `\n\nFailed: ${json.failed.map(f => f.player).join(', ')}` : ''}`);
-    return true;
+    closePdfRecipientPicker();
+    alert(`PDF emailed to ${json.sent_count}/${json.recipient_count} selected player(s).${json.failed?.length ? `\n\nFailed: ${json.failed.map(f => f.player).join(', ')}` : ''}`);
   } catch (e) {
     alert(`PDF email failed: ${e.message}`);
-    return false;
   }
 }
 
 function previewPdfEmailRecipients() {
-  const recipients = getPdfEmailRecipients();
-  if (!recipients.length) {
-    alert('No players have Email Stats checked with a valid email address.');
-    return;
-  }
-  alert(`Players who will receive emailed PDFs (${recipients.length}):\n\n` +
-    recipients.map(r => `${r.Player} <${r.Email}>`).join('\n'));
+  openPdfRecipientPicker();
 }
 
 function populatePdfControls() {
-  copySelectOptions('scoresDate', 'pdfScoresDate', "SELECT DISTINCT Date as sDate FROM Scores ORDER BY Date DESC LIMIT 60");
-  copySelectOptions('scoresDate', 'pdfCombinedDate', "SELECT DISTINCT Date as sDate FROM Scores ORDER BY Date DESC LIMIT 60");
+  const scoreDateOptions = pdfScoreDateOptionsHtml();
+  const pdfScoresDate = document.getElementById('pdfScoresDate');
+  const pdfCombinedDate = document.getElementById('pdfCombinedDate');
+  if (pdfScoresDate) pdfScoresDate.innerHTML = scoreDateOptions;
+  if (pdfCombinedDate) pdfCombinedDate.innerHTML = scoreDateOptions;
   const combinedDate = document.getElementById('pdfCombinedDate');
   if (combinedDate?.options.length) combinedDate.selectedIndex = 0;
 
@@ -6381,12 +6557,46 @@ let loginAttempts = 0;
 let lockoutUntil = 0;
 let sessionTimer = null;
 const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+const PERSISTENT_IDLE_WARNING = 2 * 60 * 60 * 1000; // 2 hours
 const MAX_ATTEMPTS = 3;
 const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+function roleFromOfficerValue(officer) {
+  const officerKey = String(officer || '').trim().toLowerCase();
+  if (officerKey === 'developer') return 'developer';
+  if (officerKey === 'president' || officerKey === 'secretary') return 'officer';
+  return 'player';
+}
+
+function isPersistentSessionRole(role) {
+  return role === 'developer' || role === 'officer';
+}
+
+function showPersistentIdleWarning() {
+  if (!currentUser || !isPersistentSessionRole(currentUser.role) || document.getElementById('persistentIdleModal')) return;
+  const modal = document.createElement('div');
+  modal.id = 'persistentIdleModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99998;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:12px;padding:28px;max-width:420px;text-align:center;box-shadow:0 8px 36px rgba(0,0,0,.35)">
+      <div style="font-family:'Bebas Neue',cursive;font-size:30px;color:#1a472a;margin-bottom:8px">Still signed in</div>
+      <div style="font-size:15px;color:#444;line-height:1.4;margin-bottom:20px">
+        Officer/developer accounts do not automatically time out. If you are done, log out so this browser is not left open.
+      </div>
+      <button onclick="document.getElementById('persistentIdleModal')?.remove(); resetSessionTimer();" style="width:100%;padding:12px;background:#1a472a;color:white;border:none;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer;margin-bottom:10px">Stay Signed In</button>
+      <button onclick="document.getElementById('persistentIdleModal')?.remove(); logoutUser('logout');" style="width:100%;padding:12px;background:white;color:#333;border:1px solid #ccc;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">Log Out</button>
+    </div>`;
+  document.body.appendChild(modal);
+}
 
 function resetSessionTimer() {
   if (!currentUser) return;
   clearTimeout(sessionTimer);
+  document.getElementById('persistentIdleModal')?.remove();
+  if (isPersistentSessionRole(currentUser.role)) {
+    sessionTimer = setTimeout(showPersistentIdleWarning, PERSISTENT_IDLE_WARNING);
+    return;
+  }
   sessionTimer = setTimeout(async () => {
     alert('Session expired due to inactivity. Please log in again.');
     await logoutUser('timeout');
@@ -7443,8 +7653,10 @@ async function loadBackups() {
   const body = document.getElementById('backupBody');
   const status = document.getElementById('backupStatus');
   const selectAll = document.getElementById('selectAllBackups');
+  const refreshFromLiveBtn = document.getElementById('refreshSandboxFromLiveBtn');
   if (!body || !status) return;
   if (selectAll) selectAll.checked = false;
+  if (refreshFromLiveBtn) refreshFromLiveBtn.style.display = getAppVersionText().toLowerCase().includes('sandbox') ? '' : 'none';
   updateSelectedBackupDeleteButton();
   if (currentUser?.role !== 'developer') {
     body.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#c62828;text-align:center">Developer access required</td></tr>';
@@ -7459,7 +7671,9 @@ async function loadBackups() {
     const json = await resp.json();
     if (!json.ok) throw new Error(json.error || 'Could not load backups');
 
-    status.textContent = `${json.backups.length} backup(s)`;
+    const envLabel = json.backupEnv ? String(json.backupEnv).toUpperCase() : 'CURRENT';
+    const folderLabel = json.backupDir ? ` · ${json.backupDir}` : '';
+    status.textContent = `${envLabel} folder · ${json.backups.length} backup(s)${folderLabel}`;
     body.innerHTML = json.backups.map((b, i) => {
       const safeName = String(b.filename || '').replace(/'/g, "\\'");
       const safeAttr = escapeAttr(b.filename || '');
@@ -7483,9 +7697,57 @@ async function loadBackups() {
   }
 }
 
+async function createBackupCheckpoint() {
+  if (currentUser?.role !== 'developer') return;
+  const status = document.getElementById('backupStatus');
+  if (status) status.textContent = 'Creating checkpoint...';
+  try {
+    const token = await ensureSaveToken();
+    const resp = await fetch('/create-backup', {
+      method: 'POST',
+      headers: { 'X-Save-Token': token }
+    });
+    const json = await resp.json();
+    if (!json.ok) throw new Error(json.error || 'Checkpoint failed');
+    if (status) status.textContent = `Created ${json.backup}`;
+    await loadBackups();
+  } catch(e) {
+    alert(`Checkpoint failed: ${e.message}`);
+    if (status) status.textContent = 'Checkpoint failed';
+  }
+}
+
+async function refreshSandboxFromLive() {
+  if (currentUser?.role !== 'developer') return;
+  if (!getAppVersionText().toLowerCase().includes('sandbox')) {
+    alert('Refresh from live DB is only available in sandbox.');
+    return;
+  }
+  const ok = confirm('Refresh sandbox from the current live DB?\n\nThe current sandbox DB will be saved as a safety backup first, then replaced with the live DB. The page will reload after.');
+  if (!ok) return;
+
+  const status = document.getElementById('backupStatus');
+  if (status) status.textContent = 'Refreshing sandbox from live DB...';
+  try {
+    const token = await ensureSaveToken();
+    const resp = await fetch('/refresh-sandbox-from-live', {
+      method: 'POST',
+      headers: { 'X-Save-Token': token }
+    });
+    const json = await resp.json();
+    if (!json.ok) throw new Error(json.error || 'Refresh failed');
+    alert(`Sandbox refreshed from live DB.\n\nPrevious sandbox DB saved as ${json.safetyBackup}.\n\nThe page will reload now.`);
+    location.reload();
+  } catch(e) {
+    alert(`Refresh sandbox from live failed: ${e.message}`);
+    if (status) status.textContent = 'Refresh from live failed';
+  }
+}
+
 async function restoreBackup(filename) {
   if (currentUser?.role !== 'developer') return;
-  const ok = confirm(`Restore this backup to the live web database?\n\n${filename}\n\nThe current live database will be saved as a new safety backup first. Everyone should refresh after restore.`);
+  const target = getAppVersionText().toLowerCase().includes('sandbox') ? 'sandbox database' : 'live web database';
+  const ok = confirm(`Restore this backup to the ${target}?\n\n${filename}\n\nThe current database will be saved as a new safety backup first. Everyone should refresh after restore.`);
   if (!ok) return;
 
   const status = document.getElementById('backupStatus');
@@ -8087,7 +8349,7 @@ function tryTrustedAutoLogin() {
   if (!lastPlayer) return false;
 
   const rememberedToken = localStorage.getItem(`hg_session_${lastPlayer}`);
-  if (!rememberedToken || isSessionTokenStale(rememberedToken)) return false;
+  if (!rememberedToken) return false;
 
   let player;
   try {
@@ -8097,6 +8359,7 @@ function tryTrustedAutoLogin() {
   }
 
   if (!player || player.ActiveSession !== rememberedToken) return false;
+  if (isSessionTokenStale(rememberedToken) && !isPersistentSessionRole(roleFromOfficerValue(player.Officer))) return false;
 
   window._mySessionToken = rememberedToken;
   loginSuccess(player).catch(e => {
@@ -8490,7 +8753,7 @@ async function loginSuccess(player) {
     if (!currentUser || !window._mySessionToken || !activeSessionsEnabled()) return;
     try {
       const current = query(`SELECT ActiveSession FROM Players WHERE Player=?`, [currentUser.name])[0]?.ActiveSession;
-      if (current && isSessionTokenStale(current)) {
+      if (current && isSessionTokenStale(current) && !isPersistentSessionRole(currentUser.role)) {
         serverRun(`UPDATE Players SET ActiveSession=NULL WHERE Player=?`, [currentUser.name]);
         return;
       }
@@ -9232,6 +9495,8 @@ function resetPlayerPassword() {
   if (!name) return;
   if (!confirm(`Reset ${name}'s password?\n\nThey will be prompted to set a new password on next login.`)) return;
   serverRun(`UPDATE Players SET Password=NULL WHERE Player=?`, [name]);
+  auditDbChange('password_reset', 'Players', name, `${currentUser?.name || 'unknown'} reset password for ${name}`,
+    { Password: '(set)' }, { Password: '(reset required)' }, 'Admin Players');
   document.getElementById('pmPasswordHasOne').textContent = '⚠ No password set';
   document.getElementById('pmPasswordHasOne').style.color = '#c62828';
   document.getElementById('pmResetPwBtn').style.display = 'none';
@@ -9405,6 +9670,7 @@ async function renamePlayer() {
 
 async function savePlayer() {
   const originalName = document.getElementById('playerModalId').value;
+  const beforeAudit = originalName && window._playerModalOriginal ? playerAuditSnapshotFromRow(window._playerModalOriginal) : null;
   const firstName = document.getElementById('pmFirstName').value.trim();
   const lastName  = document.getElementById('pmLastName').value.trim();
   const email     = document.getElementById('pmEmail').value.trim();
@@ -9417,6 +9683,7 @@ async function savePlayer() {
   const fullName  = `${firstName} ${lastName}`.trim();
   const pw1 = document.getElementById('pmPassword1').value;
   const pw2 = document.getElementById('pmPassword2').value;
+  const afterAudit = playerAuditSnapshotFromForm();
 
   if (!fullName) { alert('Please enter a name'); return; }
 
@@ -9480,6 +9747,8 @@ async function savePlayer() {
       const hashEsc = hash.replace(/'/g,"''");
       await runSqlPlayer(`UPDATE Players SET Password='${hashEsc}' WHERE Player='${fu}'`);
       serverRun(`UPDATE Players SET Password=? WHERE Player=?`, [hash, fullName]);
+      auditDbChange('password_set', 'Players', fullName, `${currentUser?.name || 'unknown'} set password for ${fullName}`,
+        { Password: '(unchanged or empty)' }, { Password: '(set)' }, 'Admin Players');
     }
     // Cascade name change across all tables if name changed — use /run-sql to bypass stale-save
     if (fullName !== originalName) {
@@ -9517,6 +9786,12 @@ async function savePlayer() {
       // Also update local memory so UI reflects change immediately
       cascadeStatements.forEach(sql => { try { db.run(sql); } catch(e) {} });
     }
+    const changeSummary = summarizeObjectChanges(beforeAudit, afterAudit);
+    if (changeSummary) {
+      auditDbChange(fullName !== originalName ? 'player_rename_update' : 'player_update', 'Players', fullName,
+        `${currentUser?.name || 'unknown'} updated ${originalName}${fullName !== originalName ? ` -> ${fullName}` : ''}: ${changeSummary}`,
+        beforeAudit, afterAudit, 'Admin Players');
+    }
   } else {
     const fn = firstName.replace(/'/g,"''"), ln = lastName.replace(/'/g,"''"),
           em = email.replace(/'/g,"''"), ph = phone.replace(/'/g,"''"),
@@ -9524,11 +9799,15 @@ async function savePlayer() {
     await runSqlPlayer(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login,BlockSubs) VALUES ('${fn}','${ln}','${fu}','${em}','${ph}','${ca}','${emailStats}','${textStats}','${loginAccess}','${blockSubs}')`);
     serverRun(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login,BlockSubs) VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [firstName,lastName,fullName,email,phone,carrier,emailStats,textStats,loginAccess,blockSubs]);
+    auditDbChange('player_add', 'Players', fullName, `${currentUser?.name || 'unknown'} added player ${fullName}`,
+      null, afterAudit, 'Admin Players');
     if (pw1) {
       const hash = await hashPassword(pw1);
       const hashEsc = hash.replace(/'/g,"''");
       await runSqlPlayer(`UPDATE Players SET Password='${hashEsc}' WHERE Player='${fu}'`);
       serverRun(`UPDATE Players SET Password=? WHERE Player=?`, [hash, fullName]);
+      auditDbChange('password_set', 'Players', fullName, `${currentUser?.name || 'unknown'} set password for ${fullName}`,
+        { Password: '(empty)' }, { Password: '(set)' }, 'Admin Players');
     }
   }
   closePlayerModal();
@@ -9544,8 +9823,11 @@ function deletePlayer(name) {
     return;
   }
   if (!confirm(`Delete ${name}?\n\nThis will remove them from the Players table.`)) return;
+  const beforeAudit = playerAuditSnapshotFromRow(query(`SELECT * FROM Players WHERE Player=?`, [name])[0]);
   serverRun(`DELETE FROM Players WHERE Player=?`, [name]);
   serverRun(`DELETE FROM Teams WHERE Player=?`, [name]);
+  auditDbChange('player_delete', 'Players', name, `${currentUser?.name || 'unknown'} deleted player ${name}`,
+    beforeAudit, null, 'Admin Players');
   loadAdminPlayers();
   saveDBToServer();
 }
