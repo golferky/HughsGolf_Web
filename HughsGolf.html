@@ -482,7 +482,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#d6ead2;font-family:'DM Mono',monospace;font-weight:700">
-    <span id="appVersionDisplay">v20260805.1</span>
+    <span id="appVersionDisplay">v20260805.2</span>
     <span style="color:#9bc59a">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -6493,13 +6493,24 @@ function shouldReloadForPendingDbUpdate() {
 function showStaleDbSavePrompt(serverModifiedMs) {
   STALE_DB_SAVE_BLOCKED = false;
   _savePending = false;
-  DB_UPDATE_PENDING = false;
+  DB_UPDATE_PENDING = true;
   if (serverModifiedMs) {
     SERVER_DB_MODIFIED_MS = serverModifiedMs;
     SERVER_DB_MODIFIED = serverModifiedMs / 1000;
   }
   loadDbInfo();
-  console.warn('Full DB save skipped because newer server data exists. No reload prompt was shown.');
+  const globalBtn = document.getElementById('globalSaveBtn');
+  if (globalBtn) {
+    globalBtn.textContent = '⚠ Save Rejected';
+    globalBtn.style.background = '#c62828';
+    globalBtn.disabled = false;
+    setTimeout(() => {
+      globalBtn.textContent = '💾 Save DB';
+      globalBtn.style.background = '#1565c0';
+    }, 6000);
+  }
+  alert('Save rejected: someone else saved newer league data before this browser saved.\n\nYour changes were NOT saved because saving now could overwrite their updates.\n\nPlease reload the page, then re-enter or verify the change.');
+  console.warn('Full DB save rejected because newer server data exists. User was told to reload.');
 }
 
 async function checkServerVersion() {
