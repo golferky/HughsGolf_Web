@@ -6674,6 +6674,7 @@ async function checkServerVersion() {
       } else if (dbModified > SERVER_DB_MODIFIED) {
         SERVER_DB_MODIFIED = dbModified;
         DB_UPDATE_PENDING = true;
+        if (typeof reRenderEntry === 'function') reRenderEntry();
       }
     }
   } catch(e) { /* ignore network errors */ }
