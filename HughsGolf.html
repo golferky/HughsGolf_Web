@@ -482,7 +482,7 @@
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#d6ead2;font-family:'DM Mono',monospace;font-weight:700">
-    <span id="appVersionDisplay">v20260730.2</span>
+    <span id="appVersionDisplay">v20260805.1</span>
     <span style="color:#9bc59a">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
   </div>
@@ -537,6 +537,7 @@
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
     <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260730.2</span></div>
+    <div id="loginUpdateNotice" style="display:none;background:#fff3cd;border:1px solid #d6a928;color:#5c3f00;border-radius:6px;padding:10px 12px;font-size:12px;line-height:1.35;margin-bottom:16px;font-weight:700"></div>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -804,7 +805,7 @@
       <div style="display:flex;gap:8px">
         <button id="postSeasonTestBtn" onclick="togglePostSeasonTestMode()" style="display:none;padding:8px 16px;border:1px solid var(--gold);border-radius:6px;background:#fff8e1;color:#7a4b00;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px">Test Post Season</button>
         <button id="entryClear" disabled title="Select a score row to clear that player only" style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;cursor:not-allowed;opacity:.45;font-family:'DM Sans',sans-serif;font-size:13px">Clear</button>
-        <button id="gallusSubmitBtn" onclick="showGallusSubmit()" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">📤 Submit Round</button>
+        <button id="gallusSubmitBtn" onclick="showGallusSubmit()" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">📥 Import Round</button>
       </div>
     </div>
 
@@ -6457,6 +6458,34 @@ let SERVER_DB_MODIFIED = null;
 let DB_UPDATE_PENDING = false;
 let STALE_DB_SAVE_BLOCKED = false;
 
+function setUpdateNotice(message) {
+  const msg = (message || '').trim();
+  const loginNotice = document.getElementById('loginUpdateNotice');
+  if (loginNotice) {
+    loginNotice.textContent = msg;
+    loginNotice.style.display = msg ? 'block' : 'none';
+  }
+
+  let banner = document.getElementById('serverUpdateNoticeBanner');
+  if (!msg) {
+    if (banner) banner.remove();
+    return;
+  }
+
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'serverUpdateNoticeBanner';
+    banner.style.cssText = 'background:#fff3cd;color:#5c3f00;border-bottom:2px solid #d6a928;padding:10px 16px;text-align:center;font-size:13px;font-weight:800;line-height:1.35;z-index:8500';
+    const nav = document.querySelector('.tabs');
+    if (nav && nav.parentNode) {
+      nav.parentNode.insertBefore(banner, nav.nextSibling);
+    } else {
+      document.body.insertBefore(banner, document.body.firstChild);
+    }
+  }
+  banner.textContent = msg;
+}
+
 function shouldReloadForPendingDbUpdate() {
   return false;
 }
@@ -6477,7 +6506,8 @@ async function checkServerVersion() {
   try {
     const resp = await fetch('/version?t=' + Date.now());
     if (!resp.ok) return;
-    const { version, flaskVersion, dbModified } = await resp.json();
+    const { version, flaskVersion, dbModified, updateNotice } = await resp.json();
+    setUpdateNotice(updateNotice);
     if (isLocalTestHost()) return;
     const currentVersion = document.getElementById('appVersionDisplay')?.textContent?.trim();
     if (version && currentVersion && version !== currentVersion.replace(/^v/,'')) {
@@ -6497,6 +6527,8 @@ async function checkServerVersion() {
 
 // Check every 5 minutes
 setInterval(checkServerVersion, 5 * 60 * 1000);
+// Check quickly so login-page maintenance notices show without waiting.
+setTimeout(checkServerVersion, 1000);
 // Also check once after 30 seconds (catches quick deploys)
 setTimeout(checkServerVersion, 30 * 1000);
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7639,10 +7671,7 @@ function showGallusSubmit() {
     alert('Only officers can submit/import rounds.');
     return;
   }
-  document.getElementById('gallusSubmitModal').style.display = 'flex';
-  document.getElementById('gallusSubmitUrl').value = '';
-  document.getElementById('gallusSubmitError').style.display = 'none';
-  document.getElementById('gallusSubmitSuccess').style.display = 'none';
+  showGallusImport();
 }
 
 function doGallusSubmit() {

@@ -47,6 +47,7 @@ LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garya
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
 PDF_RENDERER_URL = os.environ.get('HUGHSGOLF_PDF_RENDERER_URL', 'http://127.0.0.1:3009/render')
+UPDATE_NOTICE_PATH = os.environ.get('HUGHSGOLF_UPDATE_NOTICE_PATH', os.path.join(BASE_DIR, 'update_notice.txt'))
 # ─────────────────────────────────────────────────────────────────────────────
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -57,6 +58,18 @@ def db_modified_ms():
         return int(os.path.getmtime(DB_PATH) * 1000) if os.path.exists(DB_PATH) else 0
     except Exception:
         return 0
+
+
+def read_update_notice():
+    """Optional maintenance/update notice shown to logged-in users and on login."""
+    try:
+        if not os.path.exists(UPDATE_NOTICE_PATH):
+            return ''
+        with open(UPDATE_NOTICE_PATH, 'r', encoding='utf-8') as f:
+            return f.read().strip()[:500]
+    except Exception as e:
+        print(f'read_update_notice error: {e}')
+        return ''
 
 # In-memory reset tokens: { token: { player, expires } }
 reset_tokens = {}
@@ -143,7 +156,12 @@ def version():
         db_modified = os.path.getmtime(DB_PATH) if os.path.exists(DB_PATH) else 0
     except Exception:
         db_modified = 0
-    return jsonify({'version': html_version, 'flaskVersion': VERSION, 'dbModified': db_modified})
+    return jsonify({
+        'version': html_version,
+        'flaskVersion': VERSION,
+        'dbModified': db_modified,
+        'updateNotice': read_update_notice(),
+    })
 
 
 @app.route('/HughsGolf.html')
