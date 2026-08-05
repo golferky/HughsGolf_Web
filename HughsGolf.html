@@ -11959,21 +11959,24 @@ const _gallusWarnedPlayers = new Set();
 function checkPendingGallusForPlayer(playerName, key) {
   if (!playerName || !db) return;
   if (_gallusWarnedPlayers.has(playerName)) return;
-  _gallusWarnedPlayers.add(playerName);
 
-  const pending = query(
-    `SELECT * FROM GallusSubmissions WHERE Player=? AND Status='pending' LIMIT 1`,
-    [playerName]
-  );
+  const pending = query(`SELECT * FROM GallusSubmissions WHERE Status='pending'`);
   if (!pending.length) return;
 
-  const sub = pending[0];
-  const dt = sub.DateSubmitted ? sub.DateSubmitted.substring(0,10) : 'unknown date';
-  const msg = `⚠ ${playerName} has a pending Gallus submission from ${dt}.
+  for (const sub of pending) {
+    const imported = query(
+      `SELECT * FROM GallusImport WHERE URL=? AND ResolvedName=? LIMIT 1`,
+      [sub.GallusUrl, playerName]
+    );
+    if (!imported.length) continue;
 
-Do you want to go to the Gallus Queue to import it instead of entering manually?`;
-  if (confirm(msg)) {
-    showAdminSection('gallus');
+    _gallusWarnedPlayers.add(playerName);
+    const dt = sub.DateSubmitted ? sub.DateSubmitted.substring(0,10) : 'unknown date';
+    const msg = `⚠ ${playerName} has a pending Gallus submission from ${dt}.\n\nDo you want to go to the Gallus Queue to import it instead of entering manually?`;
+    if (confirm(msg)) {
+      showAdminSection('gallus');
+    }
+    return;
   }
 }
 
