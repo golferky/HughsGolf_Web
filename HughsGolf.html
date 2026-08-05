@@ -1191,6 +1191,9 @@
     <div id="adminGallus" style="display:none">
       <div class="card">
         <div class="card-header">📥 Gallus Round Submissions</div>
+        <div style="padding:8px 16px 0 16px">
+          <button onclick="reconcileGallusQueue()" style="padding:6px 14px;background:#2d6a4f;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600">🔄 Auto-Reconcile Pending</button>
+        </div>
         <div style="padding:16px">
           <div id="gallusQueueContent">Loading...</div>
         </div>
@@ -7924,6 +7927,66 @@ function doGallusSubmit() {
     errEl.style.display = 'block';
   }
 }
+
+// ── Gallus Reconciliation ─────────────────────────────────────────────────────
+async function reconcileGallusQueue() {
+  if (!db) return;
+  const pending = query(`SELECT * FROM GallusSubmissions WHERE Status='pending'`);
+  if (!pending.length) { alert('No pending submissions to reconcile.'); return; }
+
+  let matched = 0, mismatched = 0, errors = 0;
+  for (const sub of pending) {
+    try {
+      const resp = await fetch('/fetch-gallus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Save-Token': await ensureSaveToken() },
+        body: JSON.stringify({ url: sub.GallusUrl })
+      });
+      const json = await resp.json();
+      if (!json.ok) { errors++; continue; }
+
+      const dateStr = sub.DateSubmitted ? sub.DateSubmitted.substring(0,10).replace(/-/g,'') : null;
+      if (!dateStr) { errors++; continue; }
+
+      const existing = query(
+        `SELECT * FROM Scores WHERE Player=? AND Date=? LIMIT 1`,
+        [sub.Player, dateStr]
+      );
+      if (!existing.length) { mismatched++; continue; }
+
+      const dbRow = existing[0];
+      const gallusPlayer = json.players.find(p => p.name === sub.Player || sub.Player.includes(p.name) || p.name.includes(sub.Player));
+      if (!gallusPlayer) {
+        db.run(`UPDATE GallusSubmissions SET Status='mismatched', ImportedBy=?, ImportedAt=datetime('now') WHERE ID=?`,
+          ['Auto-reconciled', sub.ID]);
+        mismatched++; continue;
+      }
+
+      const frontBack = json.frontBack === 'Back' ? 9 : 0;
+      let allMatch = true;
+      for (let i = 0; i < 9; i++) {
+        const dbScore = parseInt(dbRow[String(i + 1 + frontBack)]);
+        const gallusScore = gallusPlayer.scores[i];
+        if (gallusScore !== null && dbScore !== gallusScore) { allMatch = false; break; }
+      }
+
+      if (allMatch) {
+        db.run(`UPDATE GallusSubmissions SET Status='imported', ImportedBy=?, ImportedAt=datetime('now') WHERE ID=?`,
+          ['Auto-reconciled', sub.ID]);
+        matched++;
+      } else {
+        db.run(`UPDATE GallusSubmissions SET Status='mismatched', ImportedBy=?, ImportedAt=datetime('now') WHERE ID=?`,
+          ['Auto-reconciled', sub.ID]);
+        mismatched++;
+      }
+    } catch(e) { errors++; }
+  }
+
+  await saveDBToServer('✓ Reconciled');
+  loadGallusQueue();
+  alert(`Reconciliation complete:\n✓ Auto-imported: ${matched}\n⚠ Mismatched (review manually): ${mismatched}\n✗ Errors: ${errors}`);
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ── Gallus Queue (officers) ───────────────────────────────────────────────────
 function loadGallusQueue() {
