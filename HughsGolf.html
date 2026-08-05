@@ -6649,16 +6649,6 @@ function showStaleDbSavePrompt(serverModifiedMs) {
   if (globalBtn) { globalBtn.textContent = '⚠ Save Rejected'; globalBtn.style.background='#c62828'; setTimeout(()=>{ globalBtn.textContent='💾 Save DB'; globalBtn.style.background='#1565c0'; globalBtn.disabled=false; }, 5000); }
   alert('Your save was rejected because the server has newer data.\n\nYour changes were NOT saved. Please reload the page before re-entering or verifying your changes.');
 }
-  STALE_DB_SAVE_BLOCKED = false;
-  _savePending = false;
-  DB_UPDATE_PENDING = false;
-  if (serverModifiedMs) {
-    SERVER_DB_MODIFIED_MS = serverModifiedMs;
-    SERVER_DB_MODIFIED = serverModifiedMs / 1000;
-  }
-  loadDbInfo();
-  console.warn('Full DB save skipped because newer server data exists. No reload prompt was shown.');
-}
 
 async function checkServerVersion() {
   try {
