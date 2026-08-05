@@ -2135,7 +2135,13 @@ function switchTab(tabName) {
   document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
   document.querySelector(`.tab[data-tab="${targetTab}"]`)?.classList.add('active');
   document.getElementById('tab-' + targetTab)?.classList.add('active');
-  if (db) refreshTab(targetTab);
+  if (db) {
+    if (targetTab === 'scores' && DB_UPDATE_PENDING) {
+      refreshScoresForExternalDbUpdate();
+    } else {
+      refreshTab(targetTab);
+    }
+  }
 }
 
 document.querySelectorAll('.tab').forEach(t => {
@@ -6457,6 +6463,7 @@ function showVersionUpdateModal(serverVersion, flaskVersion) {
 let SERVER_DB_MODIFIED = null;
 let DB_UPDATE_PENDING = false;
 let STALE_DB_SAVE_BLOCKED = false;
+let SCORE_DB_REFRESH_IN_PROGRESS = false;
 
 function setUpdateNotice(message) {
   const msg = (message || '').trim();
@@ -6490,6 +6497,52 @@ function shouldReloadForPendingDbUpdate() {
   return false;
 }
 
+function activeTabName() {
+  return document.querySelector('.tab.active')?.dataset.tab || '';
+}
+
+async function refreshScoresForExternalDbUpdate() {
+  if (!DB_UPDATE_PENDING || !db || SCORE_DB_REFRESH_IN_PROGRESS) return false;
+  if (activeTabName() !== 'scores') return false;
+
+  if (_saveInProgress || _savePending || entryDirty) {
+    console.warn('External DB update detected, but score entry has unsaved changes; leaving Scores grid unchanged until the edit is complete.');
+    return false;
+  }
+
+  SCORE_DB_REFRESH_IN_PROGRESS = true;
+  const selectedDate = document.getElementById('entryDate')?.value || '';
+  const selectedNine = document.getElementById('entry9')?.value || '';
+
+  try {
+    const refreshed = await refreshLiveDbSnapshotForReadOnlyView();
+    if (!refreshed) return false;
+
+    if (selectedDate) {
+      const entrySel = document.getElementById('entryDate');
+      if (entrySel && [...entrySel.options].some(o => o.value === selectedDate)) {
+        entrySel.value = selectedDate;
+      }
+    }
+    if (selectedNine) {
+      const nineSel = document.getElementById('entry9');
+      if (nineSel) nineSel.value = selectedNine;
+    }
+
+    entryState = {};
+    entryStateDate = null;
+    entryStateFb = null;
+    selectedEntrySlotKey = null;
+    if (!courseData) initEntry(); else buildEntryGrid();
+    return true;
+  } catch (e) {
+    console.warn('Scores grid refresh after external DB update failed:', e);
+    return false;
+  } finally {
+    SCORE_DB_REFRESH_IN_PROGRESS = false;
+  }
+}
+
 function showStaleDbSavePrompt(serverModifiedMs) {
   STALE_DB_SAVE_BLOCKED = false;
   _savePending = false;
@@ -6519,9 +6572,8 @@ async function checkServerVersion() {
     if (!resp.ok) return;
     const { version, flaskVersion, dbModified, updateNotice } = await resp.json();
     setUpdateNotice(updateNotice);
-    if (isLocalTestHost()) return;
     const currentVersion = document.getElementById('appVersionDisplay')?.textContent?.trim();
-    if (version && currentVersion && version !== currentVersion.replace(/^v/,'')) {
+    if (!isLocalTestHost() && version && currentVersion && version !== currentVersion.replace(/^v/,'')) {
       showVersionUpdateModal(version, flaskVersion);
       return;
     }
@@ -6531,6 +6583,7 @@ async function checkServerVersion() {
       } else if (dbModified > SERVER_DB_MODIFIED) {
         SERVER_DB_MODIFIED = dbModified;
         DB_UPDATE_PENDING = true;
+        refreshScoresForExternalDbUpdate();
       }
     }
   } catch(e) { /* ignore network errors */ }
