@@ -11102,7 +11102,10 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
         inp.style.cursor = 'default';
         inp.style.pointerEvents = 'none';
       } else {
-        inp.addEventListener('focus', () => selectEntrySlot(key));
+        inp.addEventListener('focus', () => {
+          selectEntrySlot(key);
+          checkPendingGallusForPlayer(entryState[key]?.active, key);
+        });
         inp.addEventListener('click', () => selectEntrySlot(key));
         inp.addEventListener('input', onScoreInput);
         inp.addEventListener('keydown', onScoreKeydown);
@@ -11788,6 +11791,28 @@ function updateCompletedEntryHandicap(key, nine, writeDb = true) {
   }
 
   return { gross, newHdcp, updatedLast5 };
+}
+
+const _gallusWarnedPlayers = new Set();
+function checkPendingGallusForPlayer(playerName, key) {
+  if (!playerName || !db) return;
+  if (_gallusWarnedPlayers.has(playerName)) return;
+  _gallusWarnedPlayers.add(playerName);
+
+  const pending = query(
+    `SELECT * FROM GallusSubmissions WHERE Player=? AND Status='pending' LIMIT 1`,
+    [playerName]
+  );
+  if (!pending.length) return;
+
+  const sub = pending[0];
+  const dt = sub.DateSubmitted ? sub.DateSubmitted.substring(0,10) : 'unknown date';
+  const msg = `⚠ ${playerName} has a pending Gallus submission from ${dt}.
+
+Do you want to go to the Gallus Queue to import it instead of entering manually?`;
+  if (confirm(msg)) {
+    showAdminSection('gallus');
+  }
 }
 
 function onScoreInput(e) {
