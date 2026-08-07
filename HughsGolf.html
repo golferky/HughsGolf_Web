@@ -1656,6 +1656,19 @@
     </div>
   </div>
 
+  
+  <div id="gallusVerifyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9001;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:12px;padding:28px;width:540px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+      <div id="gallusVerifyTitle" style="font-size:16px;font-weight:700;margin-bottom:4px;color:var(--green)">📋 Verify Players</div>
+      <div style="font-size:11px;color:#888;margin-bottom:14px">Review each player. Use the dropdown to swap in a sub.</div>
+      <div id="gallusVerifyBody" style="margin-bottom:16px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('gallusVerifyModal').style.display='none'" style="padding:10px 20px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+        <button onclick="confirmGallusVerify()" style="padding:10px 24px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">✓ Confirm Import</button>
+      </div>
+    </div>
+  </div>
+
   <div id="subModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;align-items:center;justify-content:center">
     <div style="background:white;border-radius:12px;padding:24px;min-width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
       <div style="font-family:'Bebas Neue',cursive;font-size:22px;color:var(--green);margin-bottom:16px">Add Sub</div>
@@ -7875,11 +7888,11 @@ function showGallusSubmit() {
   document.getElementById('gallusSubmitSuccess').style.display = 'none';
 }
 
-function doGallusSubmit() {
+async function doGallusSubmit() {
   if (!(currentUser?.role === 'officer' || currentUser?.role === 'developer')) return;
   let input = document.getElementById('gallusSubmitUrl').value.trim();
-  const errEl  = document.getElementById('gallusSubmitError');
-  const okEl   = document.getElementById('gallusSubmitSuccess');
+  const errEl = document.getElementById('gallusSubmitError');
+  const okEl  = document.getElementById('gallusSubmitSuccess');
   errEl.style.display = 'none';
   okEl.style.display  = 'none';
 
@@ -7892,7 +7905,6 @@ function doGallusSubmit() {
   let url;
   const guidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\??$/;
   if (guidPattern.test(input)) {
-    // Bare GUID — construct the full share URL
     const guid = input.replace(/\?$/, '');
     url = `https://manager.gallusgolf.com/Share/Round/${guid}?`;
   } else if (input.includes('gallusgolf.com')) {
@@ -7903,89 +7915,114 @@ function doGallusSubmit() {
     return;
   }
 
-  const now = new Date().toISOString().replace('T',' ').substring(0,19);
+  const submitBtn = document.querySelector('#gallusSubmitModal button');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ Importing...'; }
+
   try {
-    serverRun(`INSERT INTO GallusSubmissions (Player, GallusUrl, DateSubmitted, Status) VALUES (?,?,?,?)`,
-      [currentUser.name, url, now, 'pending']);
-    saveDBToServer();
-    okEl.textContent = '✓ Round submitted! Your officer will import your scores shortly.';
+    const resp = await fetch('/fetch-gallus', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const json = await resp.json();
+
+    if (!json.ok) {
+      errEl.textContent = json.error || 'Failed to fetch Gallus scorecard.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    const { players, frontBack } = json;
+    const now   = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const today = new Date().toISOString().substring(0, 10).replace(/-/g, '');
+
+    try { db.run('ALTER TABLE GallusImport ADD COLUMN Reconciled INTEGER DEFAULT 0'); } catch(e) {}
+
+    const importedNames = [];
+    for (const p of players) {
+      const match = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [p.name]);
+      const resolvedName = match.length ? match[0].Player : p.name;
+      const isFront = frontBack !== 'Back';
+      const h = p.scores;
+      const vals = [
+        "Hugh's", today, now, url, currentUser.name, p.name, resolvedName, frontBack,
+        isFront?(h[0]??null):null, isFront?(h[1]??null):null, isFront?(h[2]??null):null,
+        isFront?(h[3]??null):null, isFront?(h[4]??null):null, isFront?(h[5]??null):null,
+        isFront?(h[6]??null):null, isFront?(h[7]??null):null, isFront?(h[8]??null):null,
+        !isFront?(h[0]??null):null, !isFront?(h[1]??null):null, !isFront?(h[2]??null):null,
+        !isFront?(h[3]??null):null, !isFront?(h[4]??null):null, !isFront?(h[5]??null):null,
+        !isFront?(h[6]??null):null, !isFront?(h[7]??null):null, !isFront?(h[8]??null):null,
+        0
+      ];
+      try {
+        db.run(`INSERT INTO GallusImport
+          (League,Date,ImportDate,URL,Owner,GallusName,ResolvedName,FrontBack,
+           H1,H2,H3,H4,H5,H6,H7,H8,H9,
+           H10,H11,H12,H13,H14,H15,H16,H17,H18,
+           Reconciled)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, vals);
+        importedNames.push(resolvedName);
+      } catch(e) { console.warn('GallusImport insert error:', e.message); }
+    }
+
+    db.run(`INSERT INTO GallusSubmissions (Player, GallusUrl, DateSubmitted, Status, ImportedBy, ImportedAt)
+      VALUES (?,?,?,?,?,?)`,
+      [currentUser.name, url, now, 'imported', currentUser.name, now]);
+
+    await saveDBToServer();
+
+    okEl.textContent = `✓ Imported! Players: ${importedNames.join(', ')}`;
     okEl.style.display = 'block';
     document.getElementById('gallusSubmitUrl').value = '';
-    setTimeout(() => { document.getElementById('gallusSubmitModal').style.display = 'none'; }, 2500);
+    setTimeout(() => { document.getElementById('gallusSubmitModal').style.display = 'none'; }, 3500);
+
   } catch(e) {
-    errEl.textContent = 'Failed to submit: ' + e.message;
+    errEl.textContent = 'Error: ' + e.message;
     errEl.style.display = 'block';
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '\U0001f4e4 Submit'; }
   }
 }
 
-// ── Gallus Reconciliation ─────────────────────────────────────────────────────
+// ── Gallus Reconciliation ─────────────────────────────────────────────────────────────────────────────────
 async function reconcileGallusQueue() {
   if (!db) return;
-  const pending = query(`SELECT * FROM GallusSubmissions WHERE Status='pending'`);
-  if (!pending.length) { alert('No pending submissions to reconcile.'); return; }
+  try { db.run('ALTER TABLE GallusImport ADD COLUMN Reconciled INTEGER DEFAULT 0'); } catch(e) {}
 
-  let matched = 0, mismatched = 0, errors = 0;
-  for (const sub of pending) {
+  const unreconciled = query(`SELECT * FROM GallusImport WHERE Reconciled IS NULL OR Reconciled=0`);
+  if (!unreconciled.length) { alert('No unreconciled Gallus entries to check.'); return; }
+
+  let matched = 0, notFound = 0, errors = 0;
+  for (const gi of unreconciled) {
     try {
-      const resp = await fetch('/fetch-gallus', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Save-Token': await ensureSaveToken() },
-        body: JSON.stringify({ url: sub.GallusUrl })
-      });
-      const json = await resp.json();
-      if (!json.ok) { errors++; continue; }
-
-      const dateStr = sub.DateSubmitted ? sub.DateSubmitted.substring(0,10).replace(/-/g,'') : null;
-      if (!dateStr) { errors++; continue; }
-
+      if (!gi.ResolvedName || !gi.Date) { errors++; continue; }
       const existing = query(
         `SELECT * FROM Scores WHERE Player=? AND Date=? LIMIT 1`,
-        [sub.Player, dateStr]
+        [gi.ResolvedName, gi.Date]
       );
-      if (!existing.length) { mismatched++; continue; }
-
-      const dbRow = existing[0];
-      const gallusPlayer = json.players.find(p => p.name === sub.Player || sub.Player.includes(p.name) || p.name.includes(sub.Player));
-      if (!gallusPlayer) {
-        db.run(`UPDATE GallusSubmissions SET Status='mismatched', ImportedBy=?, ImportedAt=datetime('now') WHERE ID=?`,
-          ['Auto-reconciled', sub.ID]);
-        mismatched++; continue;
-      }
-
-      const frontBack = json.frontBack === 'Back' ? 9 : 0;
-      let allMatch = true;
-      for (let i = 0; i < 9; i++) {
-        const dbScore = parseInt(dbRow[String(i + 1 + frontBack)]);
-        const gallusScore = gallusPlayer.scores[i];
-        if (gallusScore !== null && dbScore !== gallusScore) { allMatch = false; break; }
-      }
-
-      if (allMatch) {
-        db.run(`UPDATE GallusSubmissions SET Status='imported', ImportedBy=?, ImportedAt=datetime('now') WHERE ID=?`,
-          ['Auto-reconciled', sub.ID]);
+      if (existing.length) {
+        db.run(`UPDATE GallusImport SET Reconciled=1 WHERE ID=?`, [gi.ID]);
         matched++;
       } else {
-        db.run(`UPDATE GallusSubmissions SET Status='mismatched', ImportedBy=?, ImportedAt=datetime('now') WHERE ID=?`,
-          ['Auto-reconciled', sub.ID]);
-        mismatched++;
+        notFound++;
       }
     } catch(e) { errors++; }
   }
 
   await saveDBToServer('✓ Reconciled');
   loadGallusQueue();
-  alert(`Reconciliation complete:\n✓ Auto-imported: ${matched}\n⚠ Mismatched (review manually): ${mismatched}\n✗ Errors: ${errors}`);
+  alert(`Reconciliation complete:\n✓ Already in Scores: ${matched}\n⏳ Not yet imported to Scores: ${notFound}\n✗ Errors: ${errors}`);
 }
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ── Gallus Queue (officers) ───────────────────────────────────────────────────
+// ── Gallus Queue (officers) ─────────────────────────────────────────────────────────────────────────────────
 function loadGallusQueue() {
   if (!db) return;
-  const rows = query(`SELECT * FROM GallusSubmissions ORDER BY DateSubmitted DESC LIMIT 50`);
+  try { db.run('ALTER TABLE GallusImport ADD COLUMN Reconciled INTEGER DEFAULT 0'); } catch(e) {}
+
+  const rows = query(`SELECT * FROM GallusImport ORDER BY Reconciled ASC, ImportDate DESC LIMIT 100`);
   const el = document.getElementById('gallusQueueContent');
 
   if (!rows.length) {
-    el.innerHTML = '<div style="color:#999;font-size:13px;padding:8px">No submissions yet.</div>';
+    el.innerHTML = '<div style="color:#999;font-size:13px;padding:8px">No Gallus imports yet.</div>';
     return;
   }
 
@@ -7995,27 +8032,32 @@ function loadGallusQueue() {
   let html = `<table style="border-collapse:collapse;width:100%">
     <thead><tr>
       <th style="${thS}">Player</th>
-      <th style="${thS}">Submitted</th>
+      <th style="${thS}">Round Date</th>
+      <th style="${thS}">9</th>
       <th style="${thS}">Status</th>
       <th style="${thS}">URL</th>
       <th style="${thS}">Action</th>
     </tr></thead><tbody>`;
 
-  rows.forEach((r, i) => {
-    const bg = r.Status === 'imported' ? '#e8f5e9' : r.Status === 'skipped' ? '#f5f5f5' : r.Status === 'pending' ? '#fff9c4' : '#ffffff';
-    const shortUrl = r.GallusUrl ? r.GallusUrl.substring(0, 40) + '...' : '';
+  rows.forEach(r => {
+    const reconciled = r.Reconciled === 1;
+    const bg = reconciled ? '#e8f5e9' : '#fff9c4';
+    const dateDisplay = r.Date ? r.Date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '';
+    const shortUrl = r.URL ? r.URL.substring(0, 35) + '...' : '';
+    const player = r.ResolvedName || r.GallusName || '';
     html += `<tr style="background:${bg}">
-      <td style="${td};font-weight:600">${r.Player}</td>
-      <td style="${td}">${r.DateSubmitted||''}</td>
-      <td style="${td}">${r.Status === 'imported' ? '✓ Imported' : r.Status === 'skipped' ? '⊘ Skipped' : '⏳ Pending'}</td>
-      <td style="${td};font-family:'DM Mono',monospace;font-size:10px" title="${r.GallusUrl}">${shortUrl}</td>
+      <td style="${td};font-weight:600">${player}</td>
+      <td style="${td}">${dateDisplay}</td>
+      <td style="${td}">${r.FrontBack||''}</td>
+      <td style="${td}">${reconciled ? '✓ Reconciled' : '⏳ Unreconciled'}</td>
+      <td style="${td};font-family:'DM Mono',monospace;font-size:10px" title="${r.URL||''}">${shortUrl}</td>
       <td style="${td}">
-        ${r.Status === 'pending' 
-          ? `<button onclick="importGallusSubmission(${r.ID},'${r.GallusUrl?.replace(/'/g,"\\'")}')" 
-              style="padding:4px 10px;background:#1565c0;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px">📥 Import</button>` 
-          : r.Status === 'skipped'
-          ? `<span style="color:#888;font-size:11px">by ${r.ImportedBy||''}</span> <button onclick="retryGallusSubmission(${r.ID})" style="margin-left:6px;padding:4px 10px;background:#e65100;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px">🔄 Retry</button>`
-          : `<span style="color:#888;font-size:11px">by ${r.ImportedBy||''}</span>`}
+        ${!reconciled
+          ? `<button onclick="importGallusEntry(${r.ID},'${(r.URL||'').replace(/'/g,"\\'")}')"
+               style="padding:4px 10px;background:#1565c0;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px">\U0001f4e5 Import to Scores</button>
+             <button onclick="markGallusReconciled(${r.ID})"
+               style="margin-left:4px;padding:4px 8px;background:#2d6a4f;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px">✓ Done</button>`
+          : `<span style="color:#888;font-size:11px">by ${r.Owner||''}</span>`}
       </td>
     </tr>`;
   });
@@ -8024,60 +8066,219 @@ function loadGallusQueue() {
   el.innerHTML = html;
 }
 
-async function retryGallusSubmission(id) {
+function markGallusReconciled(id) {
   if (!db) return;
-  try {
-    const subRow = query('SELECT Player, DateSubmitted FROM GallusSubmissions WHERE ID=?', [id]);
-    if (!subRow.length) { alert('Submission not found.'); return; }
-    const sub = subRow[0];
-    const dt = sub.DateSubmitted ? sub.DateSubmitted.substring(0,10) : 'unknown date';
-    if (!confirm('Reset this submission for ' + sub.Player + ' (submitted ' + dt + ') back to Pending so it can be imported?')) return;
-    db.run('UPDATE GallusSubmissions SET Status=?, ImportedBy=NULL WHERE ID=?', ['pending', id]);
+  db.run(`UPDATE GallusImport SET Reconciled=1 WHERE ID=?`, [id]);
+  saveDBToServer();
+  loadGallusQueue();
+}
+
+
+let _gallusVerifyPlayers = [];
+
+function showGallusVerifyModal(url, date) {
+  if (!db) return;
+  const rows = query(`SELECT * FROM GallusImport WHERE URL=? AND Date=? ORDER BY ID`, [url, date]);
+  if (!rows.length) {
+    alert('No import data found for this round.\nURL: ' + url + '\nDate: ' + date);
+    return;
+  }
+
+  const frontBack = rows[0].FrontBack || 'Front';
+  const dateDisplay = date ? date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '';
+  document.getElementById('gallusVerifyTitle').textContent =
+    `\u{1F4CB} Verify Players — ${frontBack} 9 — ${dateDisplay}`;
+
+  const isFront = frontBack !== 'Back';
+  _gallusVerifyPlayers = rows.map(r => ({
+    id: r.ID,
+    gallusName: r.GallusName || r.ResolvedName || '',
+    resolvedName: r.ResolvedName || r.GallusName || '',
+    scores: isFront
+      ? [r.H1,r.H2,r.H3,r.H4,r.H5,r.H6,r.H7,r.H8,r.H9]
+      : [r.H10,r.H11,r.H12,r.H13,r.H14,r.H15,r.H16,r.H17,r.H18],
+    frontBack,
+    date
+  }));
+
+  const allPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r => r.Player);
+  renderGallusVerifyBody(allPlayers);
+  document.getElementById('gallusVerifyModal').style.display = 'flex';
+}
+
+function renderGallusVerifyBody(allPlayers) {
+  const thS = 'background:var(--green);color:var(--gold);padding:7px 10px;text-align:left;font-size:11px;font-weight:600';
+  const tdS = 'padding:8px 10px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:middle';
+  let html = `<table style="width:100%;border-collapse:collapse">
+    <thead><tr>
+      <th style="${thS}">Gallus Name</th>
+      <th style="${thS}">Import As</th>
+    </tr></thead><tbody>`;
+
+  _gallusVerifyPlayers.forEach((p, i) => {
+    const opts = allPlayers.map(name =>
+      `<option value="${name}" ${name === p.resolvedName ? 'selected' : ''}>${name}</option>`
+    ).join('');
+    html += `<tr>
+      <td style="${tdS};color:#666">${p.gallusName}</td>
+      <td style="${tdS}">
+        <select onchange="_gallusVerifyPlayers[${i}].resolvedName=this.value"
+          style="width:100%;padding:5px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px">
+          ${opts}
+        </select>
+      </td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('gallusVerifyBody').innerHTML = html;
+}
+
+async function confirmGallusVerify() {
+  if (!_gallusVerifyPlayers.length) return;
+
+  // Save any name remaps to GallusImport
+  for (const p of _gallusVerifyPlayers) {
+    db.run(`UPDATE GallusImport SET ResolvedName=? WHERE ID=?`, [p.resolvedName, p.id]);
+  }
+
+  // Compare Gallus scores against existing entryState scores
+  const mismatches   = [];   // { player, gallusName, holes:[{hole,existing,gallus}] }
+  const noScorePlayers = []; // players with no scores yet in entryState
+
+  for (const p of _gallusVerifyPlayers) {
+    const slot = Object.values(entryState).find(s =>
+      s.active === p.resolvedName || s.regular === p.resolvedName || s.sub === p.resolvedName
+    );
+    const hasExisting = slot && slot.holes.some(h => h !== '' && h != null);
+    if (!hasExisting) { noScorePlayers.push(p); continue; }
+
+    const holeDiffs = [];
+    p.scores.forEach((gScore, i) => {
+      const ex = slot.holes[i];
+      if (gScore != null && gScore > 0 && ex !== '' && ex != null) {
+        if (String(gScore) !== String(ex)) holeDiffs.push({ hole: i+1, existing: ex, gallus: gScore });
+      }
+    });
+    if (holeDiffs.length) mismatches.push({ player: p.resolvedName, gallusName: p.gallusName, holes: holeDiffs, p });
+  }
+
+  // All scores exist and all match → just reconcile, done
+  if (!mismatches.length && !noScorePlayers.length) {
+    for (const p of _gallusVerifyPlayers) {
+      db.run(`UPDATE GallusImport SET Reconciled=1 WHERE ID=?`, [p.id]);
+    }
+    document.getElementById('gallusVerifyModal').style.display = 'none';
+    await saveDBToServer('✓ Reconciled');
     loadGallusQueue();
-    alert('Reset to Pending. Click Import to process it.');
-  } catch(e) {
-    alert('Error resetting submission: ' + e.message);
+    alert('✓ All Gallus scores match existing scores. Marked reconciled.');
+    return;
+  }
+
+  // Mismatches found → show diff report inside the modal
+  if (mismatches.length) {
+    showGallusMismatchReport(mismatches, noScorePlayers);
+    return;
+  }
+
+  // No mismatches but some players have no scores yet → import just those
+  await _doVerifyImport(noScorePlayers);
+}
+
+function showGallusMismatchReport(mismatches, noScorePlayers) {
+  document.getElementById('gallusVerifyTitle').textContent = '⚠️ Score Mismatches Found';
+
+  const thS = 'background:#c0392b;color:white;padding:6px 8px;font-size:11px;font-weight:600;text-align:left';
+  const tdS = 'padding:6px 8px;border-bottom:1px solid #f0f0f0;font-size:12px';
+
+  let html = '<div style="font-size:12px;color:#c0392b;margin-bottom:10px;font-weight:600">' +
+    'Gallus scores differ from what\u2019s already in the score sheet:</div>';
+
+  mismatches.forEach(m => {
+    const nameNote = m.gallusName !== m.player
+      ? ` <span style="color:#999;font-size:11px">(Gallus: ${m.gallusName})</span>` : '';
+    html += `<div style="font-weight:600;font-size:13px;margin:10px 0 4px">${m.player}${nameNote}</div>`;
+    html += `<table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+      <thead><tr>
+        <th style="${thS}">Hole</th><th style="${thS}">Sheet</th><th style="${thS}">Gallus</th>
+      </tr></thead><tbody>`;
+    m.holes.forEach(h => {
+      html += `<tr>
+        <td style="${tdS};font-weight:600">H${h.hole}</td>
+        <td style="${tdS}">${h.existing}</td>
+        <td style="${tdS};color:#c0392b;font-weight:600">${h.gallus}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+  });
+
+  if (noScorePlayers.length) {
+    html += `<div style="font-size:11px;color:#666;margin-top:8px">` +
+      `No existing scores for: <b>${noScorePlayers.map(p=>p.resolvedName).join(', ')}</b> — will be imported.</div>`;
+  }
+
+  document.getElementById('gallusVerifyBody').innerHTML = html;
+
+  // Swap footer buttons
+  const footer = document.querySelector('#gallusVerifyModal > div > div:last-child');
+  if (footer) {
+    footer.innerHTML = `
+      <button onclick="document.getElementById('gallusVerifyModal').style.display='none'"
+        style="padding:10px 20px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Keep Sheet Scores</button>
+      <button onclick="gallusMismatchImportAnyway()"
+        style="padding:10px 24px;background:#c0392b;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Overwrite with Gallus</button>
+    `;
   }
 }
 
-async function importGallusSubmission(id, url) {
-  // Pre-fill the Import Gallus modal with this URL
-  showAdminSection('players'); // switch away briefly
-  document.getElementById('gallusSubmitModal') && (document.getElementById('gallusSubmitModal').style.display = 'none');
+async function gallusMismatchImportAnyway() {
+  // Import all players, skipping doGallusConfirm's own overwrite prompt
+  window._gallusSkipOverwriteCheck = true;
+  await _doVerifyImport(_gallusVerifyPlayers);
+  window._gallusSkipOverwriteCheck = false;
+}
 
-  // Switch to Scores tab and open import modal
+async function _doVerifyImport(players) {
+  if (!players.length) return;
+  _gallusData = {
+    players: players.map(p => ({ name: p.resolvedName, scores: p.scores })),
+    frontBack: _gallusVerifyPlayers[0].frontBack
+  };
+  for (const p of _gallusVerifyPlayers) {
+    db.run(`UPDATE GallusImport SET Reconciled=1 WHERE ID=?`, [p.id]);
+  }
+  document.getElementById('gallusVerifyModal').style.display = 'none';
+  window._gallusImportEntryId = _gallusVerifyPlayers[0].id;
+  await doGallusConfirm();
+  loadGallusQueue();
+}
+
+async function importGallusEntry(id, url) {
+  if (!db) return;
+  const rows = query(`SELECT * FROM GallusImport WHERE ID=?`, [id]);
+  if (!rows.length) { alert('Entry not found.'); return; }
+  const gi = rows[0];
+
+  // Switch to scores tab and set the round date
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelector('[data-tab="scores"]')?.classList.add('active');
   document.getElementById('tab-scores')?.classList.add('active');
   if (!courseData) await initEntry(); else reRenderEntry();
 
-  // Set entryDate dropdown to match the submission date
-  try {
-    const subRow = query('SELECT DateSubmitted FROM GallusSubmissions WHERE ID=?', [id]);
-    if (subRow.length && subRow[0].DateSubmitted) {
-      const dt = subRow[0].DateSubmitted;
-      const dateInt = dt.substring(0,10).replace(/-/g,'');
-      const sel = document.getElementById('entryDate');
-      const opt = Array.from(sel.options).find(o => o.value === dateInt);
-      if (opt) {
-        sel.value = dateInt;
-        entryState = {}; entryStateDate = null; entryManual9 = false;
-        buildEntryGrid();
-      }
+  if (gi.Date) {
+    const sel = document.getElementById('entryDate');
+    const opt = Array.from(sel.options).find(o => o.value === gi.Date);
+    if (opt) {
+      sel.value = gi.Date;
+      entryState = {}; entryStateDate = null; entryManual9 = false;
+      buildEntryGrid();
     }
-  } catch(_) {}
+  }
 
-  showGallusImport();
-  document.getElementById('gallusUrl').value = url;
-
-  // Store submission ID so we can mark it imported after confirm
-  window._gallusSubmissionId = id;
+  // Show verify modal instead of URL-paste modal
+  showGallusVerifyModal(url || gi.URL, gi.Date);
 }
-// ─────────────────────────────────────────────────────────────────────────────
-
-
-let _gallusData = null; // stored between fetch and confirm
 
 function showGallusImport() {
   document.getElementById('gallusModal').style.display = 'flex';
@@ -8180,7 +8381,7 @@ async function doGallusConfirm() {
     if (hasExisting) playersWithExistingScores.push(p.name);
   });
 
-  if (playersWithExistingScores.length) {
+  if (playersWithExistingScores.length && !window._gallusSkipOverwriteCheck) {
     const proceed = confirm(`⚠ The following players already have scores entered for this date:\n\n${playersWithExistingScores.join(', ')}\n\nImporting from Gallus will OVERWRITE their existing scores. Continue?`);
     if (!proceed) return;
   }
@@ -8211,6 +8412,16 @@ async function doGallusConfirm() {
     serverRun(`UPDATE GallusSubmissions SET Status='imported', ImportedBy=?, ImportedAt=? WHERE ID=?`,
       [currentUser.name, now, window._gallusSubmissionId]);
     window._gallusSubmissionId = null;
+  }
+  // Mark GallusImport entry as reconciled if imported via importGallusEntry
+  if (window._gallusImportEntryId) {
+    db.run(`UPDATE GallusImport SET Reconciled=1 WHERE ID=?`, [window._gallusImportEntryId]);
+    window._gallusImportEntryId = null;
+  }
+  // Mark GallusImport entry as reconciled if imported via importGallusEntry
+  if (window._gallusImportEntryId) {
+    db.run(`UPDATE GallusImport SET Reconciled=1 WHERE ID=?`, [window._gallusImportEntryId]);
+    window._gallusImportEntryId = null;
   }
 
   reRenderEntry();
@@ -11949,24 +12160,20 @@ const _gallusWarnedPlayers = new Set();
 function checkPendingGallusForPlayer(playerName, key) {
   if (!playerName || !db) return;
   if (_gallusWarnedPlayers.has(playerName)) return;
+  try { db.run('ALTER TABLE GallusImport ADD COLUMN Reconciled INTEGER DEFAULT 0'); } catch(e) {}
 
-  const pending = query(`SELECT * FROM GallusSubmissions WHERE Status='pending'`);
-  if (!pending.length) return;
+  const unreconciled = query(
+    `SELECT * FROM GallusImport WHERE ResolvedName=? AND (Reconciled IS NULL OR Reconciled=0) LIMIT 1`,
+    [playerName]
+  );
+  if (!unreconciled.length) return;
 
-  for (const sub of pending) {
-    const imported = query(
-      `SELECT * FROM GallusImport WHERE URL=? AND ResolvedName=? LIMIT 1`,
-      [sub.GallusUrl, playerName]
-    );
-    if (!imported.length) continue;
-
-    _gallusWarnedPlayers.add(playerName);
-    const dt = sub.DateSubmitted ? sub.DateSubmitted.substring(0,10) : 'unknown date';
-    const msg = `⚠ ${playerName} has a pending Gallus submission from ${dt}.\n\nDo you want to go to the Gallus Queue to import it instead of entering manually?`;
-    if (confirm(msg)) {
-      showAdminSection('gallus');
-    }
-    return;
+  _gallusWarnedPlayers.add(playerName);
+  const row = unreconciled[0];
+  const dt = row.Date ? row.Date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : 'unknown date';
+  const msg = `⚠ ${playerName} has an unreconciled Gallus import from ${dt}.\n\nDo you want to go to the Gallus Queue to import it instead of entering manually?`;
+  if (confirm(msg)) {
+    showAdminSection('gallus');
   }
 }
 
