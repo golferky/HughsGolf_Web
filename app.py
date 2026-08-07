@@ -44,7 +44,8 @@ LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garya
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
 PDF_RENDERER_URL = os.environ.get('HUGHSGOLF_PDF_RENDERER_URL', 'http://127.0.0.1:3009/render')
-LIVE_DB_PATH = os.environ.get('HUGHSGOLF_LIVE_DB', '/Users/garyscudder/HughsGolfLive/HughsGolf.db')
+LIVE_DB_PATH   = os.environ.get('HUGHSGOLF_LIVE_DB', '/Users/garyscudder/HughsGolfLive/HughsGolf.db')
+LIVE_SERVER_URL = os.environ.get('HUGHSGOLF_LIVE_URL', 'http://192.168.1.190:8445')  # Mac mini live server
 # ─────────────────────────────────────────────────────────────────────────────
 
 def backup_env_name():
@@ -395,14 +396,13 @@ def create_backup():
 
 @app.route('/refresh-sandbox-from-live', methods=['POST'])
 def refresh_sandbox_from_live():
-    """Replace the sandbox DB with the live DB after saving a sandbox safety backup."""
+    """Replace the sandbox DB with the live DB after saving a sandbox safety backup.
+    Tries local file path first (Mac dev), falls back to HTTP fetch from live server (QNAP)."""
     token = request.headers.get('X-Save-Token', '')
     if token != SAVE_TOKEN:
         return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
     if 'sandbox' not in VERSION.lower():
         return jsonify({'ok': False, 'error': 'This action is only allowed on the sandbox server'}), 400
-    if not os.path.isfile(LIVE_DB_PATH):
-        return jsonify({'ok': False, 'error': f'Live DB not found: {LIVE_DB_PATH}'}), 404
 
     try:
         with DB_WRITE_LOCK:
@@ -412,9 +412,24 @@ def refresh_sandbox_from_live():
             safety_path = os.path.join(env_backup_dir, safety_name)
             if os.path.exists(DB_PATH):
                 shutil.copy2(DB_PATH, safety_path)
-            shutil.copy2(LIVE_DB_PATH, DB_PATH)
-        print(f'[{now_local():%H:%M:%S}] Refreshed sandbox DB from live DB {LIVE_DB_PATH} (safety copy: {safety_name})')
-        return jsonify({'ok': True, 'source': LIVE_DB_PATH, 'safetyBackup': safety_name})
+
+            source = None
+            if os.path.isfile(LIVE_DB_PATH):
+                # Local file available (Mac dev environment)
+                shutil.copy2(LIVE_DB_PATH, DB_PATH)
+                source = LIVE_DB_PATH
+            else:
+                # Fetch from live server via HTTP (QNAP environment)
+                url = f'{LIVE_SERVER_URL}/HughsGolf.db'
+                print(f'[{now_local():%H:%M:%S}] Fetching live DB from {url}')
+                import urllib.request
+                with urllib.request.urlopen(url, timeout=30) as resp:
+                    with open(DB_PATH, 'wb') as f:
+                        f.write(resp.read())
+                source = url
+
+        print(f'[{now_local():%H:%M:%S}] Refreshed sandbox DB from {source} (safety copy: {safety_name})')
+        return jsonify({'ok': True, 'source': source, 'safetyBackup': safety_name})
     except Exception as e:
         print(f'[{now_local():%H:%M:%S}] refresh_sandbox_from_live error: {e}')
         return jsonify({'ok': False, 'error': str(e)}), 500
@@ -1164,6 +1179,131 @@ You've received a payout of ${amount:.2f} from the {source}.
     return jsonify({'ok': True, 'sent_to': sent_to, 'errors': errors})
 
 
+@app.route('/parse-scorecard', methods=['POST'])
+def parse_scorecard():
+    """Parse a golf scorecard photo using Claude Haiku vision and return player scores."""
+    import base64, re
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+
+    # Load Anthropic API key — LeagueParms table first, then env var, then file
+    api_key = ''
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT AnthropicApiKey FROM LeagueParms WHERE Name=\"Hugh's\" AND Season=(SELECT MAX(Season) FROM LeagueParms WHERE Name=\"Hugh's\")")
+        row = cur.fetchone()
+        conn.close()
+        if row and row['AnthropicApiKey']:
+            api_key = row['AnthropicApiKey'].strip()
+    except Exception:
+        pass
+    if not api_key:
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+    if not api_key:
+        key_file = os.path.join(BASE_DIR, 'anthropic_key.txt')
+        if os.path.exists(key_file):
+            with open(key_file) as f:
+                api_key = f.read().strip()
+    if not api_key:
+        return jsonify({'ok': False, 'error': 'Anthropic API key not configured. Add AnthropicApiKey to LeagueParms.'}), 500
+
+    if 'image' not in request.files:
+        return jsonify({'ok': False, 'error': 'No image provided'}), 400
+
+    img_file = request.files['image']
+    img_bytes = img_file.read()
+    filename = (img_file.filename or '').lower()
+
+    # Convert HEIC → JPEG if needed
+    if filename.endswith('.heic') or filename.endswith('.heif'):
+        try:
+            from pillow_heif import register_heif_opener
+            from PIL import Image
+            import io
+            register_heif_opener()
+            img = Image.open(io.BytesIO(img_bytes))
+            buf = io.BytesIO()
+            img.save(buf, 'JPEG', quality=90)
+            img_bytes = buf.getvalue()
+            filename = 'scorecard.jpg'
+        except Exception as e:
+            return jsonify({'ok': False, 'error': f'HEIC conversion failed (install pillow-heif): {e}'}), 500
+
+    # Determine media type
+    if filename.endswith('.png'):
+        media_type = 'image/png'
+    elif filename.endswith('.gif'):
+        media_type = 'image/gif'
+    elif filename.endswith('.webp'):
+        media_type = 'image/webp'
+    else:
+        media_type = 'image/jpeg'
+
+    img_b64 = base64.b64encode(img_bytes).decode()
+
+    prompt = (
+        "This is a golf scorecard photo. Extract each player's first name (or full name if visible) "
+        "and their hole-by-hole gross scores for the 9 holes played.\n\n"
+        "Also look for a handwritten note starting with # anywhere on the card (e.g. '#Group 5', '#G5', '#5'). "
+        "If found, include it as the 'group' field.\n\n"
+        "Return ONLY valid JSON in this exact format with no extra text:\n"
+        '{"players":[{"name":"Player Name","scores":[5,4,6,3,5,4,4,3,5]},...],"frontBack":"Front","group":"5"}\n\n'
+        "Rules:\n"
+        "- scores: exactly 9 integers (gross strokes per hole). Use null for illegible scores.\n"
+        "- frontBack: 'Front' for holes 1-9, 'Back' for holes 10-18.\n"
+        "- group: the number or label after the # sign. Omit the field entirely if no # note is found.\n"
+        "- Ignore par rows, total rows, and handicap rows — only player score rows.\n"
+        "- Return ONLY the JSON object, nothing else."
+    )
+
+    payload = json.dumps({
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 1024,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": img_b64}},
+                {"type": "text", "text": prompt}
+            ]
+        }]
+    }).encode()
+
+    try:
+        req = urllib.request.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=payload,
+            headers={
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json'
+            },
+            method='POST'
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Anthropic API error: {e}'}), 500
+
+    raw_text = result.get('content', [{}])[0].get('text', '').strip()
+    match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+    if not match:
+        return jsonify({'ok': False, 'error': 'AI could not parse scorecard', 'raw': raw_text}), 500
+
+    try:
+        data = json.loads(match.group())
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'JSON parse error: {e}', 'raw': raw_text}), 500
+
+    players = data.get('players', [])
+    front_back = data.get('frontBack', 'Front')
+    group = data.get('group', '')
+    print(f'[{now_local():%H:%M:%S}] Photo scorecard parsed: {len(players)} players, {front_back}, group={group or "unknown"}')
+    return jsonify({'ok': True, 'players': players, 'frontBack': front_back, 'group': group})
+
+
 @app.route('/fetch-gallus', methods=['POST'])
 def fetch_gallus():
     """Fetch and parse a Gallus Golf scorecard URL."""
@@ -1374,6 +1514,13 @@ def ensure_schema():
         if 'BlockSubs' not in cols:
             cur.execute("ALTER TABLE Players ADD COLUMN BlockSubs TEXT DEFAULT 'N'")
             print(f'[{now_local():%H:%M:%S}] Schema check: added missing Players.BlockSubs column')
+        conn.commit()
+        # Add AnthropicApiKey to LeagueParms if missing
+        cur.execute("PRAGMA table_info(LeagueParms)")
+        lp_cols = {row[1] for row in cur.fetchall()}
+        if 'AnthropicApiKey' not in lp_cols:
+            cur.execute("ALTER TABLE LeagueParms ADD COLUMN AnthropicApiKey TEXT")
+            print(f'[{now_local():%H:%M:%S}] Schema check: added missing LeagueParms.AnthropicApiKey column')
         conn.commit()
         conn.close()
     except Exception as e:

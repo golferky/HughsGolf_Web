@@ -492,6 +492,7 @@
   <div class="header-right">
     <span id="loggedInUser" onclick="showMyProfile()" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px;cursor:pointer;text-decoration:underline" title="View my profile"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
+    <button id="switchUserBtn" onclick="showSwitchUser()" style="display:none;padding:6px 12px;background:#4a148c;color:white;border:1px solid #ce93d8;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🎭 Switch User</button>
     <button id="logoutBtn" onclick="logoutUser()" style="display:none;padding:6px 12px;background:#4a3000;color:var(--gold);border:1px solid var(--gold);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:6px">Logout</button>
     <span id="dbStatus">No database loaded</span>
     <button id="loadBtn" onclick="openDB()" style="display:none">📂 Load DB</button>
@@ -537,6 +538,15 @@
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
     <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v20260802.2-sandbox</span></div>
+    <!-- Sandbox quick-login (no password) -->
+    <div id="sandboxQuickLogin" style="display:none;margin-bottom:16px;padding:12px;background:#f3e5f5;border-radius:8px;border:1px solid #ce93d8">
+      <div style="font-size:11px;font-weight:700;color:#6a1b9a;margin-bottom:8px">🎭 SANDBOX — No password required</div>
+      <button type="button" onclick="doSandboxAutoLogin()" style="width:100%;padding:9px;background:#4a148c;color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;margin-bottom:10px">⚡ Auto Login as Gary Scudder</button>
+      <div style="font-size:11px;color:#888;text-align:center;margin-bottom:8px">— or log in as anyone —</div>
+      <select id="sandboxLoginSelect" style="width:100%;padding:7px;border:1px solid #ce93d8;border-radius:6px;font-size:13px;margin-bottom:8px;box-sizing:border-box"></select>
+      <button type="button" onclick="doSandboxQuickLogin()" style="width:100%;padding:8px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Log In Without Password</button>
+    </div>
+
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
       <div style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">Player</label>
@@ -624,6 +634,28 @@
       <p>Drag &amp; drop your <strong>HughsGolf.db</strong> here, or click <strong>Load DB</strong> above</p>
     </div>
     <div id="homeStats" style="display:none">
+      <div class="card" id="boardPanel" style="margin-bottom:20px">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+          <span>📋 League Board</span>
+          <button onclick="showNewPostModal()" style="padding:5px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Post</button>
+        </div>
+        <div style="padding:8px 12px;border-bottom:1px solid #eee;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#faf7f2">
+          <input id="boardSearch" type="text" placeholder="🔍 Search posts..." oninput="applyBoardFilter()"
+            style="flex:1;min-width:140px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+          <select id="boardAuthorFilter" onchange="applyBoardFilter()"
+            style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px;background:white">
+            <option value="">All authors</option>
+          </select>
+          <div id="boardCatFilter" style="display:flex;gap:4px">
+            <button onclick="setBoardCat('')"           class="board-cat-btn active" data-cat="">All</button>
+            <button onclick="setBoardCat('Announcement')" class="board-cat-btn" data-cat="Announcement">📢</button>
+            <button onclick="setBoardCat('Rainout')"      class="board-cat-btn" data-cat="Rainout">🌧️</button>
+            <button onclick="setBoardCat('General')"      class="board-cat-btn" data-cat="General">General</button>
+          </div>
+        </div>
+        <div id="boardContent" style="padding:12px;max-height:420px;overflow-y:auto"></div>
+      </div>
+
       <div style="margin-bottom:16px">
         <button id="needSubBtn" onclick="showNeedSub()" style="padding:10px 20px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">🔄 Need a Sub</button>
       </div>
@@ -1027,6 +1059,7 @@
       <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">💾 Backups</button>
       <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
       <button onclick="triggerRedeploy()" id="adminBtnRedeploy" class="admin-btn dev-only" style="background:#e65100;color:white">🚀 Redeploy</button>
+      <button onclick="showImpersonateModal()" id="adminBtnImpersonate" class="admin-btn" style="display:none;background:#4a148c;color:white">🎭 Impersonate</button>
     </div>
 
     <div id="adminSubnavTables" class="admin-subnav">
@@ -1189,6 +1222,25 @@
       </div>
     </div>
     <div id="adminGallus" style="display:none">
+      <!-- Photo Scorecard Import -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">📷 Photo Scorecard Import</div>
+        <div style="padding:16px">
+          <div id="photoDropZone"
+            ondragover="event.preventDefault();this.style.background='#e8f5e9'"
+            ondragleave="this.style.background=''"
+            ondrop="event.preventDefault();this.style.background='';handlePhotoUpload(event.dataTransfer.files[0])"
+            onclick="document.getElementById('photoFileInput').click()"
+            style="border:2px dashed #aaa;border-radius:8px;padding:24px;text-align:center;cursor:pointer;color:#666;font-size:13px;background:#fafafa">
+            📷 Tap or drag a scorecard photo here
+            <div style="font-size:11px;margin-top:4px;color:#999">JPEG, PNG, or HEIC from your phone</div>
+          </div>
+          <input type="file" id="photoFileInput" accept="image/*" style="display:none"
+            onchange="handlePhotoUpload(this.files[0]);this.value=''">
+          <div id="photoImportStatus" style="margin-top:10px;font-size:12px;color:#666;display:none"></div>
+        </div>
+      </div>
+      <!-- Gallus Queue -->
       <div class="card">
         <div class="card-header">📥 Gallus Round Submissions</div>
         <div style="padding:8px 16px 0 16px">
@@ -1622,13 +1674,34 @@
     </div>
   </div>
 
+  <!-- Impersonate Modal (sandbox only) -->
+  <div id="impersonateModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:12px;padding:28px;width:380px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+      <div style="font-size:16px;font-weight:700;margin-bottom:6px;color:#4a148c">🎭 Impersonate User</div>
+      <div style="font-size:12px;color:#888;margin-bottom:16px">Sandbox only — log in as any player without a password.</div>
+      <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Select Player</div>
+      <select id="impersonateSelect" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:16px;box-sizing:border-box"></select>
+      <div style="display:flex;gap:8px">
+        <button onclick="doImpersonate()" style="flex:2;padding:10px;background:#4a148c;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Switch User</button>
+        <button onclick="document.getElementById('impersonateModal').style.display='none'" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Gallus Submit Modal -->
   <div id="gallusSubmitModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;align-items:center;justify-content:center">
     <div style="background:white;border-radius:12px;padding:28px;width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
-      <div style="font-size:16px;font-weight:700;margin-bottom:8px;color:#6a1b9a">📤 Submit My Round</div>
-      <div style="font-size:12px;color:#666;margin-bottom:16px">Share your Gallus Golf scorecard URL so the officer can import your scores.</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px;color:#6a1b9a" id="gallusSubmitTitle">📤 Submit My Round</div>
+      <div style="font-size:12px;color:#666;margin-bottom:16px" id="gallusSubmitSubtitle">Paste your Gallus Golf scorecard URL — the officer will import your scores.</div>
+      <div id="gallusSubmitDateRow" style="margin-bottom:12px">
+        <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Round Date</div>
+        <!-- Officers get a free-form date picker -->
+        <input type="date" id="gallusSubmitDate" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;box-sizing:border-box;display:none">
+        <!-- Players get a dropdown of scheduled dates -->
+        <select id="gallusSubmitDateSelect" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;display:none"></select>
+      </div>
       <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Your Gallus Share URL or Round ID</div>
-      <input type="text" id="gallusSubmitUrl" placeholder="paste full URL, or just the code (e.g. b7eb9f59-9774-42af-8d2a-228d4021ebab)" 
+      <input type="text" id="gallusSubmitUrl" placeholder="paste full URL, or just the code (e.g. b7eb9f59-9774-42af-8d2a-228d4021ebab)"
         style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;box-sizing:border-box;font-family:'DM Mono',monospace;margin-bottom:12px">
       <div id="gallusSubmitError" style="color:#c62828;font-size:12px;margin-bottom:8px;display:none"></div>
       <div id="gallusSubmitSuccess" style="color:#2e7d32;font-size:12px;margin-bottom:8px;display:none"></div>
@@ -1665,6 +1738,43 @@
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button onclick="document.getElementById('gallusVerifyModal').style.display='none'" style="padding:10px 20px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
         <button onclick="confirmGallusVerify()" style="padding:10px 24px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">✓ Confirm Import</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div id="newPostModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9010;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:12px;padding:28px;width:500px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+      <div style="font-size:16px;font-weight:700;margin-bottom:16px;color:var(--green)">📋 New Post</div>
+      <div id="newPostOfficerRow" style="display:none;margin-bottom:12px;display:flex;gap:10px">
+        <div style="flex:1">
+          <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">CATEGORY</label>
+          <select id="newPostCategory" style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+            <option value="General">General</option>
+            <option value="Announcement">📢 Announcement</option>
+            <option value="Rainout">🌧️ Rainout</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:flex-end;padding-bottom:4px;gap:6px">
+          <input type="checkbox" id="newPostPinned" style="width:16px;height:16px">
+          <label for="newPostPinned" style="font-size:12px;font-weight:600;color:#666;cursor:pointer">📌 Pin</label>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">TITLE</label>
+        <input id="newPostTitle" type="text" maxlength="120" placeholder="Post title..."
+          style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">MESSAGE</label>
+        <textarea id="newPostBody" rows="5" placeholder="What's on your mind?"
+          style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('newPostModal').style.display='none'"
+          style="padding:9px 20px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+        <button onclick="submitPost()"
+          style="padding:9px 22px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Post</button>
       </div>
     </div>
   </div>
@@ -1706,7 +1816,9 @@ window.eoyNoShows = new Set();
 window.psBackFirst = false;
 
 function isLocalTestHost() {
-  return ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+  const h = location.hostname;
+  return ['localhost', '127.0.0.1', '::1'].includes(h)
+    || /^192\.168\.\d+\.\d+$/.test(h);  // LAN IPs (QNAP, dev machines)
 }
 
 function canUseFutureScoreOverride() {
@@ -1864,6 +1976,11 @@ function refreshTestModeUi() {
   } else if (banner) {
     banner.remove();
   }
+
+  const impersonateBtn = document.getElementById('adminBtnImpersonate');
+  if (impersonateBtn) impersonateBtn.style.display = isLocalTestHost() ? '' : 'none';
+  const switchUserBtn = document.getElementById('switchUserBtn');
+  if (switchUserBtn) switchUserBtn.style.display = isLocalTestHost() ? '' : 'none';
 
   const overrideGroup = document.getElementById('futureScoreOverrideGroup');
   const overrideInput = document.getElementById('futureScoreOverride');
@@ -2430,8 +2547,10 @@ function onDbLoaded() {
     DateSubmitted TEXT,
     Status TEXT DEFAULT 'pending',
     ImportedBy TEXT,
-    ImportedAt TEXT
+    ImportedAt TEXT,
+    RoundDate TEXT
   )`);
+  try { db.run(`ALTER TABLE GallusSubmissions ADD COLUMN RoundDate TEXT`); } catch(e) {}
   ensureDbChangeLogTable();
   // globalSaveBtn visibility is controlled by applyRoleAccess after login
   populateSeasonDropdowns();
@@ -2967,6 +3086,223 @@ function populateSeasonDropdowns() {
 }
 
 // ── HOME ──
+
+// ── League Message Board ────────────────────────────────────────────────────
+
+function boardEnsureTables() {
+  if (!db) return;
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS Posts (
+      ID INTEGER PRIMARY KEY AUTOINCREMENT,
+      Author TEXT, Category TEXT DEFAULT 'General',
+      Title TEXT, Body TEXT,
+      Pinned INTEGER DEFAULT 0, PostedAt TEXT
+    )`);
+  } catch(e) {}
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS PostComments (
+      ID INTEGER PRIMARY KEY AUTOINCREMENT,
+      PostID INTEGER, Author TEXT, Body TEXT, PostedAt TEXT
+    )`);
+  } catch(e) {}
+}
+
+let _boardFilter = { search: '', author: '', category: '' };
+
+function applyBoardFilter() {
+  _boardFilter.search   = document.getElementById('boardSearch')?.value?.trim().toLowerCase() || '';
+  _boardFilter.author   = document.getElementById('boardAuthorFilter')?.value || '';
+  renderBoardPosts();
+}
+
+function setBoardCat(cat) {
+  _boardFilter.category = cat;
+  document.querySelectorAll('.board-cat-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.cat === cat);
+  });
+  renderBoardPosts();
+}
+
+function loadBoard() {
+  const el = document.getElementById('boardContent');
+  if (!el || !db) return;
+  boardEnsureTables();
+
+  // Populate author dropdown
+  const authorSel = document.getElementById('boardAuthorFilter');
+  if (authorSel) {
+    const authors = query(`SELECT DISTINCT Author FROM Posts ORDER BY Author`).map(r => r.Author);
+    const current = authorSel.value;
+    authorSel.innerHTML = '<option value="">All authors</option>' +
+      authors.map(a => `<option value="${a}" ${a===current?'selected':''}>${a}</option>`).join('');
+  }
+
+  renderBoardPosts();
+}
+
+function importGallusFromBoard(url) {
+  showGallusSubmit();
+  setTimeout(() => {
+    const el = document.getElementById('gallusSubmitUrl');
+    if (el) el.value = url;
+  }, 50);
+}
+
+function renderBoardPosts() {
+  const el = document.getElementById('boardContent');
+  if (!el || !db) return;
+  boardEnsureTables();
+
+  let sql = `SELECT * FROM Posts WHERE 1=1`;
+  const params = [];
+
+  if (_boardFilter.category) {
+    sql += ` AND Category=?`;
+    params.push(_boardFilter.category);
+  }
+  if (_boardFilter.author) {
+    sql += ` AND Author=?`;
+    params.push(_boardFilter.author);
+  }
+
+  sql += ` ORDER BY Pinned DESC, PostedAt DESC LIMIT 50`;
+  let posts = query(sql, params);
+
+  // Client-side keyword filter (title + body)
+  if (_boardFilter.search) {
+    const kw = _boardFilter.search;
+    posts = posts.filter(p =>
+      (p.Title||'').toLowerCase().includes(kw) ||
+      (p.Body||'').toLowerCase().includes(kw)
+    );
+  }
+
+  if (!posts.length) {
+    el.innerHTML = '<div style="color:#999;font-size:13px;padding:4px 0">No posts match your filter.</div>';
+    return;
+  }
+
+  const catColors = { Announcement:'#1565c0', Rainout:'#6a1b9a', General:'#555' };
+  const catBg     = { Announcement:'#e3f2fd', Rainout:'#f3e5f5', General:'#f5f5f5' };
+
+  let html = '';
+  posts.forEach(p => {
+    const comments = query(`SELECT COUNT(*) as c FROM PostComments WHERE PostID=?`, [p.ID])[0]?.c || 0;
+    const pinBadge = p.Pinned ? '<span style="color:#f57c00;font-size:11px;margin-right:4px">📌</span>' : '';
+    const catColor = catColors[p.Category] || '#555';
+    const catBg_   = catBg[p.Category] || '#f5f5f5';
+    const catLabel = p.Category === 'Announcement' ? '📢 Announcement'
+                   : p.Category === 'Rainout'       ? '🌧️ Rainout' : 'General';
+    const ts = p.PostedAt ? p.PostedAt.substring(0,16) : '';
+    const isOfficer = currentUser?.role === 'officer' || currentUser?.role === 'developer';
+
+    html += `<div style="border:1px solid #e8e0d0;border-radius:8px;margin-bottom:10px;overflow:hidden">
+      <div style="padding:10px 12px;background:#faf7f2;cursor:pointer" onclick="togglePost(${p.ID})">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${pinBadge}
+          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${catBg_};color:${catColor}">${catLabel}</span>
+          <span style="font-weight:700;font-size:14px;flex:1">${escapeHtml(p.Title || '')}</span>
+          ${isOfficer ? `<button onclick="event.stopPropagation();deletePost(${p.ID})" style="padding:2px 8px;font-size:11px;background:#fdecea;border:1px solid #f5c6cb;border-radius:4px;cursor:pointer;color:#c62828">✕</button>` : ''}
+        </div>
+        <div style="font-size:11px;color:#888;margin-top:3px">${escapeHtml(p.Author||'')} · ${ts} · ${comments} comment${comments!==1?'s':''}</div>
+      </div>
+      <div id="postBody${p.ID}" style="display:none;padding:12px;border-top:1px solid #eee">
+        <div style="font-size:13px;white-space:pre-wrap;margin-bottom:12px">${escapeHtml(p.Body||'')}</div>
+        ${(() => {
+          if (!isOfficer) return '';
+          const gallusMatch = (p.Body||'').match(/https?:\/\/[^\s]*gallusgolf\.com\/Share\/Round\/[^\s?]+\??|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+          if (!gallusMatch) return '';
+          const gUrl = gallusMatch[0].includes('gallusgolf.com') ? gallusMatch[0] : `https://manager.gallusgolf.com/Share/Round/${gallusMatch[0]}?`;
+          return `<div style="margin-bottom:10px"><button onclick="importGallusFromBoard('${gUrl.replace(/'/g, "\\'")}')" style="padding:5px 14px;background:#1565c0;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">📥 Import Round from Gallus</button></div>`;
+        })()}
+        <div id="postComments${p.ID}"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input id="commentInput${p.ID}" type="text" placeholder="Add a comment..."
+            style="flex:1;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px"
+            onkeydown="if(event.key==='Enter')submitComment(${p.ID})">
+          <button onclick="submitComment(${p.ID})"
+            style="padding:7px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Send</button>
+        </div>
+      </div>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+function togglePost(id) {
+  const body = document.getElementById(`postBody${id}`);
+  if (!body) return;
+  const open = body.style.display === 'none';
+  body.style.display = open ? '' : 'none';
+  if (open) renderPostComments(id);
+}
+
+function renderPostComments(postID) {
+  const el = document.getElementById(`postComments${postID}`);
+  if (!el) return;
+  const comments = query(`SELECT * FROM PostComments WHERE PostID=? ORDER BY PostedAt ASC`, [postID]);
+  if (!comments.length) { el.innerHTML = '<div style="font-size:12px;color:#999;margin-bottom:8px">No comments yet.</div>'; return; }
+  el.innerHTML = comments.map(c => `
+    <div style="padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px">
+      <span style="font-weight:600;color:var(--green)">${escapeHtml(c.Author||'')}</span>
+      <span style="color:#999;font-size:10px;margin-left:6px">${(c.PostedAt||'').substring(0,16)}</span>
+      <div style="margin-top:2px">${escapeHtml(c.Body||'')}</div>
+    </div>`).join('');
+}
+
+async function submitComment(postID) {
+  const input = document.getElementById(`commentInput${postID}`);
+  const body = input?.value?.trim();
+  if (!body) return;
+  const now = new Date().toISOString().replace('T',' ').substring(0,19);
+  db.run(`INSERT INTO PostComments (PostID,Author,Body,PostedAt) VALUES (?,?,?,?)`,
+    [postID, currentUser?.name || 'Unknown', body, now]);
+  input.value = '';
+  renderPostComments(postID);
+  // Update comment count in header without full reload
+  const commentEls = document.querySelectorAll(`#postComments${postID} > div`);
+  await saveDBToServer();
+}
+
+function showNewPostModal() {
+  if (!currentUser) { alert('Please log in to post.'); return; }
+  const isOfficer = currentUser?.role === 'officer' || currentUser?.role === 'developer';
+  const officerRow = document.getElementById('newPostOfficerRow');
+  if (officerRow) officerRow.style.display = isOfficer ? 'flex' : 'none';
+  document.getElementById('newPostTitle').value = '';
+  document.getElementById('newPostBody').value = '';
+  if (document.getElementById('newPostCategory')) document.getElementById('newPostCategory').value = 'General';
+  if (document.getElementById('newPostPinned')) document.getElementById('newPostPinned').checked = false;
+  document.getElementById('newPostModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('newPostTitle').focus(), 100);
+}
+
+async function submitPost() {
+  const title = document.getElementById('newPostTitle').value.trim();
+  const body  = document.getElementById('newPostBody').value.trim();
+  if (!title) { alert('Please enter a title.'); return; }
+  if (!body)  { alert('Please enter a message.'); return; }
+  const isOfficer = currentUser?.role === 'officer' || currentUser?.role === 'developer';
+  const category = isOfficer ? (document.getElementById('newPostCategory')?.value || 'General') : 'General';
+  const pinned   = isOfficer ? (document.getElementById('newPostPinned')?.checked ? 1 : 0) : 0;
+  const now = new Date().toISOString().replace('T',' ').substring(0,19);
+  boardEnsureTables();
+  db.run(`INSERT INTO Posts (Author,Category,Title,Body,Pinned,PostedAt) VALUES (?,?,?,?,?,?)`,
+    [currentUser?.name || 'Unknown', category, title, body, pinned, now]);
+  document.getElementById('newPostModal').style.display = 'none';
+  loadBoard();
+  await saveDBToServer('✓ Posted');
+}
+
+async function deletePost(id) {
+  if (!confirm('Delete this post and all its comments?')) return;
+  db.run(`DELETE FROM PostComments WHERE PostID=?`, [id]);
+  db.run(`DELETE FROM Posts WHERE ID=?`, [id]);
+  loadBoard();
+  await saveDBToServer();
+}
+
 function loadHome() {
   // Stat boxes
   const season = query("SELECT MAX(Season) as s FROM LeagueParms WHERE Name=\"Hugh's\"")[0]?.s || currentYear;
@@ -3379,18 +3715,7 @@ function getPlayerLast5Map(beforeDate) {
     };
   });
 
-  // Fallback for players who only have stored handicap history and no score rows available.
-  const fallbackDateFilter = beforeDate ? `AND p.LastDate < '${beforeDate}'` : '';
-  query(`SELECT p.Player, p.Last5, p.LastDate, n.maxS
-    FROM PlayerLast5 p
-    LEFT JOIN NewHdcp n ON n.Player=p.Player AND n.League=p.League
-      AND n.Date=(SELECT MAX(n2.Date) FROM NewHdcp n2 WHERE n2.Player=p.Player AND n2.League=p.League)
-    WHERE p.LastDate=(SELECT MAX(p2.LastDate) FROM PlayerLast5 p2 WHERE p2.Player=p.Player AND p2.League=p.League ${fallbackDateFilter})
-    AND p.League="Hugh's" ${fallbackDateFilter}`)
-    .forEach(r => {
-      const scores = String(r.Last5 || '').split('-').map(Number).filter(n => n > 0).slice(0, 5);
-      if (!map[r.Player] && scores.length) map[r.Player] = { scores: scores.join('-'), date: r.LastDate, maxS: r.maxS || Math.max(...scores) };
-    });
+  // PlayerLast5 fallback removed — players with no scores default to handicap 0 on first round.
 
   return map;
 }
@@ -5170,7 +5495,8 @@ function loadHandicaps() {
   // otherwise use the latest record for each player as normal.
   const rows = (asOfDate
     ? query(`
-        SELECT h.Player, h.Hdcp, h.PHdcp, h.Date
+        SELECT h.Player, h.Hdcp, h.PHdcp, h.Date,
+          (SELECT h2.Hdcp FROM Handicaps h2 WHERE h2.Player=h.Player AND h2.League=h.League AND h2.Date < h.Date ORDER BY h2.Date DESC LIMIT 1) as ActualPrevHdcp
         FROM Handicaps h
         LEFT JOIN Players p ON p.Player = h.Player
         WHERE h.Date = (SELECT MAX(h2.Date) FROM Handicaps h2 WHERE h2.Player = h.Player AND h2.League = h.League AND h2.Date <= '${asOfDate}')
@@ -5178,7 +5504,8 @@ function loadHandicaps() {
         ORDER BY p.LastName, p.FirstName
       `)
     : query(`
-        SELECT h.Player, h.Hdcp, h.PHdcp, h.Date
+        SELECT h.Player, h.Hdcp, h.PHdcp, h.Date,
+          (SELECT h2.Hdcp FROM Handicaps h2 WHERE h2.Player=h.Player AND h2.League=h.League AND h2.Date < h.Date ORDER BY h2.Date DESC LIMIT 1) as ActualPrevHdcp
         FROM Handicaps h
         LEFT JOIN Players p ON p.Player = h.Player
         WHERE h.Date = (SELECT MAX(h2.Date) FROM Handicaps h2 WHERE h2.Player = h.Player AND h2.League = h.League)
@@ -5236,7 +5563,7 @@ function loadHandicaps() {
     const usedScores = usedIdx.map(i=>scores[i]);
     const avg = usedScores.length ? usedScores.reduce((a,b)=>a+b,0)/usedScores.length : 0;
     const calcHdcp = usedScores.length ? Math.min(maxHdcp, Math.round((avg - par) * 0.8)) : null;
-    const prevHdcp = r.PHdcp ?? r.Hdcp ?? '';
+    const prevHdcp = r.ActualPrevHdcp ?? (r.PHdcp || null) ?? '';
     const displayHdcp = calcHdcp !== null ? calcHdcp : (r.Hdcp ?? '');
     const prevNum = parseInt(prevHdcp);
     const displayNum = parseInt(displayHdcp);
@@ -6660,7 +6987,17 @@ function showStaleDbSavePrompt(serverModifiedMs) {
   loadDbInfo();
   const globalBtn = document.getElementById('globalSaveBtn');
   if (globalBtn) { globalBtn.textContent = '⚠ Save Rejected'; globalBtn.style.background='#c62828'; setTimeout(()=>{ globalBtn.textContent='💾 Save DB'; globalBtn.style.background='#1565c0'; globalBtn.disabled=false; }, 5000); }
-  alert('Your save was rejected because the server has newer data.\n\nYour changes were NOT saved. Please reload the page before re-entering or verifying your changes.');
+  // Show non-blocking toast instead of blocking alert
+  const toast = document.createElement('div');
+  toast.textContent = '⚠ Save rejected — server has newer data. Reload the page to re-sync.';
+  Object.assign(toast.style, {
+    position:'fixed', bottom:'24px', left:'50%', transform:'translateX(-50%)',
+    background:'#c62828', color:'white', padding:'12px 20px', borderRadius:'8px',
+    fontSize:'13px', fontWeight:'600', zIndex:'99999', boxShadow:'0 4px 12px rgba(0,0,0,0.3)',
+    maxWidth:'420px', textAlign:'center'
+  });
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 8000);
 }
 
 async function checkServerVersion() {
@@ -7877,19 +8214,129 @@ async function deleteSelectedBackups() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 
+// ── Impersonate (sandbox only) ────────────────────────────────────────────────
+function showImpersonateModal() {
+  if (!isLocalTestHost()) return;
+  const players = query(`SELECT Player, Officer FROM Players ORDER BY Player`);
+  const sel = document.getElementById('impersonateSelect');
+  sel.innerHTML = players.map(p => {
+    const role = (p.Officer||'').toLowerCase();
+    const label = role === 'developer' ? '🛠 Developer' : (role === 'president' || role === 'secretary') ? '⭐ Officer' : '👤 Player';
+    return `<option value="${escapeHtml(p.Player)}">${escapeHtml(p.Player)} — ${label}</option>`;
+  }).join('');
+  // Pre-select someone other than current user
+  const others = players.filter(p => p.Player !== currentUser?.name);
+  if (others.length) sel.value = others[0].Player;
+  document.getElementById('impersonateModal').style.display = 'flex';
+}
+
+async function doImpersonate() {
+  const selectedName = document.getElementById('impersonateSelect').value;
+  if (!selectedName) return;
+  const rows = query(`SELECT Player, Officer FROM Players WHERE Player=? LIMIT 1`, [selectedName]);
+  if (!rows.length) { alert('Player not found'); return; }
+  const p = rows[0];
+  const prevUser = currentUser?.name || 'unknown';
+  const officer = String(p.Officer || '').trim();
+  const officerKey = officer.toLowerCase();
+
+  // Log the impersonation
+  const now = new Date().toISOString().replace('T',' ').substring(0,19);
+  try {
+    db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at)
+            VALUES (?,?,?,?,?,?,?)`,
+      [now, 'INFO', 'impersonate', prevUser,
+       `Impersonating ${p.Player}`,
+       JSON.stringify({ impersonatedBy: prevUser, impersonatedAs: p.Player, role: officerKey || 'player' }),
+       now]);
+    await saveDBToServer();
+  } catch(e) { console.warn('Impersonate log error:', e); }
+
+  // Store impersonated user so login survives the reload
+  localStorage.setItem('hg_impersonate', JSON.stringify({ name: p.Player, officer, impersonatedBy: prevUser }));
+
+  document.getElementById('impersonateModal').style.display = 'none';
+  window.location.reload();
+}
+
 function showGallusSubmit() {
-  if (!(currentUser?.role === 'officer' || currentUser?.role === 'developer')) {
-    alert('Only officers can submit/import rounds.');
-    return;
-  }
+  if (!currentUser) { alert('Please log in first.'); return; }
+  const isOfficer = currentUser.role === 'officer' || currentUser.role === 'developer';
   document.getElementById('gallusSubmitModal').style.display = 'flex';
   document.getElementById('gallusSubmitUrl').value = '';
   document.getElementById('gallusSubmitError').style.display = 'none';
   document.getElementById('gallusSubmitSuccess').style.display = 'none';
+  // Adjust modal for role
+  // Current league date = most recent past scheduled date, or next upcoming if none
+  const todayInt = new Date().toISOString().substring(0,10).replace(/-/g,'');
+  const season = new Date().getFullYear();
+  const lastLeagueDate = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date <= ? ORDER BY Date DESC LIMIT 1`, [todayInt])[0]?.sDate
+                      || query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date > ? ORDER BY Date ASC LIMIT 1`, [todayInt])[0]?.sDate
+                      || todayInt;
+
+  if (isOfficer) {
+    document.getElementById('gallusSubmitTitle').textContent = '📥 Import Round from Gallus';
+    document.getElementById('gallusSubmitSubtitle').textContent = 'Fetch and import scores directly into the entry grid.';
+    document.getElementById('gallusSubmitDateRow').style.display = '';
+    document.getElementById('gallusSubmitDate').style.display = '';
+    document.getElementById('gallusSubmitDateSelect').style.display = 'none';
+    // Default to current league date
+    const d = String(lastLeagueDate);
+    document.getElementById('gallusSubmitDate').value = `${d.substring(0,4)}-${d.substring(4,6)}-${d.substring(6,8)}`;
+    document.querySelector('#gallusSubmitModal button').textContent = '📥 Fetch & Import';
+  } else {
+    document.getElementById('gallusSubmitTitle').textContent = '📤 Submit My Round';
+    document.getElementById('gallusSubmitSubtitle').textContent = 'Paste your Gallus Golf scorecard URL — the officer will import your scores.';
+    document.getElementById('gallusSubmitDateRow').style.display = '';
+    document.getElementById('gallusSubmitDate').style.display = 'none';
+    // Populate all season scheduled dates, default to current league date
+    const schedDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= ? AND Date < ? ORDER BY Date`,
+      [String(season)+'0101', String(season+1)+'0101']);
+    const sel = document.getElementById('gallusSubmitDateSelect');
+    if (schedDates.length) {
+      sel.innerHTML = schedDates.map(r => {
+        const d = String(r.sDate);
+        const label = `${d.substring(4,6)}/${d.substring(6,8)}/${d.substring(0,4)}`;
+        return `<option value="${d}">${label}</option>`;
+      }).join('');
+      sel.value = String(lastLeagueDate); // pre-select current league date
+    } else {
+      sel.innerHTML = '<option value="">No scheduled dates</option>';
+    }
+    sel.style.display = '';
+    document.querySelector('#gallusSubmitModal button').textContent = '📤 Submit to Officer';
+  }
 }
 
 async function doGallusSubmit() {
-  if (!(currentUser?.role === 'officer' || currentUser?.role === 'developer')) return;
+  if (!currentUser) return;
+  const isOfficer = currentUser.role === 'officer' || currentUser.role === 'developer';
+  // Players just queue the URL for officer review
+  if (!isOfficer) {
+    const input = document.getElementById('gallusSubmitUrl').value.trim();
+    const errEl = document.getElementById('gallusSubmitError');
+    const okEl  = document.getElementById('gallusSubmitSuccess');
+    errEl.style.display = 'none'; okEl.style.display = 'none';
+    if (!input) { errEl.textContent = 'Please paste your Gallus URL.'; errEl.style.display = 'block'; return; }
+    const guidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\??$/;
+    let url = input.includes('gallusgolf.com') ? input
+            : guidPattern.test(input) ? `https://manager.gallusgolf.com/Share/Round/${input.replace(/\?$/,'')}?`
+            : null;
+    if (!url) { errEl.textContent = 'Please paste a valid Gallus URL or round code.'; errEl.style.display = 'block'; return; }
+    const now = new Date().toISOString().replace('T',' ').substring(0,19);
+    const roundDate = document.getElementById('gallusSubmitDateSelect').value || '';
+    try {
+      db.run(`INSERT INTO GallusSubmissions (Player, GallusUrl, DateSubmitted, Status, RoundDate) VALUES (?,?,?,?,?)`,
+        [currentUser.name, url, now, 'pending', roundDate]);
+      await saveDBToServer();
+      okEl.textContent = '✓ Submitted! The officer will import your scores.';
+      okEl.style.display = 'block';
+      document.getElementById('gallusSubmitUrl').value = '';
+      setTimeout(() => { document.getElementById('gallusSubmitModal').style.display = 'none'; }, 3000);
+    } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; }
+    return;
+  }
+  // Officers — full fetch + import flow below
   let input = document.getElementById('gallusSubmitUrl').value.trim();
   const errEl = document.getElementById('gallusSubmitError');
   const okEl  = document.getElementById('gallusSubmitSuccess');
@@ -7934,14 +8381,28 @@ async function doGallusSubmit() {
 
     const { players, frontBack } = json;
     const now   = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    const today = new Date().toISOString().substring(0, 10).replace(/-/g, '');
+    const pickedDate = document.getElementById('gallusSubmitDate').value;
+    const today = pickedDate ? pickedDate.replace(/-/g, '') : new Date().toISOString().substring(0, 10).replace(/-/g, '');
 
     try { db.run('ALTER TABLE GallusImport ADD COLUMN Reconciled INTEGER DEFAULT 0'); } catch(e) {}
 
+    // Extract GUID from URL for duplicate detection
+    const guidMatch = url.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+    const roundGuid = guidMatch ? guidMatch[0].toLowerCase() : null;
+
     const importedNames = [];
+    const skippedNames = [];
     for (const p of players) {
       const match = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [p.name]);
       const resolvedName = match.length ? match[0].Player : p.name;
+
+      // Duplicate check: skip if same GUID + player + date already in GallusImport
+      if (roundGuid) {
+        const existing = query(`SELECT ID FROM GallusImport WHERE Date=? AND GallusName=? AND URL LIKE ? LIMIT 1`,
+          [today, p.name, `%${roundGuid}%`]);
+        if (existing.length) { skippedNames.push(resolvedName); continue; }
+      }
+
       const isFront = frontBack !== 'Back';
       const h = p.scores;
       const vals = [
@@ -7969,9 +8430,17 @@ async function doGallusSubmit() {
       VALUES (?,?,?,?,?,?)`,
       [currentUser.name, url, now, 'imported', currentUser.name, now]);
 
+    // If imported from a player submission, mark it as imported
+    if (window._pendingGallusSubID) {
+      db.run(`UPDATE GallusSubmissions SET Status='imported', ImportedBy=?, ImportedAt=? WHERE ID=?`,
+        [currentUser.name, now, window._pendingGallusSubID]);
+      window._pendingGallusSubID = null;
+    }
+
     await saveDBToServer();
 
-    okEl.textContent = `✓ Imported! Players: ${importedNames.join(', ')}`;
+    const skippedMsg = skippedNames.length ? ` (skipped duplicates: ${skippedNames.join(', ')})` : '';
+    okEl.textContent = `✓ Imported! Players: ${importedNames.join(', ')}${skippedMsg}`;
     okEl.style.display = 'block';
     document.getElementById('gallusSubmitUrl').value = '';
     setTimeout(() => { document.getElementById('gallusSubmitModal').style.display = 'none'; }, 3500);
@@ -7982,6 +8451,169 @@ async function doGallusSubmit() {
   } finally {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '\U0001f4e4 Submit'; }
   }
+}
+
+function checkPendingGallusSubmissions() {
+  try {
+    const pending = query(`SELECT COUNT(*) as cnt FROM GallusSubmissions WHERE Status='pending'`)[0]?.cnt || 0;
+    if (pending > 0) {
+      const msg = document.createElement('div');
+      msg.id = 'gallusPendingAlert';
+      msg.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#1565c0;color:white;padding:14px 18px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.3);z-index:8000;cursor:pointer;max-width:280px';
+      msg.innerHTML = `📥 ${pending} pending Gallus submission${pending>1?'s':''} in the queue<br><span style="font-size:11px;font-weight:400;opacity:.85">Click to review in Admin → Gallus Queue</span>`;
+      msg.onclick = () => { switchTab('admin'); showAdminSection('gallus'); msg.remove(); };
+      const existing = document.getElementById('gallusPendingAlert');
+      if (existing) existing.remove();
+      document.body.appendChild(msg);
+      setTimeout(() => msg?.remove(), 12000);
+    }
+  } catch(e) {}
+}
+
+// ── Photo Scorecard Import ────────────────────────────────────────────────────────────────────────────────
+async function handlePhotoUpload(file) {
+  if (!file) return;
+  const statusEl = document.getElementById('photoImportStatus');
+  const dropZone = document.getElementById('photoDropZone');
+
+  statusEl.style.display = 'block';
+  statusEl.textContent = '⏳ Reading scorecard...';
+  dropZone.style.opacity = '0.5';
+  dropZone.style.pointerEvents = 'none';
+
+  try {
+    const token = await ensureSaveToken();
+    const formData = new FormData();
+    formData.append('image', file, file.name);
+
+    const resp = await fetch('/parse-scorecard', {
+      method: 'POST',
+      headers: { 'X-Save-Token': token },
+      body: formData
+    });
+    const ct = resp.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      throw new Error(`Server returned HTTP ${resp.status} — Flask may need to restart`);
+    }
+    const data = await resp.json();
+
+    if (!data.ok) {
+      statusEl.textContent = '❌ ' + (data.error || 'Could not read scorecard');
+      return;
+    }
+
+    const groupLabel = data.group ? ` — Group ${data.group}` : '';
+    statusEl.textContent = `✓ Found ${data.players.length} players${groupLabel} — confirm below`;
+    showPhotoVerifyModal(data.players, data.frontBack, data.group);
+
+  } catch(e) {
+    statusEl.textContent = '❌ Error: ' + e.message;
+  } finally {
+    dropZone.style.opacity = '';
+    dropZone.style.pointerEvents = '';
+  }
+}
+
+function showPhotoVerifyModal(players, frontBack, group) {
+  // Get all known player names for the dropdowns
+  const allPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r => r.Player);
+
+  // Try to auto-match each extracted name to a known player
+  function bestMatch(extractedName) {
+    const lower = extractedName.toLowerCase();
+    // Exact match
+    let match = allPlayers.find(p => p.toLowerCase() === lower);
+    if (match) return match;
+    // First-name match
+    match = allPlayers.find(p => p.toLowerCase().split(' ')[0] === lower.split(' ')[0]);
+    if (match) return match;
+    // Contains match
+    match = allPlayers.find(p => p.toLowerCase().includes(lower) || lower.includes(p.toLowerCase().split(' ')[0]));
+    return match || '';
+  }
+
+  // Store in _gallusVerifyPlayers format so we can reuse confirmPhotoImport
+  window._photoVerifyPlayers = players.map((p, i) => ({
+    index: i,
+    gallusName: p.name,
+    resolvedName: bestMatch(p.name),
+    scores: p.scores,
+    frontBack
+  }));
+
+  // Build modal body
+  let html = `<div style="font-size:12px;color:#555;margin-bottom:12px">Review extracted names and correct any mismatches before importing.</div>`;
+  window._photoVerifyPlayers.forEach((p, i) => {
+    const opts = allPlayers.map(n =>
+      `<option value="${n}" ${n === p.resolvedName ? 'selected' : ''}>${n}</option>`
+    ).join('');
+    const scoreStr = (p.scores || []).map(s => s == null ? '?' : s).join(' - ');
+    html += `
+      <div style="margin-bottom:10px;padding:8px;background:#f9f9f9;border-radius:6px">
+        <div style="font-size:11px;color:#888;margin-bottom:4px">Scorecard: <strong>${p.gallusName}</strong> — ${scoreStr}</div>
+        <select onchange="window._photoVerifyPlayers[${i}].resolvedName=this.value"
+          style="width:100%;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:13px">
+          <option value="">— skip this player —</option>
+          ${opts}
+        </select>
+      </div>`;
+  });
+
+  document.getElementById('gallusVerifyTitle').textContent = group ? `📷 Verify Photo Import — Group ${group}` : '📷 Verify Photo Import';
+  document.getElementById('gallusVerifyBody').innerHTML = html;
+
+  // Swap the confirm button action
+  const footer = document.querySelector('#gallusVerifyModal > div > div:last-child');
+  footer.innerHTML = `
+    <button onclick="document.getElementById('gallusVerifyModal').style.display='none'"
+      style="padding:10px 20px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+    <button onclick="confirmPhotoImport()" id="photoConfirmBtn"
+      style="padding:10px 24px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">
+      ✓ Import Scores
+    </button>`;
+
+  document.getElementById('gallusVerifyModal').style.display = 'flex';
+}
+
+async function confirmPhotoImport() {
+  const btn = document.getElementById('photoConfirmBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Importing...'; }
+
+  const players = window._photoVerifyPlayers || [];
+  const filtered = players.filter(p => p.resolvedName);
+  if (!filtered.length) {
+    alert('No players selected.');
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Import Scores'; }
+    return;
+  }
+
+  const frontBack = filtered[0].frontBack || 'Front';
+
+  // Set _gallusData for doGallusConfirm to consume
+  _gallusData = {
+    players: filtered.map(p => ({
+      name: p.resolvedName,
+      gallusName: p.gallusName,
+      scores: (p.scores || []).map(s => s == null ? '' : String(s))
+    })),
+    frontBack
+  };
+  window._gallusSkipOverwriteCheck = false;
+  window._gallusImportEntryId = null;  // no GallusImport row to reconcile
+
+  document.getElementById('gallusVerifyModal').style.display = 'none';
+
+  // Make sure entry tab is active and date is set
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelector('[data-tab="scores"]')?.classList.add('active');
+  document.getElementById('tab-scores')?.classList.add('active');
+  if (!courseData) await initEntry(); else reRenderEntry();
+
+  await doGallusConfirm();
+
+  const statusEl = document.getElementById('photoImportStatus');
+  if (statusEl) statusEl.textContent = `✓ Imported scores for ${filtered.length} player(s)`;
 }
 
 // ── Gallus Reconciliation ─────────────────────────────────────────────────────────────────────────────────
@@ -8018,11 +8650,48 @@ function loadGallusQueue() {
   if (!db) return;
   try { db.run('ALTER TABLE GallusImport ADD COLUMN Reconciled INTEGER DEFAULT 0'); } catch(e) {}
 
-  const rows = query(`SELECT * FROM GallusImport ORDER BY Reconciled ASC, ImportDate DESC LIMIT 100`);
   const el = document.getElementById('gallusQueueContent');
 
+  // ── Pending player submissions ──────────────────────────────────────────────
+  const pending = query(`SELECT * FROM GallusSubmissions WHERE Status='pending' ORDER BY DateSubmitted DESC`);
+  let pendingHtml = '';
+  if (pending.length) {
+    const thS = 'background:#4a148c;color:white;padding:7px 10px;text-align:left;font-size:11px;border:1px solid #6a1b9a';
+    const td  = 'padding:6px 10px;border:1px solid #e1bee7;font-size:12px';
+    pendingHtml = `<div style="font-weight:700;font-size:13px;color:#4a148c;margin-bottom:8px">📬 Pending Player Submissions (${pending.length})</div>
+    <table style="border-collapse:collapse;width:100%;margin-bottom:18px">
+      <thead><tr>
+        <th style="${thS}">Player</th>
+        <th style="${thS}">Round Date</th>
+        <th style="${thS}">Submitted</th>
+        <th style="${thS}">URL</th>
+        <th style="${thS}">Action</th>
+      </tr></thead><tbody>`;
+    pending.forEach(r => {
+      const rd = r.RoundDate ? String(r.RoundDate).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '—';
+      const submitted = r.DateSubmitted ? r.DateSubmitted.substring(0,10) : '';
+      const shortUrl = r.GallusUrl ? r.GallusUrl.substring(0,40)+'...' : '';
+      pendingHtml += `<tr style="background:#f3e5f5">
+        <td style="${td};font-weight:600">${escapeHtml(r.Player||'')}</td>
+        <td style="${td}">${rd}</td>
+        <td style="${td}">${submitted}</td>
+        <td style="${td};font-family:'DM Mono',monospace;font-size:10px" title="${escapeHtml(r.GallusUrl||'')}">${escapeHtml(shortUrl)}</td>
+        <td style="${td}">
+          <button onclick="importGallusFromSubmission(${r.ID},'${(r.GallusUrl||'').replace(/'/g,"\\'")}','${r.RoundDate||''}')"
+            style="padding:4px 10px;background:#4a148c;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px">📥 Import</button>
+          <button onclick="dismissGallusSubmission(${r.ID})"
+            style="margin-left:4px;padding:4px 8px;background:#888;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px">✕ Dismiss</button>
+        </td>
+      </tr>`;
+    });
+    pendingHtml += '</tbody></table>';
+  }
+
+  const rows = query(`SELECT * FROM GallusImport ORDER BY Reconciled ASC, ImportDate DESC LIMIT 100`);
+  const el2 = el;
+
   if (!rows.length) {
-    el.innerHTML = '<div style="color:#999;font-size:13px;padding:8px">No Gallus imports yet.</div>';
+    el2.innerHTML = pendingHtml + '<div style="color:#999;font-size:13px;padding:8px">No Gallus imports yet.</div>';
     return;
   }
 
@@ -8063,7 +8732,28 @@ function loadGallusQueue() {
   });
 
   html += '</tbody></table>';
-  el.innerHTML = html;
+  el2.innerHTML = pendingHtml + html;
+}
+
+async function importGallusFromSubmission(subID, url, roundDate) {
+  // Open the officer submit modal pre-filled with this URL and date
+  showGallusSubmit();
+  setTimeout(() => {
+    document.getElementById('gallusSubmitUrl').value = url;
+    if (roundDate) {
+      const d = String(roundDate);
+      document.getElementById('gallusSubmitDate').value = `${d.substring(0,4)}-${d.substring(4,6)}-${d.substring(6,8)}`;
+    }
+    // Mark submission as processing so officer knows it's in flight
+    window._pendingGallusSubID = subID;
+  }, 50);
+}
+
+function dismissGallusSubmission(id) {
+  if (!confirm('Dismiss this submission?')) return;
+  db.run(`UPDATE GallusSubmissions SET Status='skipped' WHERE ID=?`, [id]);
+  saveDBToServer();
+  loadGallusQueue();
 }
 
 function markGallusReconciled(id) {
@@ -8136,6 +8826,8 @@ function renderGallusVerifyBody(allPlayers) {
 
 async function confirmGallusVerify() {
   if (!_gallusVerifyPlayers.length) return;
+  const confirmBtn = document.querySelector('#gallusVerifyModal button:last-child');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '⏳ Importing...'; }
 
   // Save any name remaps to GallusImport
   for (const p of _gallusVerifyPlayers) {
@@ -8241,7 +8933,7 @@ async function gallusMismatchImportAnyway() {
 async function _doVerifyImport(players) {
   if (!players.length) return;
   _gallusData = {
-    players: players.map(p => ({ name: p.resolvedName, scores: p.scores })),
+    players: players.map(p => ({ name: p.resolvedName, gallusName: p.gallusName, scores: p.scores })),
     frontBack: _gallusVerifyPlayers[0].frontBack
   };
   for (const p of _gallusVerifyPlayers) {
@@ -8390,9 +9082,26 @@ async function doGallusConfirm() {
   let imported = 0;
   const importedKeys = [];
   players.forEach(p => {
-    const slot = Object.values(entryState).find(s =>
+    let slot = Object.values(entryState).find(s =>
       s.active === p.name || s.regular === p.name || s.sub === p.name
     );
+    // If resolved name not in grid, try the original Gallus name and auto-swap sub
+    if (!slot && p.gallusName && p.gallusName !== p.name) {
+      slot = Object.values(entryState).find(s =>
+        s.active === p.gallusName || s.regular === p.gallusName || s.sub === p.gallusName
+      );
+      if (slot) {
+        slot.sub = p.name;
+        slot.active = p.name;
+        // Write to Subs table so match calc finds the right player
+        const date = document.getElementById('entryDate').value;
+        const league = "Hugh's";
+        serverRun(`DELETE FROM Subs WHERE League=? AND Date=? AND Team=? AND Grade=?`,
+          [league, date, slot.team, slot.grade]);
+        serverRun(`INSERT INTO Subs (League, Date, Team, Grade, Player) VALUES (?,?,?,?,?)`,
+          [league, date, slot.team, slot.grade, p.name]);
+      }
+    }
     if (!slot) return;
     p.scores.forEach((score, i) => {
       if (score !== null && score > 0) slot.holes[i] = String(score);
@@ -8418,26 +9127,66 @@ async function doGallusConfirm() {
     db.run(`UPDATE GallusImport SET Reconciled=1 WHERE ID=?`, [window._gallusImportEntryId]);
     window._gallusImportEntryId = null;
   }
-  // Mark GallusImport entry as reconciled if imported via importGallusEntry
-  if (window._gallusImportEntryId) {
-    db.run(`UPDATE GallusImport SET Reconciled=1 WHERE ID=?`, [window._gallusImportEntryId]);
-    window._gallusImportEntryId = null;
-  }
 
-  reRenderEntry();
-
-  // Save + auto-pay for each imported player whose score is now complete
+  // Batch write all scores at once — don't call savePlayerScoreNow per player (too slow)
+  const date = document.getElementById('entryDate').value;
+  const league = "Hugh's";
   const nine = isPostSeasonEntryMode()
     ? courseData.all18
-    : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front);
+    : (fb === 'Back' ? courseData.back : courseData.front);
+  const season = query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="${league}"`)[0]?.s;
+  const lp = query(`SELECT Skins, Closest FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
+  const skinAmt = parseFloat(lp?.Skins || 2);
+  const ctpAmt  = parseFloat(lp?.Closest || 1);
+
   for (const key of importedKeys) {
     const st = entryState[key];
     const gross = calcGross(st.holes);
-    if (gross) {
-      const net = calcNet(st.holes, nine.pars, nine.hcps, st.phdcp);
-      await savePlayerScoreNow(key, gross, net);
+    if (!gross) continue;
+    const net = calcNet(st.holes, nine.pars, nine.hcps, st.phdcp);
+    const h = st.holes;
+    const playerName = st.active;
+    // Write score
+    serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, date, league]);
+    serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [league, playerName, date, fb, h[0]||null,h[1]||null,h[2]||null,h[3]||null,h[4]||null,h[5]||null,h[6]||null,h[7]||null,h[8]||null, gross, net]);
+    // Write handicap
+    updateCompletedEntryHandicap(key, nine, true);
+    // Auto-pay Skins + CTP if perfect payment history
+    for (const [desc, amt] of [['Skin', skinAmt], ['CTP', ctpAmt]]) {
+      const already = query(`SELECT 1 FROM Payments WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc"=? AND Detail='Payment' LIMIT 1`,
+        [league, playerName, date, desc]).length > 0;
+      if (already) continue;
+      const priorDates = query(`SELECT DISTINCT Date FROM Scores WHERE League=? AND Player=? AND Date >= ${season}0101 AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)`,
+        [league, playerName, date]).map(r => r.Date);
+      if (!priorDates.length) continue;
+      const paidDates = query(`SELECT DISTINCT Date FROM Payments WHERE League=? AND Player=? AND "Desc"=? AND Detail='Payment' AND Date >= ${season}0101 AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)`,
+        [league, playerName, desc, date]).map(r => r.Date);
+      const paidSet = new Set(paidDates);
+      if (!priorDates.every(d => paidSet.has(d))) continue;
+      serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,DatePaid) VALUES (?,?,?,?,?,?,?)`,
+        [league, playerName, date, desc, 'Payment', amt, new Date().toLocaleString()]);
     }
   }
+
+  // Recalculate matches + skins once for all players
+  await calcMatchesForDate(date);
+  await saveSkinWinnersForDate(date);
+  await saveDBToServer();
+
+  // Refresh skinWinnerCells and inSkins so applyCellClasses shades correctly after import
+  window.skinWinnerCells = {};
+  query(`SELECT Player, Detail FROM Payments WHERE Date=${date} AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`)
+    .forEach(r => { window.skinWinnerCells[`${r.Player}-${r.Detail.replace('#','')}`] = true; });
+  const freshSkinPlayers = new Set(
+    query(`SELECT DISTINCT Player FROM Payments WHERE Date=${date} AND "Desc"='Skin' AND Detail='Payment'`).map(r => r.Player)
+  );
+  Object.values(entryState).forEach(st => {
+    st.inSkins = freshSkinPlayers.has(st.active) || freshSkinPlayers.has(st.regular);
+  });
+
+  reRenderEntry();
+  scheduleScoreClassRefresh(nine, 200);
 
   alert(`✓ Imported scores for ${imported} players from Gallus Golf.`);
 }
@@ -8586,6 +9335,31 @@ function updateWeeksLeftBanner() {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+function showSwitchUser() {
+  // Set a flag so tryTrustedAutoLogin skips the Gary auto-login this one time
+  sessionStorage.setItem('hg_skip_autologin', '1');
+  logoutUser('switch_user');
+}
+
+function doSandboxAutoLogin() {
+  const player = query(`SELECT Player, Officer FROM Players WHERE Player='Gary Scudder' LIMIT 1`)[0];
+  if (player) loginSuccess(player).catch(() => showLoginScreen());
+}
+
+function doSandboxQuickLogin() {
+  const name = document.getElementById('sandboxLoginSelect').value;
+  if (!name) return;
+  const player = query(`SELECT Player, Officer FROM Players WHERE Player=? LIMIT 1`, [name])[0];
+  if (!player) return;
+  const now = new Date().toISOString().replace('T',' ').substring(0,19);
+  try {
+    db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+      [now, 'INFO', 'sandbox_login', 'sandbox', `Sandbox quick-login as ${player.Player}`,
+       JSON.stringify({ player: player.Player }), now]);
+  } catch(e) {}
+  loginSuccess(player).catch(() => showLoginScreen());
+}
+
 function showLoginScreen() {
   const overlay = document.getElementById('loginOverlay');
   overlay.style.display = 'flex';
@@ -8594,6 +9368,22 @@ function showLoginScreen() {
   const sel = document.getElementById('loginName');
   sel.innerHTML = '<option value="">-- Select your name --</option>' +
     players.map(r => `<option value="${r.Player}">${r.Player}</option>`).join('');
+
+  // Sandbox quick-login panel
+  const quickPanel = document.getElementById('sandboxQuickLogin');
+  const quickSel   = document.getElementById('sandboxLoginSelect');
+  if (isLocalTestHost() && quickPanel && quickSel) {
+    const allPlayers = query(`SELECT Player, Officer FROM Players ORDER BY Player`);
+    quickSel.innerHTML = allPlayers.map(p => {
+      const role = (p.Officer||'').toLowerCase();
+      const tag = role === 'developer' ? ' 🛠' : (role === 'president' || role === 'secretary') ? ' ⭐' : '';
+      return `<option value="${escapeHtml(p.Player)}">${escapeHtml(p.Player)}${tag}</option>`;
+    }).join('');
+    quickSel.value = 'Gary Scudder';
+    quickPanel.style.display = '';
+  } else if (quickPanel) {
+    quickPanel.style.display = 'none';
+  }
 
   // Pre-select last logged in player
   const lastPlayer = localStorage.getItem('hg_last_player');
@@ -8620,6 +9410,35 @@ function showLoginScreen() {
 }
 
 function tryTrustedAutoLogin() {
+  // Sandbox-only: impersonation or auto-login as Gary
+  if (isLocalTestHost()) {
+    // 1. Consume pending impersonation first
+    const imp = localStorage.getItem('hg_impersonate');
+    if (imp) {
+      try {
+        const { name } = JSON.parse(imp);
+        const player = query(`SELECT Player, Officer FROM Players WHERE Player=? LIMIT 1`, [name])[0];
+        if (player) {
+          localStorage.removeItem('hg_impersonate');
+          loginSuccess(player).catch(() => showLoginScreen());
+          return true;
+        }
+      } catch(e) { localStorage.removeItem('hg_impersonate'); }
+    }
+    // 2. Auto-login as Gary Scudder (developer) — no password needed on sandbox
+    //    (skipped if user explicitly clicked Switch User)
+    if (!sessionStorage.getItem('hg_skip_autologin')) {
+      try {
+        const gary = query(`SELECT Player, Officer FROM Players WHERE Player='Gary Scudder' LIMIT 1`)[0];
+        if (gary) {
+          loginSuccess(gary).catch(() => showLoginScreen());
+          return true;
+        }
+      } catch(e) { /* fall through to normal login */ }
+    }
+    sessionStorage.removeItem('hg_skip_autologin'); // consume the flag
+  }
+
   if (!activeSessionsEnabled()) return false;
 
   const lastPlayer = localStorage.getItem('hg_last_player');
@@ -9019,6 +9838,10 @@ async function loginSuccess(player) {
   resetSessionTimer();
   applyRoleAccess();
   updateWeeksLeftBanner();
+  // Check for pending Gallus submissions (officers only)
+  if (currentUser.role === 'officer' || currentUser.role === 'developer') {
+    checkPendingGallusSubmissions();
+  }
   // Check player profile completion on login (players only)
   if (currentUser.role === 'player') {
     checkPlayerProfileOnLogin(player.Player);
@@ -9096,7 +9919,7 @@ function applyRoleAccess() {
   const isOfficer = role === 'developer' || role === 'officer';
   if (entrySaveBtn)  entrySaveBtn.style.display  = isOfficer ? '' : 'none';
   if (entryClearBtn) entryClearBtn.style.display = isOfficer ? '' : 'none';
-  if (gallusSubmitBtn) gallusSubmitBtn.style.display = isOfficer ? '' : 'none';
+  if (gallusSubmitBtn) gallusSubmitBtn.style.display = currentUser ? '' : 'none';
   refreshTestModeUi();
   updateEntryClearButton();
   const psCheckbox = document.getElementById('entryPostSeason');
@@ -9434,8 +10257,8 @@ function extendSchedule(date, season) {
 
 // ── SYNC ──
 let dbSnapshot = {};
-const DATE_TABLES = ['Scores','Matches','Payments','Handicaps','Subs','PlayerLast5','NewHdcp','LeftOvers','GallusImport'];
-const ALL_TABLES  = ['Scores','Matches','Payments','Handicaps','Subs','Players','Teams','LeagueParms','Schedule','Courses','ScoreMethod','PlayerLast5','NewHdcp'];
+const DATE_TABLES = ['Scores','Matches','Payments','Handicaps','Subs','NewHdcp','LeftOvers','GallusImport'];
+const ALL_TABLES  = ['Scores','Matches','Payments','Handicaps','Subs','Players','Teams','LeagueParms','Schedule','Courses','ScoreMethod','NewHdcp'];
 
 function hashRow(row) {
   const normalized = {};
@@ -12149,8 +12972,7 @@ function updateCompletedEntryHandicap(key, nine, writeDb = true) {
   if (writeDb) {
     serverRun(`INSERT OR REPLACE INTO Handicaps (League, Player, Date, PHdcp, Hdcp)
             VALUES ("Hugh's", ?, ?, ?, ?)`, [st.active, date, phdcp, newHdcp]);
-    serverRun(`INSERT OR REPLACE INTO PlayerLast5 (League, Player, Last5, LastDate)
-            VALUES ("Hugh's", ?, ?, ?)`, [st.active, updatedLast5, date]);
+    // PlayerLast5 write removed — scores queried directly from Scores table.
   }
 
   return { gross, newHdcp, updatedLast5 };
@@ -12409,11 +13231,23 @@ async function savePlayerScoreNow(key, gross, net) {
       [league, playerName, date, desc, 'Payment', amt, new Date().toLocaleString()]);
   }
 
-  // Recalculate matches and skin winners server-side
-  if (date) calcMatchesForDate(date);
-  if (date) saveSkinWinnersForDate(date);
+  // Recalculate matches and skin winners server-side — await so SERVER_DB_MODIFIED is current before full save
+  if (date) await calcMatchesForDate(date);
+  if (date) await saveSkinWinnersForDate(date);
   // Final save to sync local memory to server
   await saveDBToServer();
+
+  // Refresh skinWinnerCells and inSkins so applyCellClasses shades correctly
+  window.skinWinnerCells = {};
+  if (date) query(`SELECT Player, Detail FROM Payments WHERE Date=${date} AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`)
+    .forEach(r => { window.skinWinnerCells[`${r.Player}-${r.Detail.replace('#','')}`] = true; });
+  const freshSkinPlayers = new Set(
+    date ? query(`SELECT DISTINCT Player FROM Payments WHERE Date=${date} AND "Desc"='Skin' AND Detail='Payment'`).map(r => r.Player) : []
+  );
+  Object.values(entryState).forEach(st => {
+    st.inSkins = freshSkinPlayers.has(st.active) || freshSkinPlayers.has(st.regular);
+  });
+
   reRenderEntry();
 }
 

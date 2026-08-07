@@ -3,3 +3,6 @@ HughsGolf_before_*.db
 backups/
 .DS_Store
 .venv_pdf/
+anthropic_key.txt
+*.log
+pip-cache/
