@@ -693,8 +693,9 @@
         <div class="card-header">
           <span>My Scores</span>
           <span class="subtitle" id="homeMyScoresSubtitle"></span>
+          <button id="myScoresCollapseBtn" onclick="toggleMyScoresCard()" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
         </div>
-        <div class="table-wrap" style="max-height:360px;overflow:auto">
+        <div id="myScoresCardBody" class="table-wrap" style="max-height:360px;overflow:auto">
           <table id="homeMyScores">
             <thead><tr><th>Date</th><th class="ctr">9</th><th class="num">Gross</th><th class="num">Net</th><th class="num">PHdcp</th><th class="num">Hdcp</th><th>Scores</th></tr></thead>
             <tbody></tbody>
@@ -866,11 +867,14 @@
       <div class="card-header">
         <span>Scores</span>
         <span class="subtitle" id="scoresSubtitle"></span>
+        <button id="scoresCollapseBtn" onclick="toggleScoresCard()" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
       </div>
-      <div class="table-wrap"><table id="scoresTable">
-        <thead><tr><th>Player</th><th class="num">Gross</th><th class="num">Net</th><th class="ctr">9</th><th class="num">Hdcp</th></tr></thead>
-        <tbody></tbody>
-      </table></div>
+      <div id="scoresCardBody">
+        <div class="table-wrap"><table id="scoresTable">
+          <thead><tr><th>Player</th><th class="num">Gross</th><th class="num">Net</th><th class="num">PHdcp</th><th class="num">Hdcp</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
     </div>
   </div>
 
@@ -1059,7 +1063,6 @@
       <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">💾 Backups</button>
       <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
       <button onclick="triggerRedeploy()" id="adminBtnRedeploy" class="admin-btn dev-only" style="background:#e65100;color:white">🚀 Redeploy</button>
-      <button onclick="showImpersonateModal()" id="adminBtnImpersonate" class="admin-btn" style="display:none;background:#4a148c;color:white">🎭 Impersonate</button>
     </div>
 
     <div id="adminSubnavTables" class="admin-subnav">
@@ -1587,15 +1590,16 @@
         <label id="needSubSelectAllWrap" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
           <input type="checkbox" id="needSubSelectAll" onchange="toggleAllSubs()"> Select all eligible subs
         </label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:5px;color:#555">
+        <label id="needSubIncludePastWrap" style="display:none;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:5px;color:#555">
           <input type="checkbox" id="needSubIncludePast" onchange="renderNeedSubList()"> Include past-year subs
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:5px;color:#555">
-          <input type="checkbox" id="needSubShowNoContact" onchange="renderNeedSubList()"> Show no-contact players
         </label>
       </div>
       <input type="text" id="needSubSearch" placeholder="Search subs..." oninput="filterNeedSubList()" style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px;margin-bottom:6px;box-sizing:border-box">
-      <div id="needSubList" style="max-height:160px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:8px;margin-bottom:12px;font-size:12px"></div>
+      <div id="needSubGroupSuggestion" style="display:none;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:8px 10px;font-size:12px;color:#5d4037;margin-bottom:6px;gap:6px;align-items:flex-start"></div>
+      <div id="needSubList" style="max-height:160px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:8px;margin-bottom:6px;font-size:12px"></div>
+      <div style="text-align:right;margin-bottom:10px">
+        <a href="#" onclick="doAskOfficerForSub();return false;" style="font-size:11px;color:#6a1b9a;text-decoration:none;font-weight:600">Can't find who you need? Ask an officer to help →</a>
+      </div>
 
       <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Message</div>
       <textarea id="needSubMessage" rows="4" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;box-sizing:border-box;font-family:'DM Sans',sans-serif"></textarea>
@@ -1613,7 +1617,20 @@
 
       <div style="display:flex;gap:8px">
         <button onclick="doNeedSub()" style="flex:2;padding:10px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Send Request</button>
+        <button onclick="previewNeedSub()" style="flex:1;padding:10px;background:white;color:#6a1b9a;border:1.5px solid #6a1b9a;border-radius:6px;font-weight:600;cursor:pointer">Preview</button>
         <button onclick="document.getElementById('needSubModal').style.display='none'" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Need a Sub Preview Modal -->
+  <div id="needSubPreviewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9500;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:12px;padding:24px;width:500px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+      <div style="font-size:15px;font-weight:700;color:#6a1b9a;margin-bottom:4px">📋 Preview — Nothing will be sent</div>
+      <div style="font-size:11px;color:#999;margin-bottom:14px">This is what would go out when you click Send Request</div>
+      <div id="needSubPreviewBody"></div>
+      <div style="margin-top:16px;text-align:right">
+        <button onclick="document.getElementById('needSubPreviewModal').style.display='none'" style="padding:8px 22px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Close</button>
       </div>
     </div>
   </div>
@@ -1977,10 +1994,8 @@ function refreshTestModeUi() {
     banner.remove();
   }
 
-  const impersonateBtn = document.getElementById('adminBtnImpersonate');
-  if (impersonateBtn) impersonateBtn.style.display = isLocalTestHost() ? '' : 'none';
   const switchUserBtn = document.getElementById('switchUserBtn');
-  if (switchUserBtn) switchUserBtn.style.display = isLocalTestHost() ? '' : 'none';
+  if (switchUserBtn) switchUserBtn.style.display = (isLocalTestHost() && currentUser?.role === 'developer') ? '' : 'none';
 
   const overrideGroup = document.getElementById('futureScoreOverrideGroup');
   const overrideInput = document.getElementById('futureScoreOverride');
@@ -2250,6 +2265,46 @@ dz.addEventListener('click', () => document.getElementById('fileInput').click())
 
 // ── Tabs ──
 const OFFICER_ONLY_TABS = new Set(['admin', 'payments', 'prizemoney', 'schedule']);
+
+// ── What's New changelog — prepend a new entry each deploy ──────────────────
+// Each entry: { version, date, items: ['...','...'] }
+const CHANGELOG = [
+  {
+    version: '20260808',
+    date: 'August 8, 2026',
+    enhancements: [
+      'Payments tab redesigned with recap cards and collapsible sections (This Week, League Dues, Season Summary)',
+      'This Week section shows Collected, Paid Out, Skin Kitty, and Held mini-cards',
+      'Subs now appear in This Week and Season Summary views',
+      'Click any hole number in the scorecard to see a breakdown of all scores, ties, and skin winners',
+      'Collapse/Expand buttons added to Scores and My Scores cards',
+      '"Skins Only (9 Holes)" bar removed from regular 9-hole rounds',
+      'Need a Sub — players can now request a sub directly from the app',
+    ],
+    officerEnhancements: [
+      'Warning popup when assigning winners if any scored players haven\'t paid in',
+      'CTP unreconciled alert on Prize Money tab when no winner or carryover was recorded',
+    ],
+    bugFixes: [
+      'Handicap bug fix — projected handicap now calculated correctly',
+    ],
+    developerNotes: [
+      'Switch User locked to developer role + sandbox only',
+    ],
+  },
+  {
+    version: '20260807',
+    date: 'August 7, 2026',
+    enhancements: [
+      'Photo scorecard import — snap a pic and auto-fill scores',
+      'Gallus batch import — pull multiple rounds from Gallus at once',
+      'Skins shading improvements on scorecard grid',
+    ],
+    officerEnhancements: [],
+    bugFixes: [],
+    developerNotes: [],
+  },
+];
 
 function canAccessTab(tabName, role = currentUser?.role || 'player') {
   return !OFFICER_ONLY_TABS.has(tabName) || role === 'officer' || role === 'developer';
@@ -2608,6 +2663,23 @@ function loadPrizeMoney(options = {}) {
   const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
   const effectiveDate = date || `${parseInt(season)+1}0101`;
 
+  // ── CTP unreconciled dates — officer/developer suggestion only ───────────
+  const isOfficerOrDev = currentUser?.role === 'officer' || currentUser?.role === 'developer';
+  const ctpUnreconciled = isOfficerOrDev ? (() => {
+    // Find dates with CTP payments but no winner AND no carryover recorded
+    const ctpPayDates = query(`
+      SELECT DISTINCT Date as d FROM Payments
+      WHERE League="Hugh's" AND Desc='CTP' AND Detail='Payment'
+      AND Date >= ${season}0101 AND Date < ${parseInt(season)+1}0101
+      ORDER BY Date DESC
+    `).map(r => r.d);
+    return ctpPayDates.filter(d => {
+      const hasWinner = query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND Desc='CTP' AND Detail LIKE '#%' AND Player!='Kitty' AND Date=${d} LIMIT 1`).length > 0;
+      const hasCarry  = query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND Desc='CTP' AND Player='Kitty' AND Detail LIKE 'Carryover%' AND Date=${d} LIMIT 1`).length > 0;
+      return !hasWinner && !hasCarry;
+    });
+  })() : [];
+
   // ── CTP kitty: active carryovers as of selected date ─────────────────────
   const ctpKittyRows = query(`
     SELECT Detail, Earned, Date as cDate FROM Payments 
@@ -2732,6 +2804,17 @@ function loadPrizeMoney(options = {}) {
       <td style="padding:4px 10px;font-size:12px;text-align:right;font-family:'DM Mono',monospace">$${r.amt.toFixed(2)}</td>
       <td style="padding:4px 10px;font-size:12px;color:#666">${r.date ? fmtDate(r.date) : ''}</td>
     </tr>`).join('');
+
+  const ctpAlertHtml = (isOfficerOrDev && ctpUnreconciled.length) ? `
+    <div style="background:#fff3e0;border:1px solid #e65100;border-radius:8px;padding:12px 16px;margin-bottom:12px;max-width:700px">
+      <div style="font-size:12px;font-weight:700;color:#e65100;margin-bottom:6px">⚠️ CTP Not Reconciled — Action Required</div>
+      <div style="font-size:11px;color:#5d4037;margin-bottom:8px">The following dates have CTP payments collected but no winner or carryover recorded:</div>
+      ${ctpUnreconciled.map(d => `
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <span style="font-size:12px;font-family:'DM Mono',monospace;color:#333">${fmtDate(d)}</span>
+          <button onclick="reconcileCtpCarryovers(${d});loadPrizeMoney()" style="padding:3px 10px;font-size:11px;background:#e65100;color:white;border:none;border-radius:5px;cursor:pointer;font-weight:600">Mark No Winner → Carry Over</button>
+        </div>`).join('')}
+    </div>` : '';
 
   const kittyHtml = `
     <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap">
@@ -2876,7 +2959,7 @@ function loadPrizeMoney(options = {}) {
     </div>`;
 
   if (!date) {
-    document.getElementById('prizemoneyContent').innerHTML = kittyHtml;
+    document.getElementById('prizemoneyContent').innerHTML = ctpAlertHtml + kittyHtml;
     if (options.reopenHeld || window._reopenHeldDetailAfterPrizeRefresh) {
       window._reopenHeldDetailAfterPrizeRefresh = false;
       const heldDetail = document.getElementById('heldDetail');
@@ -3001,7 +3084,7 @@ function loadPrizeMoney(options = {}) {
   }
 
   html += '</tbody></table>';
-  document.getElementById('prizemoneyContent').innerHTML = kittyHtml + html;
+  document.getElementById('prizemoneyContent').innerHTML = ctpAlertHtml + kittyHtml + html;
   if (options.reopenHeld || window._reopenHeldDetailAfterPrizeRefresh) {
     window._reopenHeldDetailAfterPrizeRefresh = false;
     const heldDetail = document.getElementById('heldDetail');
@@ -3330,6 +3413,7 @@ function loadHome() {
   const tb = tbody('recentScores');
   recentScores.forEach(r => {
     const tr = document.createElement('tr');
+    if (currentUser?.name && r.Player === currentUser.name) tr.style.background = '#fff8e1';
     tr.innerHTML = `<td>${fmtDate(r.Date)}</td><td>${r.Player}</td>
       <td class="num score-gross">${r.Gross ?? '—'}</td>
       <td class="num score-net">${r.Net ?? '—'}</td>`;
@@ -3437,8 +3521,10 @@ function loadHomeAdminLoginActivity() {
     const ipMatch = r.details?.match(/ip=([\d.a-fA-F:]+)/);
     const deviceMatch = r.details?.match(/device=(\S+)/);
     const deviceLabel = deviceMatch ? decodeURIComponent(deviceMatch[1]) : '';
+    const impMatch = r.details?.match(/impersonated_by=(.+)$/);
+    const impLabel = impMatch ? `<span style="font-size:10px;color:#7b1fa2;font-weight:400"> (imp ${escapeHtml(impMatch[1].trim())})</span>` : '';
     return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
-      <td style="padding:6px 12px;font-weight:600">${escapeHtml(player || '')}</td>
+      <td style="padding:6px 12px;font-weight:600">${escapeHtml(player || '')}${impLabel}</td>
       <td style="padding:6px 12px;font-size:12px">${renderLogActivityEvent(r)}</td>
       <td style="padding:6px 12px;font-size:12px;color:#666">${escapeHtml(roleMatch ? roleMatch[1] : '')}</td>
       <td style="padding:6px 12px;font-size:11px;color:#666;font-family:'DM Mono',monospace">${escapeHtml(ipMatch ? ipMatch[1] : '')}</td>
@@ -3576,6 +3662,7 @@ function loadStandings() {
       const pct = Math.round((parseFloat(r.pts||0)/maxPts)*100);
       const rank = i+1;
       const tr = document.createElement('tr');
+      if (currentUser?.name && r.Player === currentUser.name) tr.style.background = '#fff8e1';
       tr.innerHTML = `
         <td class="rank-cell ctr ${rank<=3?'rank-'+rank:''}">${rank}</td>
         <td>${r.Player}</td>
@@ -3686,6 +3773,24 @@ document.querySelectorAll('.half-tab').forEach(t => {
 });
 
 // ── SCORES ──
+function toggleScoresCard() {
+  const body = document.getElementById('scoresCardBody');
+  const btn  = document.getElementById('scoresCollapseBtn');
+  if (!body) return;
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? '' : 'none';
+  if (btn) btn.textContent = collapsed ? 'Collapse' : 'Expand';
+}
+
+function toggleMyScoresCard() {
+  const body = document.getElementById('myScoresCardBody');
+  const btn  = document.getElementById('myScoresCollapseBtn');
+  if (!body) return;
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? '' : 'none';
+  if (btn) btn.textContent = collapsed ? 'Collapse' : 'Expand';
+}
+
 function getPlayerLast5Map(beforeDate) {
   const map = {};
   const beforeClause = beforeDate ? 'AND CAST(Date AS INTEGER) < CAST(? AS INTEGER)' : '';
@@ -4054,7 +4159,13 @@ function loadScores() {
   if (scoresTable) delete scoresTable.dataset.sortable;
   document.querySelector('#scoresTable thead tr').innerHTML = psCtx
     ? '<th>Player</th><th class="num">Front Gross</th><th class="num">Front Net</th><th class="num">Back Gross</th><th class="num">Back Net</th><th class="num">18 Gross</th><th class="num">18 Net</th><th class="num">Hdcp</th><th class="ctr">Holes</th>'
-    : '<th>Player</th><th class="num">Gross</th><th class="num">Net</th><th class="ctr">9</th><th class="num">PHdcp</th><th class="num">Hdcp</th>';
+    : (() => {
+        const fb = rows[0]?.FrontBack || '';
+        const nineLabel = fb === 'Front' ? 'Front 9' : fb === 'Back' ? 'Back 9' : '';
+        const sub = document.getElementById('scoresSubtitle');
+        if (sub) sub.textContent = nineLabel;
+        return '<th>Player</th><th class="num">Gross</th><th class="num">Net</th><th class="num">PHdcp</th><th class="num">Hdcp</th>';
+      })()
   // Attach sort listeners directly
   document.querySelectorAll('#scoresTable thead th').forEach((th, i) => {
     th.style.cursor = 'pointer';
@@ -4065,6 +4176,10 @@ function loadScores() {
   const tb = tbody('scoresTable');
   rows.forEach(r => {
     const tr = document.createElement('tr');
+    if (currentUser?.name && r.Player === currentUser.name) {
+      tr.style.background = 'var(--gold-light, #fff8e1)';
+      tr.style.fontWeight = '600';
+    }
     const last5 = last5Map[r.Player] || null;
 
     const playerCell = Object.assign(document.createElement('td'), { textContent: r.Player || '' });
@@ -4092,11 +4207,6 @@ function loadScores() {
     } else {
       tr.appendChild(Object.assign(document.createElement('td'), { className: 'num score-gross', textContent: r.Gross||'' }));
       tr.appendChild(Object.assign(document.createElement('td'), { className: 'num score-net', innerHTML: `<strong>${r.Net||''}</strong>` }));
-      tr.appendChild(Object.assign(document.createElement('td'), {
-        className: 'ctr',
-        style: 'font-size:11px;color:var(--gray)',
-        textContent: r.FrontBack||''
-      }));
       const phdcpCell = makeTipCell('td', r.PHdcp != null ? r.PHdcp : '0', last5, 'num', 'color:var(--gray)');
       const hdcpCell  = makeTipCell('td', r.Hdcp  != null ? r.Hdcp  : '', last5, 'num', 'color:var(--gray)');
       if (!last5 && r.Gross) {
@@ -5257,6 +5367,7 @@ function loadSkins() {
   }
   parts.forEach(r => {
     const tr = document.createElement('tr');
+    if (currentUser?.name && r.Player === currentUser.name) tr.style.background = '#fff8e1';
     tr.innerHTML = `
       <td>${r.Player}</td>
       <td class="num">${r.skin_paid ? fmtMoney(r.skin_paid) : '—'}</td>
@@ -5791,8 +5902,91 @@ function loadCtps() {
   document.getElementById('ctpsContent').innerHTML = html;
 }
 
+function showWhatsNewIfNeeded(playerName) {
+  if (!CHANGELOG.length) return;
+  const latestVersion = CHANGELOG[0].version;
+  const key = `hg_whats_new_${playerName}`;
+  const lastSeen = localStorage.getItem(key) || '0';
+  if (lastSeen >= latestVersion) return;
+
+  const unseen = CHANGELOG.filter(e => e.version > lastSeen);
+  if (!unseen.length) return;
+
+  const role = currentUser?.role || 'player';
+  const isOfficer   = role === 'officer' || role === 'developer';
+  const isDeveloper = role === 'developer';
+
+  function ul(items, color) {
+    if (!items || !items.length) return '';
+    return `<ul style="margin:0 0 10px;padding-left:18px">${items.map(i=>`<li style="margin-bottom:3px">${i}</li>`).join('')}</ul>`;
+  }
+  function sh(icon, label, color) {
+    return `<div style="font-size:11px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.7px;margin:8px 0 3px">${icon} ${label}</div>`;
+  }
+
+  const body = document.getElementById('whatsNewBody');
+  const ver  = document.getElementById('whatsNewVersion');
+  ver.textContent = '';
+
+  body.innerHTML = unseen.map((e, idx) => {
+    let html = '';
+    if (unseen.length > 1) {
+      html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px${idx>0?';margin-top:4px':''}">
+        <span style="background:#1a3a1a;color:#d4a843;font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:.5px">${e.date.toUpperCase()}</span>
+      </div>`;
+    }
+    if (e.enhancements?.length) {
+      html += sh('✨','Enhancements','#1a6a1a') + ul(e.enhancements);
+    }
+    if (isOfficer && e.officerEnhancements?.length) {
+      html += sh('🏌️','Officer Updates','#1a3a8a') + ul(e.officerEnhancements);
+    }
+    if (e.bugFixes?.length) {
+      html += sh('🔧','Bug Fixes','#b71c1c') + ul(e.bugFixes);
+    }
+    if (isDeveloper && e.developerNotes?.length) {
+      html += sh('🛠️','Developer Notes','#5d4037') + ul(e.developerNotes);
+    }
+    if (idx < unseen.length - 1) html += `<div style="border-top:1px solid #eee;margin:10px 0"></div>`;
+    return html;
+  }).join('');
+
+  // Coming Soon section
+  body.innerHTML += `<div style="border-top:2px dashed #c8a84b;margin:12px -20px 0;padding:12px 20px 4px;background:#fffdf5">
+    <span style="background:#c8a84b;color:#fff;font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:.5px">COMING SOON</span>
+    <ul style="margin:8px 0 0;padding-left:18px;font-size:13px;color:#555;line-height:1.8">
+      <li><strong style="color:#333">League Board</strong> — post announcements, questions, and banter. Stay tuned!</li>
+    </ul>
+  </div>`;
+
+  const modal = document.getElementById('whatsNewModal');
+  modal.style.display = 'flex';
+  modal._playerKey = key;
+  modal._version   = latestVersion;
+}
+
+function dismissWhatsNew() {
+  const modal = document.getElementById('whatsNewModal');
+  if (modal._playerKey) localStorage.setItem(modal._playerKey, modal._version);
+  modal.style.display = 'none';
+}
+
+function warnIfUnpaidScorers(date) {
+  const league = "Hugh's";
+  const scored  = query(`SELECT DISTINCT Player FROM Scores WHERE League=? AND Date=?`, [league, date]).map(r => r.Player);
+  const paidSet = new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League=? AND Date=? AND Desc IN ('Skin','CTP') AND Detail='Payment'`, [league, date]).map(r => r.Player));
+  const unpaid  = scored.filter(p => !paidSet.has(p));
+  if (!unpaid.length) return true;
+  return confirm(
+    `⚠️ ${unpaid.length} player${unpaid.length>1?'s have':' has'} scores but ${unpaid.length>1?'haven\'t':'hasn\'t'} paid in:\n\n` +
+    unpaid.join('\n') +
+    `\n\nThe pot may be incorrect. Assign winners anyway?`
+  );
+}
+
 async function ctpSetWinner(hole, date, player, amount) {
   if (!player) return;
+  if (!warnIfUnpaidScorers(date)) { loadCtps(); return; }
   const league     = "Hugh's";
   const wholeAmt   = Math.floor(amount); // whole dollars only
   // Clear any carryover for this hole
@@ -5814,6 +6008,7 @@ async function ctpReset(hole, date) {
 }
 
 async function ctpNoWinner(hole, date, amount, fb) {
+  if (!warnIfUnpaidScorers(date)) { loadCtps(); return; }
   const league    = "Hugh's";
   const now       = new Date().toLocaleDateString();
   const wholeAmt  = Math.floor(amount); // whole dollars only — remainder stays in kitty
@@ -5900,123 +6095,210 @@ function loadPayments() {
   const dTo      = `${parseInt(season)+1}0101`;
   const weekDate = date || null;
 
-  // Get LeagueParms
+  // LeagueParms
   const lp = query(`SELECT Cost, Skins, "EOY Skins" FROM LeagueParms WHERE Name="${league}" AND Season=${season}`)[0];
   const duesTotal = parseFloat(lp?.Cost || 45);
-  const skinAmt   = parseFloat(lp?.Skins || 2);
 
-  // Get players
+  // Players — regOnly filters dues/season tables; This Week always shows everyone who played
+  const rosterSet = new Set(query(`SELECT Player FROM Teams WHERE Year=${season}`).map(r => r.Player));
   let players;
   if (regOnly) {
     players = query(`SELECT t.Player FROM Teams t LEFT JOIN Players p ON p.Player = t.Player WHERE t.Year=${season} ORDER BY p.LastName, p.FirstName`).map(r => r.Player);
   } else {
     players = query(`SELECT DISTINCT pay.Player FROM Payments pay LEFT JOIN Players p ON p.Player = pay.Player WHERE pay.League="${league}" AND pay.Date >= '${dFrom}' AND pay.Date < '${dTo}' ORDER BY p.LastName, p.FirstName`).map(r => r.Player);
   }
-  const rosterSet = new Set(query(`SELECT Player FROM Teams WHERE Year=${season}`).map(r => r.Player));
+  // All players who had any activity this week (including subs) — used for This Week section
+  const weekPlayers = weekDate
+    ? query(`SELECT DISTINCT pay.Player FROM Payments pay LEFT JOIN Players p ON p.Player=pay.Player WHERE pay.League="${league}" AND pay.Date=${weekDate} AND pay.Desc IN ('Skin','CTP') ORDER BY p.LastName, p.FirstName`).map(r => r.Player)
+    : [];
 
-  // Build row data per player
+  // Build per-player data
   const rows = players.map(player => {
-    // LD Paid — only applies to current-season roster regulars, not one-time subs
-    const isRosterPlayer = rosterSet.has(player);
-    const ldPaid = isRosterPlayer ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='League Dues' AND Date >= ? AND Date < ?`, [player, league, dFrom, dTo])[0]?.s || 0) : null;
-    const ldBal  = isRosterPlayer ? Math.max(0, duesTotal - ldPaid) : null;
-
-    // Skins Paid (season)
-    const skinsPaid = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='Skin' AND Detail='Payment' AND Date >= ? AND Date < ?`, [player, league, dFrom, dTo])[0]?.s || 0);
-
-    // CTP Paid (season)
-    const ctpPaid = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='CTP' AND Detail='Payment' AND Date >= ? AND Date < ?`, [player, league, dFrom, dTo])[0]?.s || 0);
-
-    // Skins Won this week
-    const skinsWonWk = weekDate ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='Skin' AND Detail LIKE '#%' AND Date=?`, [player, league, weekDate])[0]?.s || 0) : 0;
-
-    // Skins Won season
-    const skinsWonSea = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='Skin' AND Detail LIKE '#%' AND Date >= ? AND Date < ?`, [player, league, dFrom, dTo])[0]?.s || 0);
-
-    // CTP Won this week
-    const ctpWonWk = weekDate ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='CTP' AND Detail LIKE '#%' AND Date=?`, [player, league, weekDate])[0]?.s || 0) : 0;
-
-    // CTP Won season
-    const ctpWonSea = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='CTP' AND Detail LIKE '#%' AND Date >= ? AND Date < ?`, [player, league, dFrom, dTo])[0]?.s || 0);
-
-    // EOY Paid
-    const eoyPaid = isRosterPlayer ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='EOY Skins' AND Detail='Payment' AND Date >= ? AND Date < ?`, [player, league, dFrom, dTo])[0]?.s || 0) : null;
-
-    // Last Paid
-    const lastPaid = query(`SELECT MAX(DatePaid) as d FROM Payments WHERE Player=? AND League=? AND Detail='Payment' AND Date >= ? AND Date < ?`, [player, league, dFrom, dTo])[0]?.d || '';
-
-    return { player, ldPaid, ldBal, skinsPaid, ctpPaid, skinsWonWk, skinsWonSea, ctpWonWk, ctpWonSea, eoyPaid, lastPaid };
+    const isRoster = rosterSet.has(player);
+    const ldPaid    = isRoster ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='League Dues' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.s||0) : null;
+    const ldBal     = isRoster ? Math.max(0, duesTotal - ldPaid) : null;
+    const skinsPaid = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='Skin' AND Detail='Payment' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.s||0);
+    const ctpPaid   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='CTP' AND Detail='Payment' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.s||0);
+    const skinsWonWk  = weekDate ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='Skin' AND Detail LIKE '#%' AND Date=?`,[player,league,weekDate])[0]?.s||0) : 0;
+    const skinsWonSea = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='Skin' AND Detail LIKE '#%' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.s||0);
+    const ctpWonWk    = weekDate ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='CTP' AND Detail LIKE '#%' AND Date=?`,[player,league,weekDate])[0]?.s||0) : 0;
+    const ctpWonSea   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='CTP' AND Detail LIKE '#%' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.s||0);
+    const eoyPaid   = isRoster ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='EOY Skins' AND Detail='Payment' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.s||0) : null;
+    const lastPaid  = query(`SELECT MAX(DatePaid) as d FROM Payments WHERE Player=? AND League=? AND Detail='Payment' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.d||'';
+    // This-week paid-in
+    const paidInWk  = weekDate ? (query(`SELECT 1 FROM Payments WHERE Player=? AND League=? AND Desc IN ('Skin','CTP') AND Detail='Payment' AND Date=? LIMIT 1`,[player,league,weekDate]).length > 0) : false;
+    return { player, isRoster, ldPaid, ldBal, skinsPaid, ctpPaid, skinsWonWk, skinsWonSea, ctpWonWk, ctpWonSea, eoyPaid, lastPaid, paidInWk };
   });
 
-  // Totals
-  const tot = rows.reduce((acc, r) => {
-    acc.ldPaid    += (r.ldPaid||0);    acc.ldBal     += (r.ldBal||0);
-    acc.skinsPaid += r.skinsPaid; acc.ctpPaid   += r.ctpPaid;
-    acc.skinsWonWk+= r.skinsWonWk;acc.skinsWonSea+=r.skinsWonSea;
-    acc.ctpWonWk  += r.ctpWonWk; acc.ctpWonSea += r.ctpWonSea;
-    acc.eoyPaid   += (r.eoyPaid||0);
-    return acc;
-  }, {ldPaid:0,ldBal:0,skinsPaid:0,ctpPaid:0,skinsWonWk:0,skinsWonSea:0,ctpWonWk:0,ctpWonSea:0,eoyPaid:0});
+  // Season totals
+  const tot = rows.reduce((a,r) => {
+    a.ldPaid += (r.ldPaid||0); a.ldBal += (r.ldBal||0);
+    a.skinsPaid += r.skinsPaid; a.ctpPaid += r.ctpPaid;
+    a.skinsWonSea += r.skinsWonSea; a.ctpWonSea += r.ctpWonSea;
+    a.eoyPaid += (r.eoyPaid||0);
+    return a;
+  }, {ldPaid:0,ldBal:0,skinsPaid:0,ctpPaid:0,skinsWonSea:0,ctpWonSea:0,eoyPaid:0});
 
-  const fmtM = v => v === null ? '—' : v ? `$${v.toFixed(2)}` : '$0.00';
-  const thS  = 'background:var(--green);color:var(--gold);padding:8px 10px;text-align:right;font-size:11px;white-space:nowrap';
-  const thSL = 'background:var(--green);color:var(--gold);padding:8px 10px;text-align:left;font-size:11px';
+  const fmtM  = v => v===null ? '—' : `$${parseFloat(v||0).toFixed(2)}`;
+  const thS   = 'background:var(--green);color:var(--gold);padding:7px 10px;font-size:11px;white-space:nowrap';
+  const thSR  = thS+';text-align:right';
+  const wkDate = weekDate || (document.getElementById('paymentsDate').options[1]?.value||'');
 
-  let html = `<table id="paymentsTable" style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px">
-    <thead>
-      <tr>
-        <th style="${thSL}">Player</th>
-        <th style="${thS}">LD Paid</th>
-        <th style="${thS}">LD Bal</th>
-        <th style="${thS}">Skins Paid</th>
-        <th style="${thS}">CTP Paid</th>
-        ${weekDate ? `<th style="${thS}">Skins Won Wk</th>` : ''}
-        <th style="${thS}">Skins Won Sea</th>
-        ${weekDate ? `<th style="${thS}">CTP Won Wk</th>` : ''}
-        <th style="${thS}">CTP Won Sea</th>
-        <th style="${thS}">EOY Paid</th>
-        <th style="${thS}">Last Paid</th>
-      </tr>
-    </thead><tbody>`;
+  // ── Recap cards ─────────────────────────────────────────────────────────────
+  const unpaidCount = rows.filter(r => r.isRoster && (r.ldBal||0) > 0).length;
+  const card = (bg,border,label,val,sub='') =>
+    `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 18px;min-width:130px">
+      <div style="font-size:11px;font-weight:700;color:${border};margin-bottom:4px">${label}</div>
+      <div style="font-size:20px;font-weight:700;color:#333;font-family:'DM Mono',monospace">${val}</div>
+      ${sub ? `<div style="font-size:10px;color:#888;margin-top:2px">${sub}</div>` : ''}
+    </div>`;
 
-  rows.forEach(r => {
-    const lastDate = r.lastPaid ? new Date(r.lastPaid).toLocaleDateString() : '';
-    const wkDate = weekDate || (document.getElementById('paymentsDate').options[1]?.value || '');
-    const safePlayer = r.player.replace(/'/g,"\\'");
+  const cards = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+    ${card('#e8f5e9','#2e7d32','LEAGUE DUES COLLECTED', fmtM(tot.ldPaid), unpaidCount > 0 ? `<span style="color:#c62828;font-weight:700">${unpaidCount} still owe</span>` : 'All paid ✓')}
+    ${card('#fff9c4','#f9a825','SKINS COLLECTED YTD', fmtM(tot.skinsPaid), `${rows.filter(r=>r.skinsPaid>0).length} players`)}
+    ${card('#e3f2fd','#1565c0','CTP COLLECTED YTD', fmtM(tot.ctpPaid), `${rows.filter(r=>r.ctpPaid>0).length} players`)}
+    ${card('#fce4ec','#ad1457','EOY SKINS POOL', fmtM(tot.eoyPaid), `${rows.filter(r=>(r.eoyPaid||0)>0).length} paid in`)}
+    ${weekDate ? card('#f3e5f5','#6a1b9a','THIS WEEK PAID IN', `${weekPlayers.filter(p => query(`SELECT 1 FROM Payments WHERE Player=? AND League=? AND Desc IN ('Skin','CTP') AND Detail='Payment' AND Date=? LIMIT 1`,[p,league,weekDate]).length>0).length}`, fmtDate(weekDate)) : ''}
+  </div>`;
+
+  // ── Helper: collapsible section ──────────────────────────────────────────────
+  const section = (id, title, color, content, startOpen=false) => `
+    <div style="margin-bottom:14px;border:1px solid #ddd;border-radius:8px;overflow:hidden">
+      <div style="background:${color};color:white;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="const b=document.getElementById('pmSec_${id}');const btn=document.getElementById('pmBtn_${id}');const open=b.style.display!=='none';b.style.display=open?'none':'';btn.textContent=open?'Expand':'Collapse'">
+        <span style="font-weight:700;font-size:13px">${title}</span>
+        <button id="pmBtn_${id}" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:3px 12px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600">${startOpen?'Collapse':'Expand'}</button>
+      </div>
+      <div id="pmSec_${id}" style="display:${startOpen?'':'none'};overflow-x:auto">${content}</div>
+    </div>`;
+
+  // ── Section 1: This Week ─────────────────────────────────────────────────────
+  let weekHtml = '';
+  if (weekDate) {
+    // Week-level money summary
+    const wkCollected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE League=? AND Desc IN ('Skin','CTP') AND Detail='Payment' AND Date=?`,[league,weekDate])[0]?.s||0);
+    const wkPaidOut   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE League=? AND Desc IN ('Skin','CTP') AND Detail LIKE '#%' AND Player!='Kitty' AND Date=?`,[league,weekDate])[0]?.s||0);
+    const wkHeld      = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE League=? AND Desc IN ('Skin','CTP') AND Detail LIKE '#%' AND Player!='Kitty' AND Date=? AND (DatePaid IS NULL OR DatePaid='')`,[league,weekDate])[0]?.s||0);
+    const wkCarry     = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE League=? AND Desc='CTP' AND Player='Kitty' AND Detail LIKE 'Carryover%' AND Date=?`,[league,weekDate])[0]?.s||0);
+    const wkSkinKitty = wkCollected - wkPaidOut - wkCarry;
+
+    const miniCard = (bg, border, label, val) =>
+      `<div style="background:${bg};border:1px solid ${border};border-radius:7px;padding:10px 16px;min-width:110px;flex:1">
+        <div style="font-size:10px;font-weight:700;color:${border};margin-bottom:3px">${label}</div>
+        <div style="font-size:18px;font-weight:700;font-family:'DM Mono',monospace;color:#333">${val}</div>
+      </div>`;
+
+    const wkCards = `<div style="display:flex;gap:8px;flex-wrap:wrap;padding:12px 12px 4px">
+      ${miniCard('#e8f5e9','#2e7d32','COLLECTED', fmtM(wkCollected))}
+      ${miniCard('#e3f2fd','#1565c0','PAID OUT', fmtM(wkPaidOut))}
+      ${miniCard('#fff9c4','#f9a825','SKIN KITTY', fmtM(Math.max(0,wkSkinKitty)))}
+      ${wkCarry > 0 ? miniCard('#e8eaf6','#3949ab','CTP CARRY', fmtM(wkCarry)) : ''}
+      ${wkHeld  > 0 ? miniCard('#ffebee','#c62828','HELD', fmtM(wkHeld)) : ''}
+    </div>`;
+
+    if (weekPlayers.length) {
+      weekHtml = wkCards + `<table id="pmWeekTable" style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr>
+          <th style="${thS};text-align:left">Player</th>
+          <th style="${thSR}">Paid In</th>
+          <th style="${thSR}">Skins Won</th>
+          <th style="${thSR}">CTP Won</th>
+          <th style="${thSR}">Net</th>
+        </tr></thead><tbody>`;
+      weekPlayers.forEach((player, i) => {
+        const paidIn  = query(`SELECT 1 FROM Payments WHERE Player=? AND League=? AND Desc IN ('Skin','CTP') AND Detail='Payment' AND Date=? LIMIT 1`,[player,league,weekDate]).length > 0;
+        const skinWon = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='Skin' AND Detail LIKE '#%' AND Date=?`,[player,league,weekDate])[0]?.s||0);
+        const ctpWon  = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='CTP' AND Detail LIKE '#%' AND Date=?`,[player,league,weekDate])[0]?.s||0);
+        const net = skinWon + ctpWon;
+        const isMe = currentUser && player === currentUser.name;
+        const isSub = !rosterSet.has(player);
+        const bg = isMe ? '#fff3cd' : i%2===0?'#fff':'#fafafa';
+        const safeP = player.replace(/'/g,"\\'");
+        weekHtml += `<tr style="background:${bg};border-bottom:1px solid #eee;cursor:pointer" onclick="openPaymentModalForPlayer('${safeP}','${wkDate}')">
+          <td style="padding:7px 10px;font-weight:600">${player}${isMe?' <span style="font-size:10px;color:#856404">(you)</span>':''}${isSub?' <span style="font-size:10px;color:#1565c0;font-weight:700">Sub</span>':''}</td>
+          <td style="padding:7px 10px;text-align:right;color:${paidIn?'var(--green)':'#aaa'};font-weight:${paidIn?700:400}">${paidIn?'✓':'—'}</td>
+          <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${skinWon>0?'color:var(--green);font-weight:700':''}">${skinWon>0?fmtM(skinWon):'—'}</td>
+          <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${ctpWon>0?'color:var(--green);font-weight:700':''}">${ctpWon>0?fmtM(ctpWon):'—'}</td>
+          <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;font-weight:700;color:${net>0?'var(--green)':'#aaa'}">${net>0?fmtM(net):'—'}</td>
+        </tr>`;
+      });
+      weekHtml += `</tbody></table>`;
+    } else {
+      weekHtml = wkCards + `<div style="padding:12px 16px;color:#999;font-size:13px">No player activity recorded for this week yet.</div>`;
+    }
+  } else {
+    weekHtml = `<div style="padding:16px;color:#999;font-size:13px">Select a week above to see this week's activity.</div>`;
+  }
+
+  // ── Section 2: League Dues ───────────────────────────────────────────────────
+  const duesRows = rows.filter(r => r.isRoster);
+  let duesHtml = `<table id="pmDuesTable" style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr>
+      <th style="${thS};text-align:left">Player</th>
+      <th style="${thSR}">Dues Paid</th>
+      <th style="${thSR}">Balance</th>
+      <th style="${thSR}">Last Paid</th>
+    </tr></thead><tbody>`;
+  duesRows.forEach((r,i) => {
+    const lastDate = r.lastPaid ? new Date(r.lastPaid).toLocaleDateString() : '—';
     const isMe = currentUser && r.player === currentUser.name;
-    const baseColor = isMe ? '#fff3cd' : '';
-    html += `<tr style="border-bottom:1px solid #f0ebe0;cursor:pointer;background:${baseColor}" onmouseover="this.style.background='#faf7f0'" onmouseout="this.style.background='${baseColor}'" onclick="openPaymentModalForPlayer('${safePlayer}','${wkDate}')">
-      <td style="padding:7px 10px;font-weight:600">${r.player}${isMe ? ' <span style="font-size:10px;color:#856404">(you)</span>' : ''}</td>
+    const bg = isMe ? '#fff3cd' : (r.ldBal||0)>0 ? '#fff5f5' : i%2===0?'#fff':'#fafafa';
+    const safeP = r.player.replace(/'/g,"\\'");
+    duesHtml += `<tr style="background:${bg};border-bottom:1px solid #eee;cursor:pointer" onclick="openPaymentModalForPlayer('${safeP}','${wkDate}')">
+      <td style="padding:7px 10px;font-weight:600">${r.player}${isMe?' <span style="font-size:10px;color:#856404">(you)</span>':''}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.ldPaid)}</td>
-      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;color:${r.ldBal>0?'var(--red)':'var(--gray)'}${r.ldBal>0?';font-weight:700':''}">${fmtM(r.ldBal)}</td>
-      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.skinsPaid)}</td>
-      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.ctpPaid)}</td>
-      ${weekDate ? `<td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${r.skinsWonWk>0?'color:var(--green);font-weight:700':''}">${r.skinsWonWk>0?fmtM(r.skinsWonWk):'$0.00'}</td>` : ''}
-      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.skinsWonSea)}</td>
-      ${weekDate ? `<td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${r.ctpWonWk>0?'color:var(--green);font-weight:700':''}">${r.ctpWonWk>0?fmtM(r.ctpWonWk):'$0.00'}</td>` : ''}
-      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.ctpWonSea)}</td>
-      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.eoyPaid)}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;font-weight:${(r.ldBal||0)>0?700:400};color:${(r.ldBal||0)>0?'var(--red)':'var(--gray)'}">${fmtM(r.ldBal)}</td>
       <td style="padding:7px 10px;text-align:right;font-size:11px;color:var(--gray)">${lastDate}</td>
     </tr>`;
   });
-
-  // Totals row
-  html += `</tbody><tfoot><tr style="background:#f5f0e8;font-weight:700;border-top:2px solid var(--border)">
-    <td style="padding:8px 10px">TOTALS</td>
-    <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.ldPaid)}</td>
-    <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:${tot.ldBal>0?'var(--red)':'var(--gray)'}">${fmtM(tot.ldBal)}</td>
-    <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.skinsPaid)}</td>
-    <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.ctpPaid)}</td>
-    ${weekDate ? `<td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.skinsWonWk)}</td>` : ''}
-    <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.skinsWonSea)}</td>
-    ${weekDate ? `<td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.ctpWonWk)}</td>` : ''}
-    <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.ctpWonSea)}</td>
-    <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.eoyPaid)}</td>
+  duesHtml += `</tbody><tfoot><tr style="background:#f5f0e8;font-weight:700;border-top:2px solid var(--border)">
+    <td style="padding:7px 10px">TOTALS</td>
+    <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.ldPaid)}</td>
+    <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;color:${tot.ldBal>0?'var(--red)':'var(--gray)'}">${fmtM(tot.ldBal)}</td>
     <td></td>
   </tr></tfoot></table>`;
 
+  // ── Section 3: Season Summary ────────────────────────────────────────────────
+  let seaHtml = `<table id="pmSeasonTable" style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr>
+      <th style="${thS};text-align:left">Player</th>
+      <th style="${thSR}">Skins Paid</th>
+      <th style="${thSR}">Skins Won</th>
+      <th style="${thSR}">CTP Paid</th>
+      <th style="${thSR}">CTP Won</th>
+      <th style="${thSR}">EOY Paid</th>
+    </tr></thead><tbody>`;
+  rows.forEach((r,i) => {
+    const isMe = currentUser && r.player === currentUser.name;
+    const isSub = !r.isRoster;
+    const bg = isMe ? '#fff3cd' : i%2===0?'#fff':'#fafafa';
+    const safeP = r.player.replace(/'/g,"\\'");
+    seaHtml += `<tr style="background:${bg};border-bottom:1px solid #eee;cursor:pointer" onclick="openPaymentModalForPlayer('${safeP}','${wkDate}')">
+      <td style="padding:7px 10px;font-weight:600">${r.player}${isMe?' <span style="font-size:10px;color:#856404">(you)</span>':''}${isSub?' <span style="font-size:10px;color:#1565c0;font-weight:700">Sub</span>':''}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.skinsPaid)}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${r.skinsWonSea>0?'color:var(--green);font-weight:700':''}">${fmtM(r.skinsWonSea)}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.ctpPaid)}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${r.ctpWonSea>0?'color:var(--green);font-weight:700':''}">${fmtM(r.ctpWonSea)}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${r.eoyPaid!==null?fmtM(r.eoyPaid):'—'}</td>
+    </tr>`;
+  });
+  seaHtml += `</tbody><tfoot><tr style="background:#f5f0e8;font-weight:700;border-top:2px solid var(--border)">
+    <td style="padding:7px 10px">TOTALS</td>
+    <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.skinsPaid)}</td>
+    <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.skinsWonSea)}</td>
+    <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.ctpPaid)}</td>
+    <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.ctpWonSea)}</td>
+    <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(tot.eoyPaid)}</td>
+  </tr></tfoot></table>`;
+
+  const html = cards
+    + section('week',  `📅 This Week${weekDate ? ' — ' + fmtDate(weekDate) : ''}`, '#6a1b9a', weekHtml, !!weekDate)
+    + section('dues',  '💰 League Dues', '#2e7d32', duesHtml, unpaidCount > 0)
+    + section('season','📊 Season Summary — Skins & CTP', '#1565c0', seaHtml, false);
+
   document.getElementById('paymentsContent').innerHTML = html;
-  makeSortable('paymentsTable');
+  makeSortable('pmWeekTable');
+  makeSortable('pmDuesTable');
+  makeSortable('pmSeasonTable');
 }
 
 function openPayFromTab() {
@@ -7227,6 +7509,42 @@ async function confirmMarkPaid() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Need a Sub ─────────────────────────────────────────────────────────────────
+function buildNeedSubMessage(forPlayer, dateLabel, dateVal) {
+  let msg = `Hi! ${forPlayer} needs a sub for the round on ${dateLabel} at 4pm at Boone Links. Can you play? Let us know if you're interested!`;
+
+  // Try to find partner and foursome from Matches table (most recent date before selected)
+  // Or from Teams table if no match data exists yet for this date
+  const season = needSubSeason || query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
+  const teamRow = query(`SELECT Team, Grade FROM Teams WHERE League="Hugh's" AND Year=${season} AND Player=?`, [forPlayer])[0];
+  if (!teamRow) return msg;
+
+  // Partner = other player on same team
+  const partnerRow = query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season} AND Team=? AND Grade!=?`, [teamRow.Team, teamRow.Grade])[0];
+  const partner = partnerRow?.Player || null;
+
+  if (partner) msg += `\n\nYour partner is ${partner}.`;
+
+  // Find probable foursome from Schedule slot pairing
+  // Slots are paired: 1+2, 3+4, 5+6, etc. — each pair is a foursome
+  const sched = query(`SELECT * FROM Schedule WHERE League="Hugh's" AND Date=?`, [dateVal])[0];
+  if (sched && teamRow) {
+    let playerSlot = null;
+    for (let i = 1; i <= 24; i++) {
+      if (parseInt(sched[String(i)]) === parseInt(teamRow.Team)) { playerSlot = i; break; }
+    }
+    if (playerSlot !== null) {
+      const oppSlot  = playerSlot % 2 === 1 ? playerSlot + 1 : playerSlot - 1;
+      const oppTeam  = parseInt(sched[String(oppSlot)]);
+      if (oppTeam) {
+        const oppPlayers = query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season} AND Team=?`, [oppTeam]).map(r => r.Player);
+        const foursome   = [partner, ...oppPlayers].filter(Boolean);
+        if (foursome.length) msg += `\nProbable foursome: ${foursome.join(', ')} + sub.`;
+      }
+    }
+  }
+
+  return msg;
+}
 const TEXT_CARRIERS = ['verizon','att','at&t','t-mobile','tmobile','sprint','cricket','boost','cbw','metro','us cellular','uscellular'];
 
 function hasValidTextContact(p) {
@@ -7265,14 +7583,16 @@ function showNeedSub() {
   const canSelectAllSubs = currentUser?.role === 'officer' || currentUser?.role === 'developer';
   const selectAllWrap = document.getElementById('needSubSelectAllWrap');
   const selectAllCb = document.getElementById('needSubSelectAll');
-  if (selectAllWrap) selectAllWrap.style.display = canSelectAllSubs ? 'flex' : 'none';
+  if (selectAllWrap) selectAllWrap.style.display = 'flex';
   if (selectAllCb) {
     selectAllCb.checked = false;
-    selectAllCb.disabled = !canSelectAllSubs;
+    selectAllCb.disabled = false;
   }
   document.getElementById('needSubIncludePast').checked = false;
-  document.getElementById('needSubShowNoContact').checked = false;
   document.getElementById('needSubSearch').value = '';
+  // Past-year subs option — officers/developers only
+  const includePastWrap = document.getElementById('needSubIncludePastWrap');
+  if (includePastWrap) includePastWrap.style.display = (canSelectAllSubs) ? 'flex' : 'none';
   // Show skip email option for developers only
   const skipDiv = document.getElementById('needSubSkipEmailDiv');
   if (skipDiv) skipDiv.style.display = currentUser?.role === 'developer' ? '' : 'none';
@@ -7312,21 +7632,42 @@ function showNeedSub() {
   renderNeedSubList();
 
   // Pre-fill message
-  const dateLabel = dates.length ? fmtDate(dates[0].sDate) : '[date]';
-  const forPlayer = forSel.value;
-  document.getElementById('needSubMessage').value =
-    `Hi! ${forPlayer} needs a sub for the round on ${dateLabel} at Boone Links. Can you play? Let us know if you're interested!`;
-
-  // Update message when date or "for" player changes
   const updateMsg = () => {
     const sel = dateSel.options[dateSel.selectedIndex];
-    const fp = forSel.value;
-    const dl = sel ? sel.textContent : '[date]';
-    document.getElementById('needSubMessage').value =
-      `Hi! ${fp} needs a sub for the round on ${dl} at Boone Links. Can you play? Let us know if you're interested!`;
+    const fp  = forSel.value;
+    const dl  = sel ? sel.textContent : '[date]';
+    const dv  = dateSel.value;
+    document.getElementById('needSubMessage').value = buildNeedSubMessage(fp, dl, dv);
+    updateNeedSubGroupSuggestion();
   };
   dateSel.onchange = updateMsg;
-  forSel.onchange = updateMsg;
+  forSel.onchange  = updateMsg;
+  updateMsg();
+  updateNeedSubGroupSuggestion();
+}
+
+function updateNeedSubGroupSuggestion() {
+  const banner = document.getElementById('needSubGroupSuggestion');
+  if (!banner) return;
+  const forPlayer = document.getElementById('needSubFor')?.value;
+  const dateVal   = document.getElementById('needSubDate')?.value;
+  if (!forPlayer || !dateVal) { banner.style.display = 'none'; return; }
+
+  // Find the player's team
+  const season = needSubSeason || query(`SELECT MAX(Season) as s FROM LeagueParms WHERE Name="Hugh's"`)[0]?.s;
+  const teamRow = query(`SELECT Team FROM Teams WHERE League="Hugh's" AND Year=${season} AND Player=?`, [forPlayer])[0];
+  if (!teamRow) { banner.style.display = 'none'; return; }
+
+  // Find subs already assigned to the same team on this date
+  const existing = query(
+    `SELECT Player FROM Subs WHERE League="Hugh's" AND Date=? AND Team=? AND Player IS NOT NULL AND Player != ''`,
+    [dateVal, teamRow.Team]
+  ).map(r => r.Player);
+
+  if (!existing.length) { banner.style.display = 'none'; return; }
+
+  banner.style.display = 'flex';
+  banner.innerHTML = `<span style="font-size:13px">💡</span> <span><strong>${existing.join(', ')}</strong> ${existing.length > 1 ? 'are' : 'is'} already subbing in your group this week — consider reaching out to them first.</span>`;
 }
 
 function renderNeedSubList() {
@@ -7334,7 +7675,6 @@ function renderNeedSubList() {
   if (!listEl) return;
 
   const includePast = document.getElementById('needSubIncludePast')?.checked || false;
-  const showNoContact = document.getElementById('needSubShowNoContact')?.checked || false;
   const search = (document.getElementById('needSubSearch')?.value || '').toLowerCase();
   const selectAllCb = document.getElementById('needSubSelectAll');
   if (selectAllCb) selectAllCb.checked = false;
@@ -7343,7 +7683,7 @@ function renderNeedSubList() {
     const currentYearSub = parseInt(p.SubCount || 0) > 0;
     const contactable = !!p.Email || hasValidTextContact(p);
     if (!currentYearSub && !includePast) return false;
-    if (!contactable && !showNoContact) return false;
+    if (!contactable) return false;
     if (search && !String(p.Player || '').toLowerCase().includes(search)) return false;
     return true;
   });
@@ -7351,7 +7691,6 @@ function renderNeedSubList() {
   if (!visible.length) {
     const hints = [];
     if (!includePast) hints.push('turn on past-year subs');
-    if (!showNoContact) hints.push('show no-contact players');
     listEl.innerHTML = `<div style="color:#999;padding:4px">No eligible contactable subs found${hints.length ? `; ${hints.join(' or ')} if needed.` : '.'}</div>`;
     return;
   }
@@ -7383,7 +7722,6 @@ function renderNeedSubList() {
 }
 
 function toggleAllSubs() {
-  if (!(currentUser?.role === 'officer' || currentUser?.role === 'developer')) return;
   const checked = document.getElementById('needSubSelectAll').checked;
   document.querySelectorAll('.needSubCheck:not(:disabled)').forEach(cb => {
     if (cb.closest('label')?.style.display !== 'none') cb.checked = checked;
@@ -7435,6 +7773,92 @@ async function doNeedSub() {
         await saveDBToServer();
       }
 
+      setTimeout(() => { document.getElementById('needSubModal').style.display = 'none'; }, 2500);
+    } else {
+      errEl.textContent = json.error || 'Failed to send request.';
+      errEl.style.display = 'block';
+    }
+  } catch(e) {
+    errEl.textContent = 'Server error: ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+function previewNeedSub() {
+  const errEl = document.getElementById('needSubError');
+  errEl.style.display = 'none';
+
+  const selected = [...document.querySelectorAll('.needSubCheck:checked')].map(cb => cb.value);
+  if (!selected.length) { errEl.textContent = 'Please select at least one sub to preview.'; errEl.style.display = 'block'; return; }
+
+  const message = document.getElementById('needSubMessage').value.trim();
+  const forPlayer = document.getElementById('needSubFor').value;
+  const dateVal = document.getElementById('needSubDate').value;
+
+  // Look up contact info for each selected recipient
+  const rows = selected.map(name => {
+    const p = needSubCandidates.find(c => c.Player === name) ||
+              query(`SELECT Player, Email, Phone, CellCarrier FROM Players WHERE Player=? LIMIT 1`, [name])[0] || {};
+    const hasEmail = !!p.Email;
+    const hasText  = hasValidTextContact(p);
+    return { name, email: p.Email || '', phone: p.Phone || '', carrier: p.CellCarrier || '', hasEmail, hasText };
+  });
+
+  let html = `<div style="font-size:12px;color:#555;margin-bottom:10px">Sub request for <strong>${forPlayer}</strong> on <strong>${fmtDate(dateVal)}</strong></div>`;
+
+  html += `<div style="font-size:11px;font-weight:700;color:#6a1b9a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Recipients (${rows.length})</div>`;
+  html += `<div style="border:1px solid #e0e0e0;border-radius:6px;overflow:hidden;margin-bottom:14px">`;
+  rows.forEach((r, i) => {
+    const border = i > 0 ? 'border-top:1px solid #f0f0f0;' : '';
+    html += `<div style="${border}padding:8px 10px;font-size:12px">
+      <div style="font-weight:600;color:#333">${r.name}</div>
+      ${r.hasEmail ? `<div style="color:#555;margin-top:2px">📧 ${r.email}</div>` : ''}
+      ${r.hasText  ? `<div style="color:#555;margin-top:2px">📱 ${r.phone} <span style="color:#999;font-size:10px">${r.carrier}</span></div>` : ''}
+      ${!r.hasEmail && !r.hasText ? `<div style="color:#c62828;margin-top:2px;font-size:11px">⚠️ No contact info</div>` : ''}
+    </div>`;
+  });
+  html += `</div>`;
+
+  html += `<div style="font-size:11px;font-weight:700;color:#6a1b9a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Message</div>`;
+  html += `<div style="background:#f9f6ff;border:1px solid #e1d5f5;border-radius:6px;padding:10px;font-size:12px;color:#333;line-height:1.6;white-space:pre-wrap">${message}</div>`;
+
+  document.getElementById('needSubPreviewBody').innerHTML = html;
+  document.getElementById('needSubPreviewModal').style.display = 'flex';
+}
+
+async function doAskOfficerForSub() {
+  const forPlayer = document.getElementById('needSubFor').value;
+  const dateVal   = document.getElementById('needSubDate').value;
+  const errEl     = document.getElementById('needSubError');
+  const okEl      = document.getElementById('needSubSuccess');
+  errEl.style.display = 'none';
+  okEl.style.display  = 'none';
+
+  if (!dateVal) { errEl.textContent = 'Please select a date first.'; errEl.style.display = 'block'; return; }
+
+  // Find officers (president/secretary) with contact info
+  const officers = query(`SELECT Player, Email FROM Players WHERE LOWER(Officer) IN ('president','secretary') AND Email IS NOT NULL AND Email != '' AND COALESCE(BlockSubs,'N') != 'Y'`);
+  if (!officers.length) {
+    errEl.textContent = 'No officers found with contact info.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const officerNames = officers.map(o => o.Player);
+  const msg = `Hi! ${forPlayer} needs a sub for the round on ${fmtDate(dateVal)} at 4pm at Boone Links, but their preferred subs aren't on the available list. Could you help find a sub?\n\n` +
+    buildNeedSubMessage(forPlayer, fmtDate(dateVal), dateVal).split('\n\n').slice(1).join('\n\n');
+
+  if (!confirm(`Send a help request to ${officerNames.join(' and ')}?\n\n"${msg}"`)) return;
+
+  try {
+    const resp = await fetch('/need-sub', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ player: forPlayer, date: dateVal, message: msg, recipients: officerNames, skipEmail: document.getElementById('needSubSkipEmail')?.checked || false })
+    });
+    const json = await resp.json();
+    if (json.ok) {
+      okEl.textContent = `Help request sent to ${officerNames.join(', ')}.`;
+      okEl.style.display = 'block';
       setTimeout(() => { document.getElementById('needSubModal').style.display = 'none'; }, 2500);
     } else {
       errEl.textContent = json.error || 'Failed to send request.';
@@ -7761,6 +8185,8 @@ async function loadLoginActivity(options = {}) {
     const attemptMatch = r.details?.match(/attempt=(\d+\/\d+)/);
     const sentMatch = r.details?.match(/sent=(\d+)/);
     const forMatch = r.text?.match(/for (.+) on/);
+    const impersonatedByMatch = r.details?.match(/impersonated_by=(.+)$/);
+    const impersonatedByLabel = impersonatedByMatch ? `<span style="font-size:10px;color:#7b1fa2;font-weight:400"> (imp ${escapeHtml(impersonatedByMatch[1].trim())})</span>` : '';
     const localTime = formatUtcSqlTimestamp(r.log_time);
     const eventLabel = r.method === 'login' ? '<span style="color:#2e7d32">→ Login</span>'
       : r.method === 'session_timeout' ? '<span style="color:#e65100">⏱ Timeout</span>'
@@ -7770,7 +8196,7 @@ async function loadLoginActivity(options = {}) {
       : r.method === 'password_change' ? '<span style="color:#1565c0">🔑 Password Changed</span>'
       : '<span style="color:#888">← Logout</span>';
     return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
-      <td style="padding:6px 12px;font-weight:600;cursor:pointer;color:var(--green)" onclick="document.getElementById('loginActivityPlayer').value='${player.replace(/'/g,"\\'")}';loadLoginActivity({skipServerRefresh:true})">${escapeHtml(player || '')}${subPlayerNames.has(player) ? subBadge : ''}</td>
+      <td style="padding:6px 12px;font-weight:600;cursor:pointer;color:var(--green)" onclick="document.getElementById('loginActivityPlayer').value='${player.replace(/'/g,"\\'")}';loadLoginActivity({skipServerRefresh:true})">${escapeHtml(player || '')}${subPlayerNames.has(player) ? subBadge : ''}${impersonatedByLabel}</td>
       <td style="padding:6px 12px;font-size:12px">${eventLabel}</td>
       <td style="padding:6px 12px;font-size:12px;color:#666">${roleMatch ? roleMatch[1] : ''}</td>
       <td style="padding:6px 12px;font-size:12px;font-family:'DM Mono',monospace;color:#888">${versionMatch ? versionMatch[1] : '—'}</td>
@@ -8224,15 +8650,21 @@ function showImpersonateModal() {
     const label = role === 'developer' ? '🛠 Developer' : (role === 'president' || role === 'secretary') ? '⭐ Officer' : '👤 Player';
     return `<option value="${escapeHtml(p.Player)}">${escapeHtml(p.Player)} — ${label}</option>`;
   }).join('');
-  // Pre-select someone other than current user
+  // Pre-select last impersonated player, otherwise first player other than current user
+  const lastImpersonated = localStorage.getItem('hg_last_impersonated');
   const others = players.filter(p => p.Player !== currentUser?.name);
-  if (others.length) sel.value = others[0].Player;
+  if (lastImpersonated && players.find(p => p.Player === lastImpersonated && p.Player !== currentUser?.name)) {
+    sel.value = lastImpersonated;
+  } else if (others.length) {
+    sel.value = others[0].Player;
+  }
   document.getElementById('impersonateModal').style.display = 'flex';
 }
 
 async function doImpersonate() {
   const selectedName = document.getElementById('impersonateSelect').value;
   if (!selectedName) return;
+  localStorage.setItem('hg_last_impersonated', selectedName);
   const rows = query(`SELECT Player, Officer FROM Players WHERE Player=? LIMIT 1`, [selectedName]);
   if (!rows.length) { alert('Player not found'); return; }
   const p = rows[0];
@@ -9336,7 +9768,6 @@ function updateWeeksLeftBanner() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function showSwitchUser() {
-  // Set a flag so tryTrustedAutoLogin skips the Gary auto-login this one time
   sessionStorage.setItem('hg_skip_autologin', '1');
   logoutUser('switch_user');
 }
@@ -9349,6 +9780,7 @@ function doSandboxAutoLogin() {
 function doSandboxQuickLogin() {
   const name = document.getElementById('sandboxLoginSelect').value;
   if (!name) return;
+  localStorage.setItem('hg_last_impersonated', name);
   const player = query(`SELECT Player, Officer FROM Players WHERE Player=? LIMIT 1`, [name])[0];
   if (!player) return;
   const now = new Date().toISOString().replace('T',' ').substring(0,19);
@@ -9357,7 +9789,9 @@ function doSandboxQuickLogin() {
       [now, 'INFO', 'sandbox_login', 'sandbox', `Sandbox quick-login as ${player.Player}`,
        JSON.stringify({ player: player.Player }), now]);
   } catch(e) {}
-  loginSuccess(player).catch(() => showLoginScreen());
+  const devPlayer = query(`SELECT Player FROM Players WHERE Officer='Developer' LIMIT 1`)[0];
+  const isImpersonating = devPlayer && player.Player !== devPlayer.Player;
+  loginSuccess(player, isImpersonating ? { impersonatedBy: devPlayer.Player } : {}).catch(() => showLoginScreen());
 }
 
 function showLoginScreen() {
@@ -9379,7 +9813,10 @@ function showLoginScreen() {
       const tag = role === 'developer' ? ' 🛠' : (role === 'president' || role === 'secretary') ? ' ⭐' : '';
       return `<option value="${escapeHtml(p.Player)}">${escapeHtml(p.Player)}${tag}</option>`;
     }).join('');
-    quickSel.value = 'Gary Scudder';
+    const lastImpersonated = localStorage.getItem('hg_last_impersonated');
+    const devName = 'Gary Scudder';
+    const firstOther = allPlayers.find(p => p.Player !== devName)?.Player || devName;
+    quickSel.value = lastImpersonated || firstOther;
     quickPanel.style.display = '';
   } else if (quickPanel) {
     quickPanel.style.display = 'none';
@@ -9416,11 +9853,11 @@ function tryTrustedAutoLogin() {
     const imp = localStorage.getItem('hg_impersonate');
     if (imp) {
       try {
-        const { name } = JSON.parse(imp);
+        const { name, impersonatedBy } = JSON.parse(imp);
         const player = query(`SELECT Player, Officer FROM Players WHERE Player=? LIMIT 1`, [name])[0];
         if (player) {
           localStorage.removeItem('hg_impersonate');
-          loginSuccess(player).catch(() => showLoginScreen());
+          loginSuccess(player, { impersonatedBy }).catch(() => showLoginScreen());
           return true;
         }
       } catch(e) { localStorage.removeItem('hg_impersonate'); }
@@ -9783,7 +10220,7 @@ function showPlayerSelfEditModal(playerName) {
   document.getElementById('selfSaveBtn').onclick = () => doSelfProfileSave(overlay, playerName);
 }
 
-async function loginSuccess(player) {
+async function loginSuccess(player, opts = {}) {
   const officer = String(player.Officer || '').trim();
   const officerKey = officer.toLowerCase();
   currentUser = {
@@ -9811,8 +10248,11 @@ async function loginSuccess(player) {
   } catch(e) { console.warn('First-login check failed:', e); }
 
   try {
+    const impersonatedBy = opts.impersonatedBy || null;
+    const detailsStr = `role=${currentUser.role} version=${appVersion} ip=${loginIp} device=${deviceInfo}` +
+      (impersonatedBy ? ` impersonated_by=${impersonatedBy}` : '');
     serverRun(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
-      [now, 'INFO', 'login', 'HughsGolf', `${player.Player} logged in`, `role=${currentUser.role} version=${appVersion} ip=${loginIp} device=${deviceInfo}`, now]);
+      [now, 'INFO', 'login', 'HughsGolf', `${player.Player} logged in`, detailsStr, now]);
   } catch(e) { console.warn('Login log failed:', e); }
 
   // Notify developer of non-developer logins (best-effort, don't block login flow)
@@ -9826,6 +10266,9 @@ async function loginSuccess(player) {
 
   // Remember last player
   localStorage.setItem('hg_last_player', player.Player);
+
+  // What's New — show if current version is newer than last seen
+  showWhatsNewIfNeeded(player.Player);
 
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('loggedInUser').textContent = currentUser.name;
@@ -9892,9 +10335,9 @@ function applyRoleAccess() {
       needSubBtn.title = '';
     } else {
       needSubBtn.style.display = '';
-      needSubBtn.onclick = () => alert('Need a Sub is temporarily disabled.\n\nThis feature is being tested by the developer. Please check with your league developer if you need a sub.');
-      needSubBtn.style.opacity = '0.5';
-      needSubBtn.title = 'Temporarily disabled — contact developer';
+      needSubBtn.onclick = showNeedSub;
+      needSubBtn.style.opacity = '1';
+      needSubBtn.title = '';
     }
   }
 
@@ -11900,7 +12343,7 @@ function buildEntryGrid() {
   query(`SELECT h.Player, h.Hdcp, h.PHdcp FROM Handicaps h
     WHERE h.League="Hugh's" AND h.Date=(SELECT MAX(h2.Date) FROM Handicaps h2
       WHERE h2.Player=h.Player AND h2.League=h.League AND h2.Date<${date} AND h2.Date>=${season}0101)`)
-    .forEach(r => { hdcpMap[r.Player] = { hdcp: parseInt(r.Hdcp)||0, phdcp: parseInt(r.Hdcp)||0 }; });
+    .forEach(r => { hdcpMap[r.Player] = { hdcp: parseInt(r.Hdcp)||0, phdcp: parseInt(r.PHdcp ?? r.Hdcp)||0 }; });
   // For players with no prior record this season, fall back to PHdcp on or before date
   query(`SELECT h.Player, h.Hdcp, h.PHdcp FROM Handicaps h
     WHERE h.League="Hugh's" AND h.Date=(SELECT MAX(h2.Date) FROM Handicaps h2
@@ -12107,7 +12550,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
   } else {
     nine.nums.forEach((n, i) => {
       const isCTP = isEntryHeaderCtpHole(nine, i);
-      h1 += `<th class="eg-th${isCTP?' ctp-hole':''}">${n}</th>`;
+      h1 += `<th class="eg-th${isCTP?' ctp-hole':''}" style="cursor:pointer" onclick="showHoleBreakdown(${n},${i},event)" title="Click to see scores for hole ${n}">${n}</th>`;
     });
     h1 += '<th class="eg-th-label">Gross</th><th class="eg-th-label">Net</th><th class="eg-th-label">PHdcp</th><th class="eg-th-label">Hdcp</th></tr>';
   }
@@ -12163,7 +12606,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
     const holesEntered = st?.holes?.filter(h=>h!=='').length || 0;
 
     // Regular entry separators only; post-season keeps the full roster scorecard in team order.
-    if (!isPostSeason && !shownSeparator && holesEntered > 0 && holesEntered < 18) {
+    if (!isPostSeason && !shownSeparator && nine.nums.length === 18 && holesEntered > 0 && holesEntered < 18) {
       shownSeparator = true;
       const sepCols = nine.nums.length + 4;
       const sep = document.createElement('tr');
@@ -12726,6 +13169,7 @@ function saveSkinWinnersForDate(date) {
 async function manualRecalcSkins() {
   const date = document.getElementById('entryDate').value;
   if (!date) { alert('Please select a date first.'); return; }
+  if (!warnIfUnpaidScorers(date)) return;
   const result = saveSkinWinnersForDate(date);
   if (result.ok) {
     await saveDBToServer();
@@ -12815,6 +13259,101 @@ function computeLiveSkinWinners(nine, isPostSeason) {
   });
 
   return winners;
+}
+
+function showHoleBreakdown(holeNum, hi, evt) {
+  // Remove any existing popup
+  const existing = document.getElementById('holeBreakdownPopup');
+  if (existing) { existing.remove(); if (existing._holeNum === holeNum) return; }
+
+  if (!courseData) return;
+  const fb = document.getElementById('entry9')?.value || 'Front';
+  const isPS = typeof isPostSeasonEntryMode === 'function' ? isPostSeasonEntryMode() : false;
+  const nine = isPS ? courseData.all18 : (fb === 'Back' ? courseData.back : courseData.front);
+  if (!nine) return;
+
+  const par = nine.pars[hi];
+  const si  = nine.hcps[hi];
+
+  // Collect all players with a score on this hole
+  const rows = [];
+  Object.values(entryState).forEach(st => {
+    if (!st || !Array.isArray(st.holes) || !st.active) return;
+    const gross = parseInt(st.holes[hi]);
+    if (!Number.isFinite(gross) || gross <= 0) return;
+
+    // Compute strokes received on this hole
+    const sortedIdx = [...nine.hcps].map((s,i)=>({s,i})).sort((a,b)=>a.s-b.s).map(x=>x.i);
+    let strokes = 0;
+    if (sortedIdx.slice(0, Math.min(st.phdcp, 9)).includes(hi)) strokes++;
+    if (st.phdcp > 9 && sortedIdx.slice(0, st.phdcp - 9).includes(hi)) strokes++;
+
+    const net = gross - strokes;
+    const inSkins = !!st.inSkins;
+    rows.push({ name: st.active, gross, strokes, net, inSkins });
+  });
+
+  if (!rows.length) return;
+
+  // Sort by net asc, then gross asc
+  rows.sort((a,b) => a.net - b.net || a.gross - b.gross);
+
+  // Find skin min among skins players
+  const skinsRows = rows.filter(r => r.inSkins);
+  const minNet = skinsRows.length ? Math.min(...skinsRows.map(r => r.net)) : null;
+  const tieCount = skinsRows.filter(r => r.net === minNet).length;
+  const isTied = tieCount > 1;
+
+  const rowsHtml = rows.map(r => {
+    const isSkinWinner = r.inSkins && r.net === minNet && !isTied;
+    const isSkinTie    = r.inSkins && r.net === minNet && isTied;
+    const bg = isSkinWinner ? '#fff8dc' : isSkinTie ? '#fff3cd' : '#fff';
+    const badge = isSkinWinner ? ' <span style="font-size:10px;background:#b8860b;color:white;border-radius:4px;padding:1px 5px;font-weight:700">SKIN</span>'
+                : isSkinTie    ? ' <span style="font-size:10px;background:#e65100;color:white;border-radius:4px;padding:1px 5px;font-weight:700">TIE</span>'
+                : '';
+    const notInSkins = !r.inSkins ? ' <span style="font-size:10px;color:#999">(not in skins)</span>' : '';
+    const strokesStr = r.strokes > 0 ? ` <span style="font-size:10px;color:#1565c0">-${r.strokes}</span>` : '';
+    return `<tr style="background:${bg};border-bottom:1px solid #eee">
+      <td style="padding:5px 10px;font-size:13px;font-weight:600">${r.name}${notInSkins}</td>
+      <td style="padding:5px 10px;font-size:13px;text-align:center">${r.gross}${strokesStr}</td>
+      <td style="padding:5px 10px;font-size:14px;font-weight:700;text-align:center">${r.net}${badge}</td>
+    </tr>`;
+  }).join('');
+
+  const popup = document.createElement('div');
+  popup.id = 'holeBreakdownPopup';
+  popup._holeNum = holeNum;
+  popup.style.cssText = 'position:fixed;z-index:9999;background:white;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,0.25);min-width:280px;overflow:hidden;font-family:inherit';
+
+  popup.innerHTML = `
+    <div style="background:#1a3a1a;color:white;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;font-size:14px">Hole ${holeNum} &nbsp;·&nbsp; Par ${par} &nbsp;·&nbsp; SI ${si}</span>
+      <button onclick="document.getElementById('holeBreakdownPopup').remove()" style="background:none;border:none;color:white;font-size:18px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#f5f5f5">
+        <th style="padding:4px 10px;font-size:11px;text-align:left;font-weight:600">Player</th>
+        <th style="padding:4px 10px;font-size:11px;text-align:center;font-weight:600">Gross</th>
+        <th style="padding:4px 10px;font-size:11px;text-align:center;font-weight:600">Net</th>
+      </tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    ${isTied ? `<div style="padding:8px 12px;font-size:11px;color:#e65100;font-weight:600;background:#fff3cd">⚠️ Tied — no skin awarded for this hole</div>` : ''}
+  `;
+
+  // Position near the clicked header
+  document.body.appendChild(popup);
+  const rect = evt.target.getBoundingClientRect();
+  const pw = popup.offsetWidth || 300;
+  let left = rect.left + rect.width / 2 - pw / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - pw - 8));
+  popup.style.left = left + 'px';
+  popup.style.top  = (rect.bottom + 6) + 'px';
+
+  // Close on outside click
+  setTimeout(() => document.addEventListener('click', function _close(e) {
+    if (!popup.contains(e.target)) { popup.remove(); document.removeEventListener('click', _close); }
+  }), 50);
 }
 
 function applyCellClasses(nine) {
@@ -14007,6 +14546,23 @@ function buildTableList() {
     <div style="display:flex;gap:8px;margin-top:16px">
       <button onclick="closeSubPicker()" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:6px;background:white;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px">Cancel</button>
       <button onclick="confirmSub()" style="flex:1;padding:10px;background:var(--green);color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">Confirm Sub</button>
+    </div>
+  </div>
+</div>
+
+<!-- What's New Modal -->
+<div id="whatsNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;align-items:center;justify-content:center">
+  <div style="background:white;border-radius:12px;max-width:520px;width:90%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.3)">
+    <div style="background:#1a3a1a;color:var(--gold);padding:16px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;gap:10px">
+      <span style="font-size:20px">🆕</span>
+      <div>
+        <div style="font-family:'Bebas Neue',cursive;font-size:22px;letter-spacing:1px">What's New</div>
+        <div id="whatsNewVersion" style="font-size:11px;color:#aaa;font-family:'DM Mono',monospace"></div>
+      </div>
+    </div>
+    <div id="whatsNewBody" style="padding:16px 20px;overflow-y:auto;flex:1;font-size:13px;line-height:1.7;color:#333"></div>
+    <div style="padding:12px 20px;border-top:1px solid #eee;text-align:right">
+      <button onclick="dismissWhatsNew()" style="padding:8px 28px;background:#1a3a1a;color:var(--gold);border:none;border-radius:7px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Got it!</button>
     </div>
   </div>
 </div>
