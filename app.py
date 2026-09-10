@@ -35,11 +35,18 @@ app = Flask(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-DB_PATH    = os.path.join(BASE_DIR, 'HughsGolf.db')
+DB_PATH      = os.path.join(BASE_DIR, 'HughsGolf.db')
+TEST_DB_PATH = os.path.join(BASE_DIR, 'HughsGolf-test.db')
 BACKUP_ROOT_DIR = os.path.join(BASE_DIR, 'backups')
+# Backup rules differ by environment:
+#   sandbox — shorter cooldown (active dev), smaller rolling window
+#   live    — longer cooldown (real user data), larger rolling window
+_IS_SANDBOX = 'sandbox' in os.environ.get('HUGHSGOLF_ENV', 'sandbox').lower() or True  # overridden below after VERSION is set
+BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
+BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260802.2-sandbox'
+VERSION    = '20260826.25-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -50,6 +57,14 @@ LIVE_SERVER_URL = os.environ.get('HUGHSGOLF_LIVE_URL', 'http://192.168.1.190:844
 
 def backup_env_name():
     return 'sandbox' if 'sandbox' in VERSION.lower() else 'live'
+
+# Set backup tuning based on environment
+if 'sandbox' in VERSION.lower():
+    BACKUP_COOLDOWN_MINUTES = 30
+    BACKUP_ROLLING_KEEP    = 20
+else:
+    BACKUP_COOLDOWN_MINUTES = 60
+    BACKUP_ROLLING_KEEP    = 30
 
 def backup_dir():
     path = os.path.join(BACKUP_ROOT_DIR, backup_env_name())
@@ -62,6 +77,12 @@ def db_modified_ms():
     """Current DB modified time in milliseconds, or 0 if no DB exists."""
     try:
         return int(os.path.getmtime(DB_PATH) * 1000) if os.path.exists(DB_PATH) else 0
+    except Exception:
+        return 0
+
+def test_db_modified_ms():
+    try:
+        return int(os.path.getmtime(TEST_DB_PATH) * 1000) if os.path.exists(TEST_DB_PATH) else 0
     except Exception:
         return 0
 
@@ -104,16 +125,30 @@ def sms_address(phone, carrier):
 
 
 def get_gmail_creds():
-    """Read Gmail credentials from LeagueParms table."""
+    """Read Gmail credentials from LeagueSettings (falls back to LeagueParms for legacy DBs)."""
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        cur.execute("SELECT Email, EmailPassword FROM LeagueParms WHERE Name=\"Hugh's\" AND Season=2026")
-        row = cur.fetchone()
+        # Try new LeagueSettings table first
+        try:
+            cur.execute("SELECT Email, EmailPassword FROM LeagueSettings WHERE League=\"Hugh's\"")
+            row = cur.fetchone()
+            if row and row['Email']:
+                conn.close()
+                return row['Email'], row['EmailPassword']
+        except Exception:
+            pass
+        # Fallback: legacy LeagueParms table
+        try:
+            cur.execute("SELECT Email, EmailPassword FROM LeagueParms WHERE Name=\"Hugh's\" ORDER BY Season DESC LIMIT 1")
+            row = cur.fetchone()
+            if row and row['Email']:
+                conn.close()
+                return row['Email'], row['EmailPassword']
+        except Exception:
+            pass
         conn.close()
-        if row:
-            return row['Email'], row['EmailPassword']
     except Exception as e:
         print(f'get_gmail_creds error: {e}')
     return None, None
@@ -133,6 +168,10 @@ def index():
     resp = send_from_directory(BASE_DIR, 'HughsGolf.html')
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    # Remove ETag and Last-Modified so the browser can't get a 304 and use stale content
+    resp.headers.remove('ETag')
+    resp.headers.remove('Last-Modified')
     return resp
 
 
@@ -141,8 +180,8 @@ def version():
     try:
         import re
         with open(os.path.join(BASE_DIR, 'HughsGolf.html'), 'r') as f:
-            content = f.read(20000)
-        match = re.search(r'v(2026\d+\.\d+(?:-[A-Za-z0-9_.-]+)?)', content)
+            content = f.read(150000)
+        match = re.search(r"APP_VERSION\s*=\s*['\"](\d[\d.]+)['\"]", content)
         html_version = match.group(1) if match else VERSION
     except Exception:
         html_version = VERSION
@@ -164,6 +203,22 @@ def html():
 @app.route('/HughsGolf.db')
 def database():
     return send_from_directory(BASE_DIR, 'HughsGolf.db')
+
+@app.route('/fetch-live-db')
+def fetch_live_db():
+    """Sandbox-only: proxy-fetch the live Mac Mini DB for in-browser comparison."""
+    if 'sandbox' not in VERSION:
+        return jsonify({'error': 'Not available on live'}), 403
+    import urllib.request as _req
+    live_url = 'http://192.168.1.190:8445/HughsGolf.db'
+    try:
+        with _req.urlopen(live_url, timeout=10) as resp:
+            data = resp.read()
+        from flask import Response
+        return Response(data, mimetype='application/octet-stream',
+                        headers={'Content-Disposition': 'attachment; filename=HughsGolf_live.db'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 
@@ -251,6 +306,69 @@ def db_info():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
+@app.route('/HughsGolf-test.db')
+def serve_test_db():
+    """Serve test DB (sandbox-only, no auth). Creates copy from main DB on first access."""
+    if not os.path.exists(TEST_DB_PATH):
+        if os.path.exists(DB_PATH):
+            shutil.copy2(DB_PATH, TEST_DB_PATH)
+        else:
+            return jsonify({'ok': False, 'error': 'No source DB'}), 404
+    return send_from_directory(BASE_DIR, 'HughsGolf-test.db')
+
+
+@app.route('/db-info-test')
+def db_info_test():
+    try:
+        exists = os.path.exists(TEST_DB_PATH)
+        if not exists:
+            return jsonify({'ok': True, 'filename': 'HughsGolf-test.db', 'size': 0, 'modified': 'not created yet', 'modifiedMs': 0})
+        stat = os.stat(TEST_DB_PATH)
+        return jsonify({
+            'ok': True,
+            'filename': 'HughsGolf-test.db',
+            'size': stat.st_size,
+            'modified': datetime.datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+            'modifiedMs': test_db_modified_ms()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/save-test', methods=['POST'])
+def save_test_db():
+    """Save binary DB to HughsGolf-test.db — no backups, simplified stale check."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    data = request.get_data()
+    if not data:
+        return jsonify({'ok': False, 'error': 'Empty body'}), 400
+    with DB_WRITE_LOCK:
+        tmp = TEST_DB_PATH + '.tmp'
+        with open(tmp, 'wb') as f:
+            f.write(data)
+        os.replace(tmp, TEST_DB_PATH)
+        modified_ms = test_db_modified_ms()
+    print(f'[{now_local():%H:%M:%S}] TEST DB saved — {len(data):,} bytes', flush=True)
+    return jsonify({'ok': True, 'bytes': len(data), 'modifiedMs': modified_ms})
+
+
+@app.route('/reset-test-db', methods=['POST'])
+def reset_test_db():
+    """Copy main DB to test DB — wipes all test data."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    if not os.path.exists(DB_PATH):
+        return jsonify({'ok': False, 'error': 'Main DB not found'}), 404
+    with DB_WRITE_LOCK:
+        shutil.copy2(DB_PATH, TEST_DB_PATH)
+        modified_ms = test_db_modified_ms()
+    print(f'[{now_local():%H:%M:%S}] Test DB reset from main DB', flush=True)
+    return jsonify({'ok': True, 'modifiedMs': modified_ms})
+
+
 @app.route('/save-token')
 def save_token():
     """Return the save token so the browser can authenticate DB saves."""
@@ -273,10 +391,13 @@ def save_db():
         try:
             import re
             with open(os.path.join(BASE_DIR, 'HughsGolf.html'), 'r') as f:
-                content = f.read(20000)
-            match = re.search(r'v(2026\d+\.\d+(?:-[A-Za-z0-9_.-]+)?)', content)
+                content = f.read(150000)
+            match = re.search(r"APP_VERSION\s*=\s*['\"](\d[\d.]+)['\"]", content)
             server_version = match.group(1) if match else None
-            if server_version and client_version != server_version:
+            # Strip -sandbox/-local suffix before comparing; only reject if server is strictly NEWER
+            sv_clean  = (server_version  or '').replace('-sandbox','').replace('-local','')
+            cv_clean  = (client_version  or '').replace('-sandbox','').replace('-local','')
+            if sv_clean and cv_clean and sv_clean > cv_clean:
                 return jsonify({'ok': False, 'error': 'stale_version', 'serverVersion': server_version, 'flaskVersion': VERSION}), 409
         except Exception:
             pass
@@ -289,6 +410,7 @@ def save_db():
         except ValueError:
             client_ms = 0
         if current_ms and client_ms and current_ms > client_ms + 1500:
+            print(f'[save] STALE_DB rejected: server={current_ms} client={client_ms} diff={current_ms - client_ms}ms', flush=True)
             return jsonify({
                 'ok': False,
                 'error': 'stale_db',
@@ -298,16 +420,50 @@ def save_db():
             }), 409
 
         if os.path.exists(DB_PATH):
-            ts = now_local().strftime('%Y%m%d_%H%M%S')
             env_backup_dir = backup_dir()
-            backup = os.path.join(env_backup_dir, f'HughsGolf_{ts}.db')
-            shutil.copy2(DB_PATH, backup)
-            backups = sorted(
+            existing = sorted(
                 [f for f in os.listdir(env_backup_dir) if f.endswith('.db')],
                 reverse=True
             )
-            for old in backups[20:]:
-                os.remove(os.path.join(env_backup_dir, old))
+            # Only create a backup if none exists yet or the newest is older than the cooldown
+            do_backup = True
+            if existing:
+                import re as _re
+                m = _re.search(r'(\d{8}_\d{6})', existing[0])
+                if m:
+                    try:
+                        from datetime import datetime as _dt
+                        last_ts = _dt.strptime(m.group(1), '%Y%m%d_%H%M%S')
+                        age_min = (now_local().replace(tzinfo=None) - last_ts).total_seconds() / 60
+                        if age_min < BACKUP_COOLDOWN_MINUTES:
+                            do_backup = False
+                    except Exception:
+                        pass
+            if do_backup:
+                ts = now_local().strftime('%Y%m%d_%H%M%S')
+                _bname = f'HughsGolf_{ts}.db'
+                backup = os.path.join(env_backup_dir, _bname)
+                shutil.copy2(DB_PATH, backup)
+                _write_backup_sidecar(env_backup_dir, _bname, version=VERSION, note='auto')
+                existing = sorted(
+                    [f for f in os.listdir(env_backup_dir) if f.endswith('.db')],
+                    reverse=True
+                )
+                # Protect the newest backup from each calendar week (weekly anchors)
+                _weekly = {}
+                for _f in existing:
+                    _m2 = _re.search(r'(\d{8})_\d{6}', _f)
+                    if _m2:
+                        try:
+                            _wk = _dt.strptime(_m2.group(1), '%Y%m%d').strftime('%Y-W%W')
+                            if _wk not in _weekly:
+                                _weekly[_wk] = _f  # existing sorted newest-first → first seen = newest of week
+                        except Exception:
+                            pass
+                _protected = set(existing[:BACKUP_ROLLING_KEEP]) | set(_weekly.values())
+                for old in existing:
+                    if old not in _protected:
+                        os.remove(os.path.join(env_backup_dir, old))
 
         tmp = DB_PATH + '.tmp'
         with open(tmp, 'wb') as f:
@@ -364,12 +520,35 @@ def backup_list():
                 bconn.close()
             except Exception as e:
                 entry['error'] = f'Could not read: {e}'
+            # Read sidecar note file if present
+            sidecar = os.path.join(env_backup_dir, fname.replace('.db', '.json'))
+            if os.path.isfile(sidecar):
+                try:
+                    import json as _json
+                    with open(sidecar) as _sf:
+                        entry['meta'] = _json.load(_sf)
+                except Exception:
+                    pass
             backups.append(entry)
 
         return jsonify({'ok': True, 'backupEnv': backup_env_name(), 'backupDir': env_backup_dir, 'backups': backups})
     except Exception as e:
         print(f'[{now_local():%H:%M:%S}] backup_list error: {e}')
         return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+def _write_backup_sidecar(env_backup_dir, backup_name, version='', note='', changelog_ref=''):
+    """Write a .json sidecar file alongside a .db backup."""
+    import json as _json
+    sidecar_name = backup_name.replace('.db', '.json')
+    sidecar_path = os.path.join(env_backup_dir, sidecar_name)
+    data = {'version': version, 'note': note, 'changelogRef': changelog_ref,
+            'created': now_local().strftime('%Y-%m-%d %H:%M:%S')}
+    try:
+        with open(sidecar_path, 'w') as f:
+            _json.dump(data, f)
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] sidecar write error: {e}')
 
 
 @app.route('/create-backup', methods=['POST'])
@@ -380,6 +559,10 @@ def create_backup():
         return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
     if not os.path.exists(DB_PATH):
         return jsonify({'ok': False, 'error': 'Current database not found'}), 404
+    body = request.get_json() or {}
+    note = str(body.get('note', '')).strip()
+    version = str(body.get('version', VERSION)).strip()
+    changelog_ref = str(body.get('changelogRef', '')).strip()
 
     try:
         with DB_WRITE_LOCK:
@@ -387,10 +570,50 @@ def create_backup():
             ts = now_local().strftime('%Y%m%d_%H%M%S')
             backup_name = f'HughsGolf_{ts}_manual-checkpoint.db'
             shutil.copy2(DB_PATH, os.path.join(env_backup_dir, backup_name))
+        _write_backup_sidecar(env_backup_dir, backup_name, version=version, note=note, changelog_ref=changelog_ref)
         print(f'[{now_local():%H:%M:%S}] Created manual backup {backup_name}')
         return jsonify({'ok': True, 'backup': backup_name})
     except Exception as e:
         print(f'[{now_local():%H:%M:%S}] create_backup error: {e}')
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/save-backup-note', methods=['POST'])
+def save_backup_note():
+    """Update the sidecar note for an existing backup."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body = request.get_json() or {}
+    filename = os.path.basename(body.get('filename', ''))
+    if not filename:
+        return jsonify({'ok': False, 'error': 'No filename'}), 400
+    env_backup_dir = backup_dir()
+    if not os.path.isfile(os.path.join(env_backup_dir, filename)):
+        return jsonify({'ok': False, 'error': 'Backup not found'}), 404
+    note = str(body.get('note', '')).strip()
+    version = str(body.get('version', '')).strip()
+    changelog_ref = str(body.get('changelogRef', '')).strip()
+    # Merge with existing sidecar if present
+    import json as _json
+    sidecar_path = os.path.join(env_backup_dir, filename.replace('.db', '.json'))
+    existing = {}
+    if os.path.isfile(sidecar_path):
+        try:
+            with open(sidecar_path) as f:
+                existing = _json.load(f)
+        except Exception:
+            pass
+    existing['note'] = note
+    if version:
+        existing['version'] = version
+    if changelog_ref is not None:
+        existing['changelogRef'] = changelog_ref
+    try:
+        with open(sidecar_path, 'w') as f:
+            _json.dump(existing, f)
+        return jsonify({'ok': True})
+    except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
@@ -459,6 +682,8 @@ def restore_backup():
             if os.path.exists(DB_PATH):
                 shutil.copy2(DB_PATH, safety_path)
             shutil.copy2(src, DB_PATH)
+        _write_backup_sidecar(env_backup_dir, safety_name, version=VERSION,
+                              note=f'Auto safety copy before restoring {filename}')
         print(f'[{now_local():%H:%M:%S}] Restored backup {filename} (safety copy: {safety_name})')
         return jsonify({'ok': True, 'restored': filename, 'safetyBackup': safety_name})
     except Exception as e:
@@ -468,7 +693,7 @@ def restore_backup():
 
 @app.route('/delete-backup', methods=['POST'])
 def delete_backup():
-    """Permanently delete a backup file."""
+    """Soft-delete a backup file (moves to trash/ subfolder)."""
     token = request.headers.get('X-Save-Token', '')
     if token != SAVE_TOKEN:
         return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
@@ -481,12 +706,45 @@ def delete_backup():
         return jsonify({'ok': False, 'error': 'Backup not found'}), 404
 
     try:
-        os.remove(path)
-        print(f'[{now_local():%H:%M:%S}] Deleted backup {filename}')
+        trash = os.path.join(backup_dir(), 'trash')
+        os.makedirs(trash, exist_ok=True)
+        shutil.move(path, os.path.join(trash, filename))
+        print(f'[{now_local():%H:%M:%S}] Trashed backup {filename}')
         return jsonify({'ok': True, 'deleted': filename})
     except Exception as e:
         print(f'[{now_local():%H:%M:%S}] delete_backup error: {e}')
         return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/undo-backup-delete', methods=['POST'])
+def undo_backup_delete():
+    """Restore one or more backups from trash/ back to the backup folder."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body = request.get_json() or {}
+    filenames = body.get('filenames', [])
+    if not filenames:
+        return jsonify({'ok': False, 'error': 'No filenames provided'}), 400
+
+    trash = os.path.join(backup_dir(), 'trash')
+    restored, errors = [], []
+    for raw in filenames:
+        filename = os.path.basename(raw)
+        src = os.path.join(trash, filename)
+        dst = os.path.join(backup_dir(), filename)
+        if not os.path.isfile(src):
+            errors.append(f'{filename}: not in trash')
+            continue
+        try:
+            shutil.move(src, dst)
+            restored.append(filename)
+            print(f'[{now_local():%H:%M:%S}] Restored from trash: {filename}')
+        except Exception as e:
+            errors.append(f'{filename}: {e}')
+    if errors and not restored:
+        return jsonify({'ok': False, 'error': '; '.join(errors)}), 500
+    return jsonify({'ok': True, 'restored': restored, 'errors': errors})
 
 
 @app.route('/send-reset', methods=['POST'])
@@ -1355,7 +1613,7 @@ def fetch_gallus():
     if not parser.rows:
         return jsonify({'ok': False, 'error': 'No table found on page'}), 400
 
-    # Find header row with hole numbers
+    # Find header row with hole numbers; build column→hole mapping
     hole_row = None
     par_row  = None
     players  = []
@@ -1367,29 +1625,53 @@ def fetch_gallus():
         elif row[0].lower().startswith('par'):
             par_row = row
         elif hole_row and row[0] and not row[0].lower().startswith(('hcp','hdcp','handicap')):
-            # Player score row
             name = row[0].strip()
             if name and name not in ('', 'Hole', 'Par m/w', 'Hcp m/w'):
-                scores = []
-                for i in range(1, len(row)):
-                    val = row[i].strip()
-                    if val.isdigit() and int(val) < 15:
-                        scores.append(int(val))
-                    elif val == '' or not val.isdigit():
-                        scores.append(None)
-                players.append({'name': name, 'scores': scores})
+                players.append({'name': name, 'row': row})
+
+    # Build col_index → hole_number map from hole_row (skips Out/In/Total automatically)
+    hole_col_map = {}
+    if hole_row:
+        for i, cell in enumerate(hole_row):
+            s = cell.strip()
+            if s.isdigit() and 1 <= int(s) <= 18:
+                hole_col_map[i] = int(s)
+
+    # Extract per-player scores using hole column mapping
+    parsed_players = []
+    for p in players:
+        row = p['row']
+        if hole_col_map:
+            # Precise: only hole columns, builds an 18-element list [H1..H18]
+            hole_scores = {}
+            for col_i, hole_num in hole_col_map.items():
+                val = row[col_i].strip() if col_i < len(row) else ''
+                if val.isdigit() and 1 <= int(val) <= 20:
+                    hole_scores[hole_num] = int(val)
+                else:
+                    hole_scores[hole_num] = None
+            scores = [hole_scores.get(h) for h in range(1, 19)]
+        else:
+            # Fallback for non-standard layouts
+            scores = []
+            for i in range(1, len(row)):
+                val = row[i].strip()
+                if val.isdigit() and int(val) < 15:
+                    scores.append(int(val))
+                elif val == '' or not val.isdigit():
+                    scores.append(None)
+        parsed_players.append({'name': p['name'], 'scores': scores})
 
     # Determine front or back based on which holes have scores
     front_back = 'Front'
-    if players:
-        # Check if scores start at position 10 (back 9)
-        first = players[0]['scores']
+    if parsed_players:
+        first = parsed_players[0]['scores']
         if len(first) >= 18 and all(s is None for s in first[:9]) and any(s for s in first[9:18]):
             front_back = 'Back'
 
     # Trim to 9 holes
     result_players = []
-    for p in players:
+    for p in parsed_players:
         scores = p['scores']
         if front_back == 'Back':
             nine = scores[9:18] if len(scores) >= 18 else scores[:9]
@@ -1400,9 +1682,278 @@ def fetch_gallus():
         nine = nine[:9]
         result_players.append({'name': p['name'], 'scores': nine})
 
-    print(f'[{now_local():%H:%M:%S}] Gallus import: {len(result_players)} players, {front_back}')
-    return jsonify({'ok': True, 'players': result_players, 'frontBack': front_back})
+    # Extract recorder from page heading: "Jon Williams's round at ..."
+    import re as _re2, html as _html_mod
+    recorder = ''
+    _hm = _re2.search(r'<h[1-3][^>]*>(.*?)</h[1-3]>', html, _re2.IGNORECASE | _re2.DOTALL)
+    if _hm:
+        _htxt = _html_mod.unescape(_re2.sub(r'<[^>]+>', '', _hm.group(1))).strip()
+        _rm = _re2.search(u"^(.+?)['’‘]s round at ", _htxt, _re2.IGNORECASE)
+        if _rm:
+            recorder = _rm.group(1).strip()
+    # Fallback: first player listed
+    if not recorder and result_players:
+        recorder = result_players[0]['name']
 
+    print(f'[{now_local():%H:%M:%S}] Gallus import: {len(result_players)} players, {front_back}, recorder={recorder!r}')
+    return jsonify({'ok': True, 'players': result_players, 'frontBack': front_back, 'recorder': recorder})
+
+
+
+@app.route('/board-posts')
+def board_posts():
+    """Return all posts and comments directly from the server DB — bypasses sql.js so all users see live data."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS Posts (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Author TEXT, Category TEXT DEFAULT 'General',
+            Title TEXT, Body TEXT,
+            Pinned INTEGER DEFAULT 0, PostedAt TEXT
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS PostComments (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            PostID INTEGER, Author TEXT, Body TEXT, PostedAt TEXT
+        )""")
+        conn.commit()
+        posts    = [dict(r) for r in cur.execute("SELECT * FROM Posts ORDER BY Pinned DESC, PostedAt DESC LIMIT 100").fetchall()]
+        comments = [dict(r) for r in cur.execute("SELECT * FROM PostComments ORDER BY PostedAt ASC").fetchall()]
+        conn.close()
+        return jsonify({'ok': True, 'posts': posts, 'comments': comments})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/board-post', methods=['POST'])
+def board_post_create():
+    """Create a new board post directly in the server DB."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body     = request.get_json() or {}
+    author   = str(body.get('author', '')).strip()
+    category = str(body.get('category', 'General')).strip()
+    title    = str(body.get('title', '')).strip()
+    text     = str(body.get('body', '')).strip()
+    pinned   = 1 if body.get('pinned') else 0
+    posted_at = str(body.get('postedAt', now_local().strftime('%Y-%m-%d %H:%M:%S')))
+    if not author or not title or not text:
+        return jsonify({'ok': False, 'error': 'Missing fields'}), 400
+    try:
+        with DB_WRITE_LOCK:
+            conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            cur = conn.cursor()
+            cur.execute("INSERT INTO Posts (Author,Category,Title,Body,Pinned,PostedAt) VALUES (?,?,?,?,?,?)",
+                        (author, category, title, text, pinned, posted_at))
+            new_id = cur.lastrowid
+            conn.commit()
+            conn.close()
+        print(f'[{now_local():%H:%M:%S}] Board post by {author}: {title[:40]}')
+        return jsonify({'ok': True, 'id': new_id})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/board-comment', methods=['POST'])
+def board_comment_create():
+    """Add a comment to a board post directly in the server DB."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body      = request.get_json() or {}
+    post_id   = body.get('postId')
+    author    = str(body.get('author', '')).strip()
+    text      = str(body.get('body', '')).strip()
+    posted_at = str(body.get('postedAt', now_local().strftime('%Y-%m-%d %H:%M:%S')))
+    if not post_id or not author or not text:
+        return jsonify({'ok': False, 'error': 'Missing fields'}), 400
+    try:
+        with DB_WRITE_LOCK:
+            conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            cur = conn.cursor()
+            cur.execute("INSERT INTO PostComments (PostID,Author,Body,PostedAt) VALUES (?,?,?,?)",
+                        (post_id, author, text, posted_at))
+            new_id = cur.lastrowid
+            conn.commit()
+            conn.close()
+        return jsonify({'ok': True, 'id': new_id})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/board-delete-post', methods=['POST'])
+def board_delete_post():
+    """Delete a board post and all its comments."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body    = request.get_json() or {}
+    post_id = body.get('id')
+    if not post_id:
+        return jsonify({'ok': False, 'error': 'No post ID'}), 400
+    try:
+        with DB_WRITE_LOCK:
+            conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM PostComments WHERE PostID=?", (post_id,))
+            cur.execute("DELETE FROM Posts WHERE ID=?", (post_id,))
+            conn.commit()
+            conn.close()
+        print(f'[{now_local():%H:%M:%S}] Board post {post_id} deleted')
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/board-delete-comment', methods=['POST'])
+def board_delete_comment():
+    """Delete a single board comment."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body       = request.get_json() or {}
+    comment_id = body.get('id')
+    if not comment_id:
+        return jsonify({'ok': False, 'error': 'No comment ID'}), 400
+    try:
+        with DB_WRITE_LOCK:
+            conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM PostComments WHERE ID=?", (comment_id,))
+            conn.commit()
+            conn.close()
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/help-content')
+def help_content_get():
+    """Return all current help content rows."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS HelpContent (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Topic TEXT UNIQUE, Title TEXT, SortOrder INTEGER,
+            Content TEXT, UpdatedBy TEXT, UpdatedAt TEXT
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS HelpContentHistory (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Topic TEXT, Title TEXT, Content TEXT,
+            UpdatedBy TEXT, UpdatedAt TEXT
+        )""")
+        conn.commit()
+        rows = [dict(r) for r in cur.execute("SELECT * FROM HelpContent ORDER BY SortOrder").fetchall()]
+        conn.close()
+        return jsonify({'ok': True, 'content': rows})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/help-content/save', methods=['POST'])
+def help_content_save():
+    """Save/update a help section. Old version is pushed to history first."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body = request.get_json() or {}
+    topic      = str(body.get('topic', '')).strip()
+    title      = str(body.get('title', '')).strip()
+    content    = str(body.get('content', '')).strip()
+    updated_by = str(body.get('updatedBy', 'Admin')).strip()
+    sort_order = int(body.get('sortOrder', 0))
+    if not topic or not content:
+        return jsonify({'ok': False, 'error': 'Missing topic or content'}), 400
+    now = now_local().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        with DB_WRITE_LOCK:
+            conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            cur = conn.cursor()
+            # Archive current version to history if it exists
+            existing = cur.execute("SELECT Title, Content, UpdatedBy, UpdatedAt FROM HelpContent WHERE Topic=?", (topic,)).fetchone()
+            if existing:
+                cur.execute("""INSERT INTO HelpContentHistory (Topic, Title, Content, UpdatedBy, UpdatedAt)
+                               VALUES (?, ?, ?, ?, ?)""", (topic, existing[0], existing[1], existing[2], existing[3]))
+            # Upsert current version
+            cur.execute("""INSERT INTO HelpContent (Topic, Title, SortOrder, Content, UpdatedBy, UpdatedAt)
+                           VALUES (?, ?, ?, ?, ?, ?)
+                           ON CONFLICT(Topic) DO UPDATE SET
+                               Title=excluded.Title, SortOrder=excluded.SortOrder,
+                               Content=excluded.Content, UpdatedBy=excluded.UpdatedBy, UpdatedAt=excluded.UpdatedAt""",
+                        (topic, title, sort_order, content, updated_by, now))
+            conn.commit()
+            conn.close()
+        print(f'[{now_local():%H:%M:%S}] Help content saved: {topic} by {updated_by}')
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/help-content/history/<topic>')
+def help_content_history(topic):
+    """Return edit history for a help topic."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        rows = [dict(r) for r in cur.execute(
+            "SELECT * FROM HelpContentHistory WHERE Topic=? ORDER BY ID DESC LIMIT 50", (topic,)
+        ).fetchall()]
+        conn.close()
+        return jsonify({'ok': True, 'history': rows})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/help-content/restore', methods=['POST'])
+def help_content_restore():
+    """Restore a history version as the current content (archives current first)."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body = request.get_json() or {}
+    history_id = body.get('historyId')
+    updated_by = str(body.get('updatedBy', 'Admin')).strip()
+    if not history_id:
+        return jsonify({'ok': False, 'error': 'Missing historyId'}), 400
+    now = now_local().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        with DB_WRITE_LOCK:
+            conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            cur = conn.cursor()
+            hist = cur.execute("SELECT Topic, Title, Content FROM HelpContentHistory WHERE ID=?", (history_id,)).fetchone()
+            if not hist:
+                conn.close()
+                return jsonify({'ok': False, 'error': 'History entry not found'}), 404
+            topic, title, content = hist
+            existing = cur.execute("SELECT Title, Content, UpdatedBy, UpdatedAt FROM HelpContent WHERE Topic=?", (topic,)).fetchone()
+            if existing:
+                cur.execute("""INSERT INTO HelpContentHistory (Topic, Title, Content, UpdatedBy, UpdatedAt)
+                               VALUES (?, ?, ?, ?, ?)""", (topic, existing[0], existing[1], existing[2], existing[3]))
+            cur.execute("""INSERT INTO HelpContent (Topic, Title, SortOrder, Content, UpdatedBy, UpdatedAt)
+                           VALUES (?, ?, 0, ?, ?, ?)
+                           ON CONFLICT(Topic) DO UPDATE SET
+                               Content=excluded.Content, UpdatedBy=excluded.UpdatedBy, UpdatedAt=excluded.UpdatedAt""",
+                        (topic, title, content, f'{updated_by} (restored)', now))
+            conn.commit()
+            conn.close()
+        print(f'[{now_local():%H:%M:%S}] Help content restored: {topic} by {updated_by}')
+        return jsonify({'ok': True, 'topic': topic, 'content': content})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @app.route('/run-sql', methods=['POST'])
@@ -1522,6 +2073,57 @@ def ensure_schema():
             cur.execute("ALTER TABLE LeagueParms ADD COLUMN AnthropicApiKey TEXT")
             print(f'[{now_local():%H:%M:%S}] Schema check: added missing LeagueParms.AnthropicApiKey column')
         conn.commit()
+        # Create HelpContent tables if missing
+        cur.execute("""CREATE TABLE IF NOT EXISTS HelpContent (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Topic TEXT UNIQUE, Title TEXT, SortOrder INTEGER,
+            Content TEXT, UpdatedBy TEXT, UpdatedAt TEXT
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS HelpContentHistory (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Topic TEXT, Title TEXT, Content TEXT,
+            UpdatedBy TEXT, UpdatedAt TEXT
+        )""")
+        conn.commit()
+        # Create LeagueExpenses table if missing
+        cur.execute("""CREATE TABLE IF NOT EXISTS LeagueExpenses (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            League TEXT,
+            Season INTEGER,
+            Date INTEGER,
+            Category TEXT,
+            Description TEXT,
+            Qty REAL,
+            UnitCost REAL,
+            Amount REAL,
+            Note TEXT
+        )""")
+        conn.commit()
+        # Migrate old Food/Drinks/Expense rows from Payments into LeagueExpenses
+        cur.execute("SELECT COUNT(*) FROM LeagueExpenses")
+        if cur.fetchone()[0] == 0:
+            cur.execute("""
+                SELECT ID, League, Date, Desc, Detail, Earned, Comment
+                FROM Payments
+                WHERE League="Hugh's" AND Desc IN ('Food','Drinks','Expense')
+            """)
+            rows = cur.fetchall()
+            for row in rows:
+                pid, league, date, desc, detail, earned, comment = row
+                season = int(str(date)[:4]) if date else None
+                if desc == 'Food' or (desc == 'Expense' and detail == 'Food'):
+                    category = 'Food'
+                elif desc == 'Drinks' or (desc == 'Expense' and detail == 'Drinks'):
+                    category = 'Beer/Drinks'
+                else:
+                    category = desc
+                cur.execute("""
+                    INSERT INTO LeagueExpenses (League, Season, Date, Category, Description, Qty, UnitCost, Amount, Note)
+                    VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+                """, (league, season, date, category, detail or desc, earned, comment or ''))
+            if rows:
+                print(f'[{now_local():%H:%M:%S}] Schema check: migrated {len(rows)} expense rows from Payments to LeagueExpenses')
+        conn.commit()
         conn.close()
     except Exception as e:
         print(f'[{now_local():%H:%M:%S}] Schema check error: {e}')
@@ -1534,6 +2136,23 @@ def run_server():
         threading.Thread(target=update_duckdns, daemon=True).start()
     threading.Thread(target=clear_stale_sessions, daemon=True).start()
     app.run(host='0.0.0.0', port=PORT, debug=False)
+
+
+@app.route('/api/recent-logins')
+def recent_logins():
+    """Return login events from LogTable since a given id (for admin polling)."""
+    since_id = request.args.get('since_id', 0, type=int)
+    try:
+        with get_db() as con:
+            rows = con.execute(
+                """SELECT id, log_time, text FROM LogTable
+                   WHERE method='login' AND id > ?
+                   ORDER BY id ASC LIMIT 20""",
+                (since_id,)
+            ).fetchall()
+        return jsonify([{'id': r['id'], 'log_time': r['log_time'], 'text': r['text']} for r in rows])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
