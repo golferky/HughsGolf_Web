@@ -369,6 +369,105 @@ def reset_test_db():
     return jsonify({'ok': True, 'modifiedMs': modified_ms})
 
 
+# ── Per-admin test DB helpers ─────────────────────────────────────────────────
+
+def _admin_test_db_path(username):
+    """Return the path for a per-admin test DB. Username is sanitized."""
+    safe = ''.join(c for c in username.lower() if c.isalnum())[:20] or 'admin'
+    return os.path.join(BASE_DIR, f'HughsGolf-test-{safe}.db')
+
+@app.route('/HughsGolf-test-<username>.db')
+def serve_admin_test_db(username):
+    """Serve per-admin test DB. Creates a copy from sandbox DB on first access."""
+    path = _admin_test_db_path(username)
+    filename = os.path.basename(path)
+    if not os.path.exists(path):
+        if os.path.exists(DB_PATH):
+            shutil.copy2(DB_PATH, path)
+        else:
+            return jsonify({'ok': False, 'error': 'No source DB'}), 404
+    return send_from_directory(BASE_DIR, filename)
+
+@app.route('/db-info-test-<username>')
+def db_info_admin_test(username):
+    path = _admin_test_db_path(username)
+    filename = os.path.basename(path)
+    try:
+        exists = os.path.exists(path)
+        if not exists:
+            return jsonify({'ok': True, 'filename': filename, 'size': 0, 'modified': 'not created yet', 'modifiedMs': 0, 'exists': False})
+        stat = os.stat(path)
+        return jsonify({
+            'ok': True, 'exists': True,
+            'filename': filename,
+            'size': stat.st_size,
+            'modified': datetime.datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+            'modifiedMs': int(stat.st_mtime * 1000)
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+@app.route('/save-test-<username>', methods=['POST'])
+def save_admin_test_db(username):
+    """Save binary DB to per-admin test file."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    data = request.get_data()
+    if not data:
+        return jsonify({'ok': False, 'error': 'Empty body'}), 400
+    path = _admin_test_db_path(username)
+    with DB_WRITE_LOCK:
+        tmp = path + '.tmp'
+        with open(tmp, 'wb') as f:
+            f.write(data)
+        os.replace(tmp, path)
+        modified_ms = int(os.path.getmtime(path) * 1000)
+    print(f'[{now_local():%H:%M:%S}] Test DB saved for {username} — {len(data):,} bytes', flush=True)
+    return jsonify({'ok': True, 'bytes': len(data), 'modifiedMs': modified_ms})
+
+@app.route('/rebuild-test-db', methods=['POST'])
+def rebuild_admin_test_db():
+    """Rebuild a per-admin test DB from sandbox or live source."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body = request.get_json(force=True, silent=True) or {}
+    username = body.get('username', '').strip()
+    source   = body.get('source', 'sandbox')  # 'sandbox' or 'live'
+    if not username:
+        return jsonify({'ok': False, 'error': 'username required'}), 400
+    if source == 'live':
+        src_path = LIVE_DB_PATH
+    else:
+        src_path = DB_PATH
+    if not os.path.exists(src_path):
+        return jsonify({'ok': False, 'error': f'Source DB not found: {src_path}'}), 404
+    dest_path = _admin_test_db_path(username)
+    with DB_WRITE_LOCK:
+        shutil.copy2(src_path, dest_path)
+        modified_ms = int(os.path.getmtime(dest_path) * 1000)
+    print(f'[{now_local():%H:%M:%S}] Test DB rebuilt for {username} from {source}', flush=True)
+    return jsonify({'ok': True, 'modifiedMs': modified_ms})
+
+@app.route('/delete-test-db', methods=['POST'])
+def delete_admin_test_db():
+    """Delete a per-admin test DB file."""
+    token = request.headers.get('X-Save-Token', '')
+    if token != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body = request.get_json(force=True, silent=True) or {}
+    username = body.get('username', '').strip()
+    if not username:
+        return jsonify({'ok': False, 'error': 'username required'}), 400
+    path = _admin_test_db_path(username)
+    if os.path.exists(path):
+        os.remove(path)
+        print(f'[{now_local():%H:%M:%S}] Test DB deleted for {username}', flush=True)
+    return jsonify({'ok': True})
+
+# ── End per-admin test DB ──────────────────────────────────────────────────────
+
 @app.route('/save-token')
 def save_token():
     """Return the save token so the browser can authenticate DB saves."""
@@ -1714,8 +1813,15 @@ def board_posts():
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
             Author TEXT, Category TEXT DEFAULT 'General',
             Title TEXT, Body TEXT,
-            Pinned INTEGER DEFAULT 0, PostedAt TEXT
+            Pinned INTEGER DEFAULT 0, PostedAt TEXT,
+            Audience TEXT DEFAULT 'all'
         )""")
+        # Add Audience column if missing (migration for existing DBs)
+        try:
+            cur.execute("ALTER TABLE Posts ADD COLUMN Audience TEXT DEFAULT 'all'")
+            conn.commit()
+        except Exception:
+            pass
         cur.execute("""CREATE TABLE IF NOT EXISTS PostComments (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
             PostID INTEGER, Author TEXT, Body TEXT, PostedAt TEXT
@@ -1736,11 +1842,14 @@ def board_post_create():
     if token != SAVE_TOKEN:
         return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
     body     = request.get_json() or {}
-    author   = str(body.get('author', '')).strip()
-    category = str(body.get('category', 'General')).strip()
-    title    = str(body.get('title', '')).strip()
-    text     = str(body.get('body', '')).strip()
-    pinned   = 1 if body.get('pinned') else 0
+    author    = str(body.get('author', '')).strip()
+    category  = str(body.get('category', 'General')).strip()
+    title     = str(body.get('title', '')).strip()
+    text      = str(body.get('body', '')).strip()
+    pinned    = 1 if body.get('pinned') else 0
+    audience  = str(body.get('audience', 'all')).strip()
+    if audience not in ('all', 'admin'):
+        audience = 'all'
     posted_at = str(body.get('postedAt', now_local().strftime('%Y-%m-%d %H:%M:%S')))
     if not author or not title or not text:
         return jsonify({'ok': False, 'error': 'Missing fields'}), 400
@@ -1748,8 +1857,8 @@ def board_post_create():
         with DB_WRITE_LOCK:
             conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
             cur = conn.cursor()
-            cur.execute("INSERT INTO Posts (Author,Category,Title,Body,Pinned,PostedAt) VALUES (?,?,?,?,?,?)",
-                        (author, category, title, text, pinned, posted_at))
+            cur.execute("INSERT INTO Posts (Author,Category,Title,Body,Pinned,PostedAt,Audience) VALUES (?,?,?,?,?,?,?)",
+                        (author, category, title, text, pinned, posted_at, audience))
             new_id = cur.lastrowid
             conn.commit()
             conn.close()
