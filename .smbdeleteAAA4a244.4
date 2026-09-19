@@ -692,15 +692,10 @@
       <div class="card" id="homeNewsCard" style="margin-bottom:20px">
         <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
           <span>📋 League Board</span>
-          <div style="display:flex;gap:6px;align-items:center">
-            <button onclick="switchTab('board')" style="padding:5px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Open Board →</button>
-            <button id="hc_btn_news" onclick="toggleHomeCard('news')" style="padding:4px 10px;background:rgba(255,255,255,.2);color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700">▼</button>
-          </div>
+          <button onclick="switchTab('board')" style="padding:5px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Open Board →</button>
         </div>
-        <div id="hc_body_news">
-          <div id="homeNewsContent" style="padding:12px;max-height:280px;overflow-y:auto">
-            <div style="color:#999;font-size:13px">Loading...</div>
-          </div>
+        <div id="homeNewsContent" style="padding:12px;max-height:280px;overflow-y:auto">
+          <div style="color:#999;font-size:13px">Loading...</div>
         </div>
       </div>
 
@@ -708,14 +703,9 @@
       <div class="card" id="homeProposalsCard" style="margin-bottom:20px;display:none">
         <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
           <span>📋 Proposed Changes</span>
-          <div style="display:flex;gap:6px;align-items:center">
-            <button onclick="openSuggestionModal()" style="padding:5px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">💡 Suggest Something</button>
-            <button id="hc_btn_proposals" onclick="toggleHomeCard('proposals')" style="padding:4px 10px;background:rgba(255,255,255,.2);color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700">▼</button>
-          </div>
+          <button onclick="openSuggestionModal()" style="padding:5px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">💡 Suggest Something</button>
         </div>
-        <div id="hc_body_proposals">
-          <div id="homeProposalsContent" style="padding:12px"></div>
-        </div>
+        <div id="homeProposalsContent" style="padding:12px"></div>
       </div>
 
       <!-- Suggestion submit modal (player) -->
@@ -739,55 +729,42 @@
       </div>
 
       <div class="card" id="homeAdminLoginCard" style="display:none;margin-bottom:20px">
-        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+        <div class="card-header">
           <span>Login Activity</span>
-          <button id="hc_btn_loginActivity" onclick="toggleHomeCard('loginActivity')" style="padding:4px 10px;background:rgba(255,255,255,.2);color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700">▼</button>
         </div>
-        <div id="hc_body_loginActivity">
-          <div style="display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:8px 12px;border-bottom:1px solid var(--border);background:#faf7f2">
-            <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:#333;font-weight:700;cursor:pointer">
-              <input type="checkbox" id="homeLoginIncludeMine" onchange="loadHomeAdminLoginActivity()" style="width:18px;height:18px">
-              Include my logins
-            </label>
-            <button id="homeLoginRefreshBtn" onclick="refreshHomeAdminLoginActivity(this)" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Refresh</button>
-            <span id="homeLoginRefreshStatus" style="font-size:11px;color:#777"></span>
-          </div>
-          <div class="table-wrap" style="max-height:300px;overflow:auto">
-            <table id="homeAdminLoginActivity">
-              <thead><tr><th>Player</th><th>Event</th><th>Role</th><th>IP</th><th>Device</th><th>Time</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:8px 12px;border-bottom:1px solid var(--border);background:#faf7f2">
+          <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:#333;font-weight:700;cursor:pointer">
+            <input type="checkbox" id="homeLoginIncludeMine" onchange="loadHomeAdminLoginActivity()" style="width:18px;height:18px">
+            Include my logins
+          </label>
+          <button id="homeLoginRefreshBtn" onclick="refreshHomeAdminLoginActivity(this)" style="padding:6px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Refresh</button>
+          <span id="homeLoginRefreshStatus" style="font-size:11px;color:#777"></span>
+        </div>
+        <div class="table-wrap" style="max-height:300px;overflow:auto">
+          <table id="homeAdminLoginActivity">
+            <thead><tr><th>Player</th><th>Event</th><th>Role</th><th>IP</th><th>Device</th><th>Time</th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
       </div>
       <div class="grid-3" id="statBoxes"></div>
       <div class="grid-2" style="margin-top:20px">
         <div class="card">
-          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
-            <span>Recent Scores</span>
-            <button id="hc_btn_recentScores" onclick="toggleHomeCard('recentScores')" style="padding:4px 10px;background:rgba(255,255,255,.2);color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700">▼</button>
-          </div>
-          <div id="hc_body_recentScores">
-            <div class="table-wrap"><table id="recentScores"><thead><tr><th>Date</th><th>Player</th><th class="num">Gross</th><th class="num">Net</th></tr></thead><tbody></tbody></table></div>
-          </div>
+          <div class="card-header">Recent Scores</div>
+          <div class="table-wrap"><table id="recentScores"><thead><tr><th>Date</th><th>Player</th><th class="num">Gross</th><th class="num">Net</th></tr></thead><tbody></tbody></table></div>
         </div>
         <div class="card">
-          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
-            <span>Recent Skins &amp; CTP</span>
-            <button id="hc_btn_recentSkins" onclick="toggleHomeCard('recentSkins')" style="padding:4px 10px;background:rgba(255,255,255,.2);color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700">▼</button>
-          </div>
-          <div id="hc_body_recentSkins">
-            <div style="padding:12px" id="recentSkins"></div>
-          </div>
+          <div class="card-header">Recent Skins &amp; CTP</div>
+          <div style="padding:12px" id="recentSkins"></div>
         </div>
       </div>
       <div class="card" style="margin-top:20px">
         <div class="card-header">
           <span>My Scores</span>
           <span class="subtitle" id="homeMyScoresSubtitle"></span>
-          <button id="hc_btn_myScores" onclick="toggleHomeCard('myScores')" style="margin-left:auto;padding:4px 10px;background:rgba(255,255,255,.2);color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700">▼</button>
+          <button id="myScoresCollapseBtn" onclick="toggleMyScoresCard()" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
         </div>
-        <div id="hc_body_myScores" class="table-wrap" style="max-height:360px;overflow:auto">
+        <div id="myScoresCardBody" class="table-wrap" style="max-height:360px;overflow:auto">
           <table id="homeMyScores">
             <thead><tr><th>Date</th><th class="ctr">9</th><th class="num">Gross</th><th class="num">Net</th><th class="num">PHdcp</th><th class="num">Hdcp</th><th>Scores</th></tr></thead>
             <tbody></tbody>
@@ -4157,7 +4134,6 @@ function onDbLoaded() {
   refreshTab('handicaps');
   refreshTab('schedule');
   refreshTestModeUi();
-  initHomeCardCollapse();
   // Move adminScores into the admin tab so showAdminSection controls it correctly
   const _scoresEl = document.getElementById('adminScores');
   const _adminTabEl = document.getElementById('tab-admin');
@@ -6087,34 +6063,12 @@ function toggleStandCard() {
 }
 
 function toggleMyScoresCard() {
-  toggleHomeCard('myScores');
-}
-
-function toggleHomeCard(key) {
-  const body = document.getElementById(`hc_body_${key}`);
+  const body = document.getElementById('myScoresCardBody');
+  const btn  = document.getElementById('myScoresCollapseBtn');
   if (!body) return;
   const collapsed = body.style.display === 'none';
   body.style.display = collapsed ? '' : 'none';
-  const btn = document.getElementById(`hc_btn_${key}`);
-  if (btn) btn.textContent = collapsed ? '▼' : '▶';
-  try {
-    const state = JSON.parse(localStorage.getItem('hg_home_collapsed') || '{}');
-    state[key] = !collapsed;
-    localStorage.setItem('hg_home_collapsed', JSON.stringify(state));
-  } catch(e) {}
-}
-
-function initHomeCardCollapse() {
-  try {
-    const state = JSON.parse(localStorage.getItem('hg_home_collapsed') || '{}');
-    Object.entries(state).forEach(([key, collapsed]) => {
-      if (!collapsed) return;
-      const body = document.getElementById(`hc_body_${key}`);
-      const btn  = document.getElementById(`hc_btn_${key}`);
-      if (body) body.style.display = 'none';
-      if (btn)  btn.textContent = '▶';
-    });
-  } catch(e) {}
+  if (btn) btn.textContent = collapsed ? 'Collapse' : 'Expand';
 }
 
 function getPlayerLast5Map(beforeDate) {
