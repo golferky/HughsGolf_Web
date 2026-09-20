@@ -3544,6 +3544,14 @@ function ensureAppChangelogTable() {
   // Byes — in LS_MID_SEASON_OK so must exist in SeasonSettings
   try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN Byes INTEGER DEFAULT 0`); } catch(e) {}
   serverRun(`ALTER TABLE SeasonSettings ADD COLUMN Byes INTEGER DEFAULT 0`, [], {silent:true});
+  // RoundsPerSeason — replaces SplitSeason (Y/N) with integer (1, 2, or 3)
+  try { db.run(`ALTER TABLE LeagueSettings ADD COLUMN RoundsPerSeason INTEGER DEFAULT 2`); } catch(e) {}
+  serverRun(`ALTER TABLE LeagueSettings ADD COLUMN RoundsPerSeason INTEGER DEFAULT 2`, [], {silent:true});
+  // ByeRule — how bye weeks are scored: NoGame, AutoWin, HalfWin, AvgPoints
+  try { db.run(`ALTER TABLE LeagueSettings ADD COLUMN ByeRule TEXT DEFAULT 'NoGame'`); } catch(e) {}
+  serverRun(`ALTER TABLE LeagueSettings ADD COLUMN ByeRule TEXT DEFAULT 'NoGame'`, [], {silent:true});
+  // Migrate SplitSeason → RoundsPerSeason for existing DBs
+  try { db.run(`UPDATE LeagueSettings SET RoundsPerSeason = CASE WHEN SplitSeason='Y' THEN 2 ELSE 1 END WHERE RoundsPerSeason IS NULL`); } catch(e) {}
   // Backfill from LeagueParms if available and StandPlace1 is still null
   try {
     const lpRows = query(`SELECT Season, Place1, Place2, Place3 FROM LeagueParms WHERE Name="Hugh's"`);
@@ -3885,7 +3893,9 @@ function ensureLeagueSettingsTables() {
     SkinFmt TEXT,
     Email TEXT,
     EmailPassword TEXT,
-    WebsitePassword TEXT
+    WebsitePassword TEXT,
+    RoundsPerSeason INTEGER DEFAULT 2,
+    ByeRule TEXT DEFAULT 'NoGame'
   )`);
 
 
@@ -5881,8 +5891,7 @@ function loadStandings() {
   const view = document.getElementById('standView').value;
 
   // Check split season
-  const lp = { SplitSeason: getLeagueSetting('SplitSeason', 'N') };
-  const isSplit = lp?.SplitSeason === 'Y';
+  const isSplit = (getLeagueSetting('RoundsPerSeason', 2) || 2) >= 2;
   document.getElementById('halfTabs').style.display = isSplit ? 'flex' : 'none';
 
   // Auto-detect current half based on today's date vs midpoint
@@ -16115,7 +16124,7 @@ function updateWeeksLeftBanner() {
   if (!el) return;
 
   const season = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
-  const isSplit = getLeagueSetting('SplitSeason', 'N') === 'Y';
+  const isSplit = (getLeagueSetting('RoundsPerSeason', 2) || 2) >= 2;
 
   const today = new Date();
   const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
@@ -17611,11 +17620,14 @@ const LS_FIELDS = {
     ['ChampPlace1','CC 1st'],['ChampPlace2','CC 2nd'],['ChampPlace3','CC 3rd'],
   ],
   schedule:  [
-    ['StartDate','Start Date'],['EndDate','End Date'],['PostSeasonDt','Post Season Date'],
-    ['Teams','# Teams', ['6','8','10','12','14','16']],
-    ['Rainouts','Rainouts', ['0','1','2','3','4','5','6']],
-    ['SplitSeason','Split Season', [['Y','Yes'],['N','No']]],
-    ['Byes','Byes', ['0','1','2','3','4','5','6']], // TODO (off-season): revisit how Byes are actually used — does the value affect scheduling, standings, or just display?
+    ['StartDate','Start Date', null, true],
+    ['EndDate','End Date', null, true],
+    ['PostSeasonDt','Post Season Date', null, true],
+    ['Teams','# Teams', null, true],
+    ['RoundsPerSeason','Rounds/Season', null, true],
+    ['Rainouts','Rainouts', null, true],
+    ['Byes','Byes', null, true],
+    ['ByeRule','Bye Rule', null, true],
   ],
   handicaps: [
     ['HdcpScores','Hdcp Scores', ['3','4','5','6','7','8','9','10']],
@@ -17634,8 +17646,8 @@ const LS_MID_SEASON_OK = new Set([
   'EOY Skins','SkinsPS','ClosestPS',        // post-season money amounts
   'StandPlace1','StandPlace2','StandPlace3',               // half-season standings payouts
   'ChampPlaces','ChampPlace1','ChampPlace2','ChampPlace3', // champion payouts + place count
-  'PostSeasonDt','EndDate',                  // dates that shift due to rainouts/schedule changes
-  'Rainouts','Byes',                         // operational — change during season
+  'PostSeasonDt','EndDate',                  // managed by Season Setup wizard
+  'Rainouts','Byes',                         // managed by Rain Out tab / Season Setup wizard
   'Email','EmailPassword','WebsitePassword', // email — doesn't affect scoring
 ]);
 
@@ -17679,7 +17691,7 @@ function loadLeagueSettings() {
     warningEl.style.display = seasonEnded ? 'none' : 'block';
     warningEl.innerHTML = seasonEnded ? '' :
       `⚠ Season active — General, Handicaps, and base Money fields are locked until post-season ends (${lp.PostSeasonDt || 'not set'}).<br>
-       <span style="color:#2e7d32;font-weight:600">✓ Editable now:</span> Rainouts, Byes, End Date, Post Season Date, EOY/PS amounts, CC payouts, Email settings.`;
+       <span style="color:#2e7d32;font-weight:600">✓ Editable now:</span> EOY/PS amounts, CC payouts, Email settings. Schedule fields are managed by the Season Setup wizard.`;
   }
 
 
@@ -17697,28 +17709,29 @@ function loadLeagueSettings() {
   const renderGroup = (containerId, fields, cols = 3) => {
     const el = document.getElementById(containerId);
     if (!el) return;
-    const fieldHtml = fields.map(([col, label, options]) => {
+    const fieldHtml = fields.map(([col, label, options, readonly]) => {
       const val = lp[col] ?? '';
       const _isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'developer';
       const isPw = col.includes('Password') && !_isAdmin;
-      const locked = !seasonEnded && !LS_MID_SEASON_OK.has(col);
-      const lockedAttr = locked ? 'disabled title="Locked — season is still active"' : '';
+      const locked = readonly || (!seasonEnded && !LS_MID_SEASON_OK.has(col));
+      const lockedAttr = locked ? 'disabled' : '';
+      const title = readonly ? 'title="Calculated automatically — not editable here"' : locked ? 'title="Locked — season is still active"' : '';
       const bg = locked ? '#f0f0f0' : 'white';
       const fg = locked ? '#999' : '#222';
       const baseStyle = `width:100%;padding:5px 7px;border:1px solid #ddd;border-radius:4px;font-size:12px;box-sizing:border-box;font-family:'DM Mono',monospace;background:${bg};color:${fg}`;
       let inputHtml;
-      if (options) {
+      if (options && !readonly) {
         const optHtml = options.map(o => {
           const [v, d] = Array.isArray(o) ? o : [o, o];
           const sel = String(val) === String(v) ? 'selected' : '';
           return `<option value="${v}" ${sel}>${d}</option>`;
         }).join('');
-        inputHtml = `<select data-lscol="${col}" ${lockedAttr} style="${baseStyle}">${optHtml}</select>`;
+        inputHtml = `<select data-lscol="${col}" ${lockedAttr} ${title} style="${baseStyle}">${optHtml}</select>`;
       } else {
-        inputHtml = `<input type="${isPw?'password':'text'}" data-lscol="${col}" value="${String(val).replace(/"/g,'&quot;')}" ${lockedAttr} style="${baseStyle}">`;
+        inputHtml = `<input type="${isPw?'password':'text'}" data-lscol="${col}" value="${String(val).replace(/"/g,'&quot;')}" ${lockedAttr} ${title} style="${baseStyle}">`;
       }
       return `<div>
-        <label style="font-size:10px;color:${locked?'#bbb':'#888'};font-weight:600;display:block;margin-bottom:2px;text-transform:uppercase;letter-spacing:.4px">${label}</label>
+        <label style="font-size:10px;color:${locked?'#bbb':'#888'};font-weight:600;display:block;margin-bottom:2px;text-transform:uppercase;letter-spacing:.4px">${label}${readonly?' ⟳':''}</label>
         ${inputHtml}
       </div>`;
     }).join('');
@@ -17777,7 +17790,8 @@ function saveLeagueSettings() {
   // Split updates: seasonal fields → SeasonSettings, global fields → LeagueSettings
   const GLOBAL_KEYS = new Set(['Format','DayOfWeek','DayofWeek','Holes','Method','SplitSeason',
     'Par3Max','Par4Max','Par5Max','HdcpScores','HdcpFormat','CarryLastYears','MaxHdcp','SkinFmt',
-    'Email','EmailPassword','WebsitePassword','Name','LeagueName']);
+    'Email','EmailPassword','WebsitePassword','Name','LeagueName',
+    'RoundsPerSeason','ByeRule']);
   const seasonCols = {}, globalCols = {};
   Object.keys(newValues).forEach(col => {
     const normalCol = col === 'EOY Skins' ? 'EOYSkins' : col;
