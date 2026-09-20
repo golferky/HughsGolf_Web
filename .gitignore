@@ -1,3 +1,4 @@
 .DS_Store
+.smbdelete*
 HughsGolf*.db
 HughsGolf-test*.db
