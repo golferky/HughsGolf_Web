@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Golf League Manager</title>
+<title>Hugh's Golf League</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
@@ -528,7 +528,7 @@
 <body>
 
 <header>
-  <div class="logo">Golf League <span>Manager</span></div>
+  <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#d6ead2;font-family:'DM Mono',monospace;font-weight:700">
     <span id="appVersionDisplay">v—</span>
     <span style="color:#9bc59a">|</span>
@@ -583,8 +583,7 @@
 </div>
 <div id="loginOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center">
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
-    <div style="font-family:'Bebas Neue',cursive;font-size:22px;color:#aaa;margin-bottom:0px;letter-spacing:1px">Golf League Manager</div>
-    <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px" id="loginLeagueName">Hugh's Golf League</div>
+    <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
     <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v—</span></div>
     <!-- Sandbox quick-login (no password) -->
@@ -2653,7 +2652,7 @@ function storedPostSeasonTestModeEnabled() {
 function getPostSeasonDateSet() {
   const psDates = new Set();
   if (!db) return psDates;
-  query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`).forEach(r => {
+  query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL`).forEach(r => {
     const p = r.PostSeasonDt.split('/');
     const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
     const d2obj = new Date(r.PostSeasonDt);
@@ -2667,8 +2666,8 @@ function getPostSeasonDateSet() {
 
 function getLatestRegularScoreDate() {
   const psDates = getPostSeasonDateSet();
-  const scheduleDates = new Set(query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's"`).map(r => String(r.sDate)));
-  const rows = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="Hugh's" AND Gross IS NOT NULL AND Gross != 0 ORDER BY CAST(Date AS INTEGER) DESC`);
+  const scheduleDates = new Set(query(`SELECT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE`).map(r => String(r.sDate)));
+  const rows = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League=CURRENT_LEAGUE AND Gross IS NOT NULL AND Gross != 0 ORDER BY CAST(Date AS INTEGER) DESC`);
   return rows.map(r => String(r.sDate)).find(d => !psDates.has(d) && scheduleDates.has(d)) || '';
 }
 
@@ -2698,7 +2697,7 @@ async function cleanupPostSeasonTestRefunds(dateOverride = null) {
   if (!psDates) return;
 
   serverRun(`DELETE FROM Payments
-    WHERE League="Hugh's"
+    WHERE League=CURRENT_LEAGUE
       AND "Desc"='EOY Skins'
       AND Detail='Refund'
       AND Date IN (${psDates.week1},${psDates.week2})`);
@@ -3568,7 +3567,7 @@ function ensureAppChangelogTable() {
   try {
     const lpRows = query(`SELECT Season, Place1, Place2, Place3 FROM LeagueParms WHERE Name="Hugh's"`);
     lpRows.forEach(r => {
-      if (r.Place1) db.run(`UPDATE SeasonSettings SET StandPlace1=?,StandPlace2=?,StandPlace3=? WHERE League="Hugh's" AND Season=? AND StandPlace1 IS NULL`,
+      if (r.Place1) db.run(`UPDATE SeasonSettings SET StandPlace1=?,StandPlace2=?,StandPlace3=? WHERE League=CURRENT_LEAGUE AND Season=? AND StandPlace1 IS NULL`,
         [r.Place1||60, r.Place2||50, r.Place3||45, r.Season]);
     });
   } catch(e) {}
@@ -3940,7 +3939,7 @@ function ensureLeagueSettingsTables() {
          Par3Max, Par4Max, Par5Max, HdcpScores, HdcpFormat, CarryLastYears, MaxHdcp, SkinFmt,
          Email, EmailPassword, WebsitePassword)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        ["Hugh's", lp.Name || "Hugh's", lp.Format || 'Match Play', lp.DayOfWeek || 'Tuesday',
+        [CURRENT_LEAGUE, lp.Name || "Hugh's", lp.Format || 'Match Play', lp.DayOfWeek || 'Tuesday',
          lp.Holes || '9', lp.Method || '', lp.SplitSeason || 'Y',
          lp.Par3Max || 6, lp.Par4Max || 7, lp.Par5Max || 8,
          lp.HdcpScores || 5, lp.HdcpFormat || '', lp.CarryLastYears || 1, lp.MaxHdcp || 18,
@@ -3950,11 +3949,11 @@ function ensureLeagueSettingsTables() {
 
   // Backfill Email/EmailPassword/WebsitePassword from LeagueParms if currently blank in LeagueSettings
   try {
-    const ls = query(`SELECT Email, EmailPassword, WebsitePassword FROM LeagueSettings WHERE League="Hugh's" LIMIT 1`)[0];
+    const ls = query(`SELECT Email, EmailPassword, WebsitePassword FROM LeagueSettings WHERE League=CURRENT_LEAGUE LIMIT 1`)[0];
     if (!ls?.Email && !ls?.EmailPassword) {
       const lp2 = query(`SELECT Email, EmailPassword, WebsitePassword FROM LeagueParms WHERE Name="Hugh's" ORDER BY Season DESC LIMIT 1`)[0];
       if (lp2?.Email || lp2?.EmailPassword) {
-        db.run(`UPDATE LeagueSettings SET Email=?, EmailPassword=?, WebsitePassword=? WHERE League="Hugh's"`,
+        db.run(`UPDATE LeagueSettings SET Email=?, EmailPassword=?, WebsitePassword=? WHERE League=CURRENT_LEAGUE`,
           [lp2.Email || '', lp2.EmailPassword || '', lp2.WebsitePassword || '']);
       }
     }
@@ -4192,7 +4191,7 @@ function onDbLoaded() {
 
 function populatePrizeMoneySeasons() {
   const sel = document.getElementById('prizemoneySeason');
-  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" ORDER BY Season DESC`);
+  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League=CURRENT_LEAGUE ORDER BY Season DESC`);
   sel.innerHTML = seasons.map(r => `<option value="${r.Season}">${r.Season}</option>`).join('');
 }
 
@@ -4236,13 +4235,13 @@ function loadPrizeMoney(options = {}) {
     // Find dates with CTP payments but no winner AND no carryover recorded
     const ctpPayDates = query(`
       SELECT DISTINCT Date as d FROM Payments
-      WHERE League="Hugh's" AND Desc='CTP' AND Detail='Payment'
+      WHERE League=CURRENT_LEAGUE AND Desc='CTP' AND Detail='Payment'
       AND Date >= ${season}0101 AND Date < ${parseInt(season)+1}0101
       ORDER BY Date DESC
     `).map(r => r.d);
     return ctpPayDates.filter(d => {
-      const hasWinner = query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND Desc='CTP' AND Detail LIKE '#%' AND Player!='Kitty' AND Date=${d} LIMIT 1`).length > 0;
-      const hasCarry  = query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND Desc='CTP' AND Player='Kitty' AND Detail LIKE 'Carryover%' AND Date=${d} LIMIT 1`).length > 0;
+      const hasWinner = query(`SELECT 1 FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='CTP' AND Detail LIKE '#%' AND Player!='Kitty' AND Date=${d} LIMIT 1`).length > 0;
+      const hasCarry  = query(`SELECT 1 FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='CTP' AND Player='Kitty' AND Detail LIKE 'Carryover%' AND Date=${d} LIMIT 1`).length > 0;
       return !hasWinner && !hasCarry;
     });
   })() : [];
@@ -4250,7 +4249,7 @@ function loadPrizeMoney(options = {}) {
   // ── CTP kitty: active carryovers as of selected date ─────────────────────
   const ctpKittyRows = query(`
     SELECT Detail, Earned, Date as cDate FROM Payments 
-    WHERE League="Hugh's" AND Desc='CTP' AND Player='Kitty' AND Date >= ${season}0101 AND Date <= ${effectiveDate}
+    WHERE League=CURRENT_LEAGUE AND Desc='CTP' AND Player='Kitty' AND Date >= ${season}0101 AND Date <= ${effectiveDate}
     ORDER BY Date DESC
   `);
   const ctpKittyMap = {};
@@ -4267,9 +4266,9 @@ function loadPrizeMoney(options = {}) {
   const ctpKitty      = Object.values(ctpKittyMap).reduce((a,b) => a+b, 0);
 
   // ── Skin kitty = collected - paid out as of selected date ────────────────
-  const skinCollected    = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Payment' AND Date >= ${season}0101 AND Date <= ${effectiveDate}`)[0]?.t || 0);
-  const skinPaidOut      = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail LIKE '#%' AND Player != 'Kitty' AND Date >= ${season}0101 AND Date <= ${effectiveDate}`)[0]?.t || 0);
-  const skinTransferOut  = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Pool Transfer' AND Date >= ${season}0101 AND Date <= ${effectiveDate}`)[0]?.t || 0);
+  const skinCollected    = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Detail='Payment' AND Date >= ${season}0101 AND Date <= ${effectiveDate}`)[0]?.t || 0);
+  const skinPaidOut      = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Detail LIKE '#%' AND Player != 'Kitty' AND Date >= ${season}0101 AND Date <= ${effectiveDate}`)[0]?.t || 0);
+  const skinTransferOut  = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Detail='Pool Transfer' AND Date >= ${season}0101 AND Date <= ${effectiveDate}`)[0]?.t || 0);
   const skinKitty        = Math.round((skinCollected - skinPaidOut - skinTransferOut) * 100) / 100;
   const totalKitty    = skinKitty + ctpKitty;
 
@@ -4277,28 +4276,28 @@ function loadPrizeMoney(options = {}) {
   const seasonEnd = `${parseInt(season)+1}0101`;
   const heldRows = query(`
     SELECT COALESCE(SUM(Earned),0) as t FROM Payments 
-    WHERE League="Hugh's" AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','') 
+    WHERE League=CURRENT_LEAGUE AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','') 
     AND Player != 'Kitty' AND (DatePaid IS NULL OR DatePaid='') AND Date >= ${season}0101 AND Date < ${seasonEnd}
   `);
   const heldBalance = parseFloat(heldRows[0]?.t || 0);
   const heldDetailRows = query(`
     SELECT Player, Date, Desc, Detail, Earned FROM Payments
-    WHERE League="Hugh's" AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','')
+    WHERE League=CURRENT_LEAGUE AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','')
     AND Player != 'Kitty' AND (DatePaid IS NULL OR DatePaid='') AND Date >= ${season}0101 AND Date < ${seasonEnd}
     ORDER BY Date DESC, Player
   `);
 
   // ── EOY Skins pool ──────────────────────────────────────────────────────
-  const eoyFromPayments  = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
-  const eoyFromTransfers = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Pool Transfer' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
+  const eoyFromPayments  = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
+  const eoyFromTransfers = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND "Desc"='EOY Skins' AND Detail='Pool Transfer' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
   const eoyCollected     = Math.round((eoyFromPayments + eoyFromTransfers) * 100) / 100;
-  const eoyPaidOut       = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail NOT IN ('Payment','Refund','Pool Transfer') AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
+  const eoyPaidOut       = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND "Desc"='EOY Skins' AND Detail NOT IN ('Payment','Refund','Pool Transfer') AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
   const eoyBalance       = Math.round((eoyCollected - eoyPaidOut) * 100) / 100;
-  const eoyPaidRows = query(`SELECT rowid as ID, Player, Earned, COALESCE(Comment,'') as Comment, DatePaid FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY Player`);
+  const eoyPaidRows = query(`SELECT rowid as ID, Player, Earned, COALESCE(Comment,'') as Comment, DatePaid FROM Payments WHERE League=CURRENT_LEAGUE AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY Player`);
   const eoyPaidPlayers = new Set(eoyPaidRows.map(r => r.Player));
   // Refund lookup: existing EOY refund rows per player
   const eoyRefundMap = {};
-  query(`SELECT Player, COALESCE(SUM(CAST(Earned AS REAL)),0) as total FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${seasonEnd} GROUP BY Player`)
+  query(`SELECT Player, COALESCE(SUM(CAST(Earned AS REAL)),0) as total FROM Payments WHERE League=CURRENT_LEAGUE AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${seasonEnd} GROUP BY Player`)
     .forEach(r => { eoyRefundMap[r.Player] = parseFloat(r.total || 0); }); // Earned is negative, so total will be negative
   // CC eligibility: paid full amount AND has scores in BOTH post-season weeks
   const eoyLp = getSeasonSettings(season);
@@ -4310,11 +4309,11 @@ function loadPrizeMoney(options = {}) {
     const paidTotal = eoyPaidRows.filter(r => r.Player === player).reduce((s, r) => s + parseFloat(r.Earned || 0), 0);
     if (paidTotal < eoyFullAmt) return false;
     // Must have scores in both post-season weeks
-    const hasW1 = query(`SELECT 1 FROM Scores WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0) > 0 LIMIT 1`, [player, eoyPsDates.week1]).length > 0;
-    const hasW2 = query(`SELECT 1 FROM Scores WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0) > 0 LIMIT 1`, [player, eoyPsDates.week2]).length > 0;
+    const hasW1 = query(`SELECT 1 FROM Scores WHERE League=CURRENT_LEAGUE AND Player=? AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0) > 0 LIMIT 1`, [player, eoyPsDates.week1]).length > 0;
+    const hasW2 = query(`SELECT 1 FROM Scores WHERE League=CURRENT_LEAGUE AND Player=? AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0) > 0 LIMIT 1`, [player, eoyPsDates.week2]).length > 0;
     return hasW1 && hasW2;
   }
-  const eoyRosterPlayers = query(`SELECT DISTINCT Player FROM Teams WHERE League="Hugh's" AND Year=${season}`).map(r => r.Player);
+  const eoyRosterPlayers = query(`SELECT DISTINCT Player FROM Teams WHERE League=CURRENT_LEAGUE AND Year=${season}`).map(r => r.Player);
   const eoyUnpaidPlayers = eoyRosterPlayers.filter(p => !eoyPaidPlayers.has(p)).sort();
 
   // ── Club Championship pool (estimate) ──────────────────────────────────
@@ -4324,22 +4323,22 @@ function loadPrizeMoney(options = {}) {
   const champP1 = parseFloat(champLp.ChampPlace1 ?? 100);
   const champP2 = champNumPlaces >= 2 ? parseFloat(champLp.ChampPlace2 ?? 50) : 0;
   const champP3 = champNumPlaces >= 3 ? parseFloat(champLp.ChampPlace3 ?? 25) : 0;
-  const duesCollected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
-  const duesPaymentCount = query(`SELECT COUNT(*) as c FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.c || 0;
-  const duesPaidRows = query(`SELECT Player, Earned, DatePaid FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY Player`);
+  const duesCollected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
+  const duesPaymentCount = query(`SELECT COUNT(*) as c FROM Payments WHERE League=CURRENT_LEAGUE AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.c || 0;
+  const duesPaidRows = query(`SELECT Player, Earned, DatePaid FROM Payments WHERE League=CURRENT_LEAGUE AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY Player`);
   const duesPaidPlayers = new Set(duesPaidRows.map(r => r.Player));
-  const rosterCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Teams WHERE League="Hugh's" AND Year=${season}`)[0]?.c || 0;
-  const rosterPlayers = query(`SELECT DISTINCT Player FROM Teams WHERE League="Hugh's" AND Year=${season}`).map(r => r.Player);
+  const rosterCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Teams WHERE League=CURRENT_LEAGUE AND Year=${season}`)[0]?.c || 0;
+  const rosterPlayers = query(`SELECT DISTINCT Player FROM Teams WHERE League=CURRENT_LEAGUE AND Year=${season}`).map(r => r.Player);
   const unpaidRosterPlayers = rosterPlayers.filter(p => !duesPaidPlayers.has(p));
   const allDuesPaid = rosterCount > 0 && unpaidRosterPlayers.length === 0;
 
   // ── Expenses ──────────────────────────────────────────────────────────────
-  const expenseRows = query(`SELECT Detail, Earned FROM Payments WHERE League="Hugh's" AND "Desc"='Expense' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY Detail`);
+  const expenseRows = query(`SELECT Detail, Earned FROM Payments WHERE League=CURRENT_LEAGUE AND "Desc"='Expense' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY Detail`);
   const expenseTotal = expenseRows.reduce((sum, r) => sum + parseFloat(r.Earned || 0), 0);
   const netDues = duesCollected - expenseTotal;
 
   // ── Half-Season Standings payouts ────────────────────────────────────────
-  const halfSeasonRows = query(`SELECT Player, "Desc", Detail, Earned, Comment FROM Payments WHERE League="Hugh's" AND "Desc" LIKE 'Reg Season Champ-% half' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY "Desc", Detail, Player`);
+  const halfSeasonRows = query(`SELECT Player, "Desc", Detail, Earned, Comment FROM Payments WHERE League=CURRENT_LEAGUE AND "Desc" LIKE 'Reg Season Champ-% half' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY "Desc", Detail, Player`);
   const halfSeasonByPlace = {};
   halfSeasonRows.forEach(r => {
     const halfKey = r.Desc.includes('1st half') ? 'H1' : 'H2';
@@ -4361,12 +4360,12 @@ function loadPrizeMoney(options = {}) {
   const champTotal = champ1 + champ2 + champ3;
 
   // ── Skin kitty detail ledger — weekly collected vs paid out ──────────────
-  const skinDates = query(`SELECT DISTINCT Date FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Date >= ${season}0101 ORDER BY Date ASC`);
+  const skinDates = query(`SELECT DISTINCT Date FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Date >= ${season}0101 ORDER BY Date ASC`);
   let skinRunning = 0;
   const skinDetailRows = skinDates.map((d, i) => {
-    const collected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Payment' AND Date=${d.Date}`)[0]?.t || 0);
-    const paidOut   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND Date=${d.Date}`)[0]?.t || 0);
-    const winners   = query(`SELECT Player, Earned FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND Date=${d.Date}`);
+    const collected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Detail='Payment' AND Date=${d.Date}`)[0]?.t || 0);
+    const paidOut   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND Date=${d.Date}`)[0]?.t || 0);
+    const winners   = query(`SELECT Player, Earned FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND Date=${d.Date}`);
     const net       = collected - paidOut;
     skinRunning    += net;
     const bg        = i % 2 === 0 ? '#fffde7' : '#fff9c4';
@@ -4383,7 +4382,7 @@ function loadPrizeMoney(options = {}) {
 
   // ── CTP kitty detail — active carryovers per hole ────────────────────────
   const ctpKittyDetail = Object.entries(ctpKittyMap).map(([hole, amt]) => {
-    const rec = query(`SELECT Date, Detail FROM Payments WHERE League="Hugh's" AND Desc='CTP' AND Player='Kitty' AND Detail LIKE 'Carryover${hole}%' AND Date >= ${season}0101 ORDER BY Date DESC LIMIT 1`)[0];
+    const rec = query(`SELECT Date, Detail FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='CTP' AND Player='Kitty' AND Detail LIKE 'Carryover${hole}%' AND Date >= ${season}0101 ORDER BY Date DESC LIMIT 1`)[0];
     return { hole, amt, date: rec?.Date, side: rec?.Detail?.includes('Back') ? 'Back' : 'Front' };
   }).sort((a,b) => a.hole - b.hole);
 
@@ -4590,7 +4589,7 @@ function loadPrizeMoney(options = {}) {
   const rows = query(`
     SELECT Date, Player, Desc, Detail, Earned, DatePaid, Comment
     FROM Payments
-    WHERE Date=${date} AND League="Hugh's"
+    WHERE Date=${date} AND League=CURRENT_LEAGUE
       AND Detail NOT IN ('Payment','')
       AND Player != 'Kitty'
       AND Desc IN ('Skin','CTP')
@@ -4987,7 +4986,7 @@ async function loadHelpTab() {
   // Use the next real schedule date so day-of-week is never wrong
   const today = new Date();
   const todayKey = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
-  const nextSchedRaw = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND CAST(Date AS INTEGER) >= ${todayKey} ORDER BY Date LIMIT 1`)[0]?.sDate;
+  const nextSchedRaw = query(`SELECT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND CAST(Date AS INTEGER) >= ${todayKey} ORDER BY Date LIMIT 1`)[0]?.sDate;
   let sampleDate;
   if (nextSchedRaw) {
     const yr = nextSchedRaw.slice(0,4), mo = nextSchedRaw.slice(4,6), dy = nextSchedRaw.slice(6,8);
@@ -5695,7 +5694,7 @@ function loadHome() {
 
   // Recent scores — show one full round's worth (teams × 2 players)
   const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
-  const teamCountForLimit = query(`SELECT COUNT(DISTINCT Team) as c FROM Teams WHERE League="Hugh's" AND Year=${currentSeason}`)[0]?.c || 12;
+  const teamCountForLimit = query(`SELECT COUNT(DISTINCT Team) as c FROM Teams WHERE League=CURRENT_LEAGUE AND Year=${currentSeason}`)[0]?.c || 12;
   const recentLimit = teamCountForLimit * 2;
   const recentScores = query(`
     SELECT Player, Date, Gross, Net, FrontBack
@@ -5891,7 +5890,7 @@ let currentSfHalf = '1'; // SF Standings half: '1', '2', or 'all'
 
 function populateStandAsOf() {
   const year = document.getElementById('standSeason').value;
-  const dates = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="Hugh's" AND Date >= ${year}0101 AND Date < ${parseInt(year)+1}0101 ORDER BY Date DESC`);
+  const dates = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League=CURRENT_LEAGUE AND Date >= ${year}0101 AND Date < ${parseInt(year)+1}0101 ORDER BY Date DESC`);
   const sel = document.getElementById('standAsOf');
   sel.innerHTML = '<option value="">Current</option>' +
     dates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
@@ -5909,7 +5908,7 @@ function loadStandings() {
   // Auto-detect current half based on today's date vs midpoint
   if (isSplit && !currentHalfManual && year == new Date().getFullYear()) {
     const todayInt2 = (() => { const d = new Date(); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); })();
-    const sched2 = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= '${year}0101' AND Date < '${parseInt(year)+1}0101' ORDER BY Date`);
+    const sched2 = query(`SELECT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= '${year}0101' AND Date < '${parseInt(year)+1}0101' ORDER BY Date`);
     const mid2 = sched2.length ? parseInt(sched2[Math.floor(sched2.length/2)].sDate) : null;
     if (mid2) {
       const detectedHalf = todayInt2 < mid2 ? '1' : '2';
@@ -5923,7 +5922,7 @@ function loadStandings() {
   });
 
   // Get schedule dates for this year to determine split point
-  const schedDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= '${year}0101' AND Date < '${parseInt(year)+1}0101' ORDER BY Date`);
+  const schedDates = query(`SELECT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= '${year}0101' AND Date < '${parseInt(year)+1}0101' ORDER BY Date`);
   const midDate = schedDates.length ? schedDates[Math.floor(schedDates.length/2)].sDate : null;
 
   let dateFilter = `m.Date >= ${year}0101 AND m.Date < ${parseInt(year)+1}0101`;
@@ -5941,9 +5940,9 @@ function loadStandings() {
   const tb = tbody('standTable');
 
   // Players who have scores entered for the most recent scored league date
-  const _latestScoredDate = query(`SELECT MAX(Date) as d FROM Scores WHERE League="Hugh's" AND Gross IS NOT NULL AND Gross != 0`)[0]?.d;
+  const _latestScoredDate = query(`SELECT MAX(Date) as d FROM Scores WHERE League=CURRENT_LEAGUE AND Gross IS NOT NULL AND Gross != 0`)[0]?.d;
   const scoredToday = _latestScoredDate
-    ? new Set(query(`SELECT Player FROM Scores WHERE Date=${_latestScoredDate} AND League="Hugh's" AND Gross IS NOT NULL AND Gross != 0`).map(r => r.Player))
+    ? new Set(query(`SELECT Player FROM Scores WHERE Date=${_latestScoredDate} AND League=CURRENT_LEAGUE AND Gross IS NOT NULL AND Gross != 0`).map(r => r.Player))
     : new Set();
 
   if (view === 'individual') {
@@ -6033,7 +6032,7 @@ function loadStandings() {
     const weeksLeftClause = currentHalf === '1' && midDate ? `AND CAST(Date AS INTEGER) > ${todayInt} AND Date < ${midDate}` :
                             currentHalf === '2' && midDate ? `AND CAST(Date AS INTEGER) > ${todayInt} AND Date >= ${midDate}` :
                             `AND CAST(Date AS INTEGER) > ${todayInt}`;
-    const weeksLeft = query(`SELECT COUNT(*) as cnt FROM Schedule WHERE League="Hugh's" AND Date >= ${year}0101 AND Date < ${parseInt(year)+1}0101 ${weeksLeftClause}`)[0]?.cnt || 0;
+    const weeksLeft = query(`SELECT COUNT(*) as cnt FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= ${year}0101 AND Date < ${parseInt(year)+1}0101 ${weeksLeftClause}`)[0]?.cnt || 0;
     const maxPtsPerWeek = 3;
 
     const leaderTotal = rows.length ? (parseFloat(rows[0].a_pts||0) + parseFloat(rows[0].b_pts||0) + parseFloat(rows[0].team_pts||0)) : 0;
@@ -6146,7 +6145,7 @@ function getPlayerLast5Map(beforeDate) {
   // Prefer actual score history so stale PlayerLast5 rows do not make the hover incomplete.
   query(`SELECT Player, Gross, Date
     FROM Scores
-    WHERE League="Hugh's"
+    WHERE League=CURRENT_LEAGUE
       AND Gross IS NOT NULL
       AND CAST(Gross AS INTEGER) > 0
       ${beforeClause}
@@ -6223,7 +6222,7 @@ function getActivePostSeasonScoreContext() {
   const psMode = isPostSeasonEntryMode();
   const entryDate = document.getElementById('entryDate')?.value;
   const entrySeason = entryDate ? parseInt(String(entryDate).substring(0, 4)) : null;
-  const fallbackSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`)[0]?.s;
+  const fallbackSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL`)[0]?.s;
   const gridSeason = grid?.dataset.postSeasonSeason ? parseInt(grid.dataset.postSeasonSeason) : null;
   const season = psMode ? (gridSeason || entrySeason || fallbackSeason) : entrySeason;
   if (!season) return null;
@@ -6253,7 +6252,7 @@ function forcePostSeasonContextFromVisibleEntry() {
   const entryDate = document.getElementById('entryDate')?.value;
   const stateSeason = entryStateDate ? parseInt(String(entryStateDate).substring(0, 4)) : null;
   const entrySeason = entryDate ? parseInt(String(entryDate).substring(0, 4)) : null;
-  const fallbackSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`)[0]?.s;
+  const fallbackSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL`)[0]?.s;
   const season = stateSeason || entrySeason || fallbackSeason;
   if (!season) return null;
 
@@ -6530,7 +6529,7 @@ function loadScores() {
   let groupedItems = null; // null = flat rendering (psCtx or no schedule)
   if (!psCtx) {
     const season = String(date).substring(0, 4);
-    const sched = query(`SELECT "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24" FROM Schedule WHERE League="Hugh's" AND Date='${date}'`)[0];
+    const sched = query(`SELECT "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24" FROM Schedule WHERE League=CURRENT_LEAGUE AND Date='${date}'`)[0];
     const matchups = [];
     if (sched) {
       for (let i = 1; i <= 24; i++) {
@@ -6541,10 +6540,10 @@ function loadScores() {
     if (matchups.length) {
       // player → team mapping (subs override regular team)
       const playerTeam = {}, playerGrade = {};
-      query(`SELECT Player, Team, Grade FROM Teams WHERE Year=${season} AND League="Hugh's"`).forEach(r => { playerTeam[r.Player] = r.Team; playerGrade[r.Player] = r.Grade; });
-      query(`SELECT s.Player, s.Team, t.Grade FROM Subs s JOIN Teams t ON t.Team=s.Team AND t.League=s.League AND t.Grade=s.Grade WHERE s.Date=${date} AND s.League="Hugh's"`).forEach(r => { playerTeam[r.Player] = r.Team; playerGrade[r.Player] = r.Grade; });
+      query(`SELECT Player, Team, Grade FROM Teams WHERE Year=${season} AND League=CURRENT_LEAGUE`).forEach(r => { playerTeam[r.Player] = r.Team; playerGrade[r.Player] = r.Grade; });
+      query(`SELECT s.Player, s.Team, t.Grade FROM Subs s JOIN Teams t ON t.Team=s.Team AND t.League=s.League AND t.Grade=s.Grade WHERE s.Date=${date} AND s.League=CURRENT_LEAGUE`).forEach(r => { playerTeam[r.Player] = r.Team; playerGrade[r.Player] = r.Grade; });
       // Simpler subs grade lookup
-      query(`SELECT s.Player, s.Team, s.Grade FROM Subs s WHERE s.Date=${date} AND s.League="Hugh's"`).forEach(r => { playerTeam[r.Player] = r.Team; playerGrade[r.Player] = r.Grade; });
+      query(`SELECT s.Player, s.Team, s.Grade FROM Subs s WHERE s.Date=${date} AND s.League=CURRENT_LEAGUE`).forEach(r => { playerTeam[r.Player] = r.Team; playerGrade[r.Player] = r.Grade; });
 
       // Gallus players for this date (ImportedToScores=1 means currently imported;
       // undo sets it back to 0, clear deletes the row — both naturally drop from this set)
@@ -6632,7 +6631,7 @@ function loadScores() {
       const phdcpCell = makeTipCell('td', r.PHdcp != null ? r.PHdcp : '0', last5, 'num', 'color:var(--gray)');
       const hdcpCell  = makeTipCell('td', r.Hdcp  != null ? r.Hdcp  : '', last5, 'num', 'color:var(--gray)');
       if (!last5 && r.Gross) {
-        const par = query(`SELECT SUM(Par1+Par2+Par3+Par4+Par5+Par6+Par7+Par8+Par9) as p FROM Courses WHERE Course=(SELECT Course FROM SeasonSettings WHERE League="Hugh's" ORDER BY Season DESC LIMIT 1)`)[0]?.p || 36;
+        const par = query(`SELECT SUM(Par1+Par2+Par3+Par4+Par5+Par6+Par7+Par8+Par9) as p FROM Courses WHERE Course=(SELECT Course FROM SeasonSettings WHERE League=CURRENT_LEAGUE ORDER BY Season DESC LIMIT 1)`)[0]?.p || 36;
         hdcpCell.dataset.gross = r.Gross;
         hdcpCell.dataset.par = par;
       }
@@ -6687,8 +6686,8 @@ function loadScores() {
 
   // Add no-show rows — players in Matches for this date with no score
   const scored = new Set(rows.map(r => r.Player));
-  const matchPlayers = query(`SELECT DISTINCT Player FROM Matches WHERE Date=${date} AND League="Hugh's"`).map(r=>r.Player);
-  const subPlayers = new Set(query(`SELECT Player FROM Subs WHERE Date=${date} AND League="Hugh's"`).map(r=>r.Player));
+  const matchPlayers = query(`SELECT DISTINCT Player FROM Matches WHERE Date=${date} AND League=CURRENT_LEAGUE`).map(r=>r.Player);
+  const subPlayers = new Set(query(`SELECT Player FROM Subs WHERE Date=${date} AND League=CURRENT_LEAGUE`).map(r=>r.Player));
   const noShows = matchPlayers.filter(p => !scored.has(p) && !subPlayers.has(p));
   noShows.forEach(player => {
     const tr = document.createElement('tr');
@@ -6756,7 +6755,7 @@ function renderRegularBreakdown(date) {
   const rowStyle = `display:grid;grid-template-columns:44px 1fr 80px auto;gap:6px;align-items:center;padding:4px 10px;border-radius:4px;font-size:12px;margin-bottom:2px`;
 
   // Compute per-hole ties from Scores table
-  const scoreRows = query(`SELECT Player, FrontBack, "1","2","3","4","5","6","7","8","9" FROM Scores WHERE CAST(Date AS INTEGER)=CAST(${date} AS INTEGER) AND League="Hugh's" AND Gross IS NOT NULL AND Gross != 0`);
+  const scoreRows = query(`SELECT Player, FrontBack, "1","2","3","4","5","6","7","8","9" FROM Scores WHERE CAST(Date AS INTEGER)=CAST(${date} AS INTEGER) AND League=CURRENT_LEAGUE AND Gross IS NOT NULL AND Gross != 0`);
   const fb = scoreRows[0]?.FrontBack || 'Front';
   const nine = fb === 'Back' ? courseData.back : courseData.front;
   const skinPlayerSet = new Set(query(`SELECT DISTINCT Player FROM Payments WHERE CAST(Date AS INTEGER)=CAST(${date} AS INTEGER) AND Desc='Skin' AND Detail='Payment'`).map(r=>r.Player));
@@ -6772,7 +6771,7 @@ function renderRegularBreakdown(date) {
         .map(r => {
           const gross = parseInt(r[String(hi+1)]) || 0;
           if (!gross) return null;
-          const hdcpRow = query(`SELECT Hdcp FROM Handicaps WHERE Player=? AND League="Hugh's" AND Date=(SELECT MAX(Date) FROM Handicaps WHERE Player=? AND League="Hugh's" AND Date<${date})`, [r.Player, r.Player])[0];
+          const hdcpRow = query(`SELECT Hdcp FROM Handicaps WHERE Player=? AND League=CURRENT_LEAGUE AND Date=(SELECT MAX(Date) FROM Handicaps WHERE Player=? AND League=CURRENT_LEAGUE AND Date<${date})`, [r.Player, r.Player])[0];
           const phdcp = parseInt(hdcpRow?.Hdcp) || 0;
           const sortedIdx = [...nine.hcps].map((s,i)=>({s,i})).sort((a,b)=>a.s-b.s).map(x=>x.i);
           let strokes = sortedIdx.slice(0, Math.min(phdcp,9)).includes(hi) ? 1 : 0;
@@ -6831,7 +6830,7 @@ function renderRegularBreakdown(date) {
         const w = item.w;
         const net = (w.Comment||'').replace('Score=','');
         const colIdx = nine ? nine.nums.indexOf(item.holeNum) + 1 : 0;
-        const grossRow = colIdx > 0 ? query(`SELECT "${colIdx}" as g FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(${date} AS INTEGER) AND League="Hugh's" LIMIT 1`, [w.Player])[0] : null;
+        const grossRow = colIdx > 0 ? query(`SELECT "${colIdx}" as g FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(${date} AS INTEGER) AND League=CURRENT_LEAGUE LIMIT 1`, [w.Player])[0] : null;
         const gross = grossRow?.g || '—';
         skinsHtml += `<div style="${rowStyle};background:#f1f8e9">
           <span style="font-weight:700;color:#2e7d32">#${item.holeNum}</span>
@@ -6892,7 +6891,7 @@ function renderRegularBreakdown(date) {
 // ── SKINS ──
 // ── MATCHES ──
 function initMatchesDate() {
-  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
   const seasonSel = document.getElementById('matchesSeason');
   const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -6904,7 +6903,7 @@ function initMatchesDate() {
 
 function populateMatchesDateDropdown() {
   const season = document.getElementById('matchesSeason').value;
-  const dates = query(`SELECT DISTINCT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' ORDER BY Date DESC`);
+  const dates = query(`SELECT DISTINCT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' ORDER BY Date DESC`);
   const sel = document.getElementById('matchesDate');
   sel.innerHTML = dates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
 
@@ -6931,7 +6930,7 @@ function loadMatches() {
   };
 
   // Get matchups from Schedule
-  const sched = query(`SELECT Date as sDate,"1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24",FrontBack,Status FROM Schedule WHERE League="Hugh's" AND Date='${date}'`)[0];
+  const sched = query(`SELECT Date as sDate,"1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24",FrontBack,Status FROM Schedule WHERE League=CURRENT_LEAGUE AND Date='${date}'`)[0];
   if (!sched) { 
     logIt('loadMatches no sched', `date=${date}`, 'ERROR', 'loadMatches');
     document.getElementById('matchesContent').innerHTML = '<div class="empty">No schedule found for this date</div>'; return; 
@@ -6946,7 +6945,7 @@ function loadMatches() {
 
   // Get all scores for this date
   const scores = {};
-  query(`SELECT s.Player, s.Net, s.Gross FROM Scores s WHERE s.Date=${date} AND s.League="Hugh's"`)
+  query(`SELECT s.Player, s.Net, s.Gross FROM Scores s WHERE s.Date=${date} AND s.League=CURRENT_LEAGUE`)
     .forEach(r => scores[r.Player] = { net: r.Net, gross: r.Gross });
 
   // Get teams
@@ -6956,12 +6955,12 @@ function loadMatches() {
 
   // Get existing matches for this date
   const existing = {};
-  query(`SELECT Player, Points, Team_Points, Team_Net FROM Matches WHERE Date=${date} AND League="Hugh's"`)
+  query(`SELECT Player, Points, Team_Points, Team_Net FROM Matches WHERE Date=${date} AND League=CURRENT_LEAGUE`)
     .forEach(r => existing[r.Player] = r);
 
   // Get subs for this date
   const subs = {};
-  query(`SELECT Team, Grade, Player FROM Subs WHERE Date=${date} AND League="Hugh's"`)
+  query(`SELECT Team, Grade, Player FROM Subs WHERE Date=${date} AND League=CURRENT_LEAGUE`)
     .forEach(r => { subs[`${r.Team}-${r.Grade}`] = r.Player; });
 
   const html = matchups.map(mu => {
@@ -7098,14 +7097,14 @@ async function calcMatchesForDate(date) {
   if (!db || !date) return;
   const season = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   const league = "Hugh's";
-  const sched  = query(`SELECT * FROM Schedule WHERE League="Hugh's" AND Date='${date}'`)[0];
+  const sched  = query(`SELECT * FROM Schedule WHERE League=CURRENT_LEAGUE AND Date='${date}'`)[0];
   if (!sched) return;
 
   const matchups = [];
   for (let i = 1; i <= 24; i++) { const v = sched[i.toString()]; if (v && v.includes('v')) matchups.push(v); }
 
   const scores = {};
-  query(`SELECT Player, Net FROM Scores WHERE Date=${date} AND League="Hugh's"`)
+  query(`SELECT Player, Net FROM Scores WHERE Date=${date} AND League=CURRENT_LEAGUE`)
     .forEach(r => scores[r.Player] = { net: r.Net });
 
   const teams = {};
@@ -7155,13 +7154,13 @@ function loadMatchesTable() {
   if (!date) return;
   const season = String(date).substring(0,4);
 
-  const sched = query(`SELECT * FROM Schedule WHERE League="Hugh's" AND Date='${date}'`)[0];
+  const sched = query(`SELECT * FROM Schedule WHERE League=CURRENT_LEAGUE AND Date='${date}'`)[0];
   if (!sched) { document.getElementById('matchesContent').innerHTML = '<div class="empty">No schedule found for this date</div>'; return; }
   const matchups = [];
   for (let i = 1; i <= 24; i++) { const v = sched[i.toString()]; if (v && v.includes('v')) matchups.push(v); }
 
   const scoresMap = {};
-  query(`SELECT Player, Net, Gross FROM Scores WHERE Date=${date} AND League="Hugh's"`)
+  query(`SELECT Player, Net, Gross FROM Scores WHERE Date=${date} AND League=CURRENT_LEAGUE`)
     .forEach(r => scoresMap[r.Player] = r);
 
   const teamsMap = {};
@@ -7169,15 +7168,15 @@ function loadMatchesTable() {
     .forEach(r => { if (!teamsMap[r.Team]) teamsMap[r.Team] = {}; teamsMap[r.Team][r.Grade] = r.Player; });
 
   const matchesMap = {};
-  query(`SELECT Player, Points, Team_Points, Team_Net, Opponent, Partner FROM Matches WHERE Date=${date} AND League="Hugh's"`)
+  query(`SELECT Player, Points, Team_Points, Team_Net, Opponent, Partner FROM Matches WHERE Date=${date} AND League=CURRENT_LEAGUE`)
     .forEach(r => matchesMap[r.Player] = r);
 
   const subsMap = {};
-  query(`SELECT Team, Grade, Player FROM Subs WHERE Date=${date} AND League="Hugh's"`)
+  query(`SELECT Team, Grade, Player FROM Subs WHERE Date=${date} AND League=CURRENT_LEAGUE`)
     .forEach(r => subsMap[`${r.Team}-${r.Grade}`] = r.Player);
 
   const hdcpMap = {};
-  query(`SELECT h.Player, h.Hdcp FROM Handicaps h WHERE h.League="Hugh's" AND h.Date=(SELECT MAX(h2.Date) FROM Handicaps h2 WHERE h2.Player=h.Player AND h2.League=h.League AND h2.Date<${date})`)
+  query(`SELECT h.Player, h.Hdcp FROM Handicaps h WHERE h.League=CURRENT_LEAGUE AND h.Date=(SELECT MAX(h2.Date) FROM Handicaps h2 WHERE h2.Player=h.Player AND h2.League=h.League AND h2.Date<${date})`)
     .forEach(r => hdcpMap[r.Player] = parseInt(r.Hdcp)||0);
 
   const thStyle = 'background:var(--green);color:var(--gold);padding:6px 8px;text-align:left;font-size:11px;border:1px solid #2d6a4f;white-space:nowrap';
@@ -7353,7 +7352,7 @@ function loadLeaders() {
   // Populate Period dropdown (Career + each season) once
   const periodSel = document.getElementById('leadersPeriod');
   if (periodSel && periodSel.options.length <= 1) {
-    const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" ORDER BY Season DESC`).map(r => r.Season);
+    const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League=CURRENT_LEAGUE ORDER BY Season DESC`).map(r => r.Season);
     periodSel.innerHTML = '<option value="career">Career (All-Time)</option>' +
       seasons.map(s => `<option value="${s}">${s} Season</option>`).join('');
   }
@@ -7417,7 +7416,7 @@ function loadLeaders() {
 
     // Build post-season date exclusion set for this season
     const psExclude = new Set();
-    const psRow = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND Season=${szn} AND PostSeasonDt IS NOT NULL`)[0];
+    const psRow = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND Season=${szn} AND PostSeasonDt IS NOT NULL`)[0];
     if (psRow?.PostSeasonDt) {
       const p = psRow.PostSeasonDt.split('/');
       psExclude.add(`${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`);
@@ -7491,7 +7490,7 @@ function loadLeaders() {
 
 function loadStablefordTab() {
   if (!db) return;
-  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
   const seasonSel = document.getElementById('stablefordSeason');
   const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -7501,7 +7500,7 @@ function loadStablefordTab() {
 
 function populateStablefordDateDropdown() {
   const season = document.getElementById('stablefordSeason').value;
-  const dates  = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="Hugh's" AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' AND Gross IS NOT NULL AND Gross != 0 ORDER BY Date DESC`);
+  const dates  = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League=CURRENT_LEAGUE AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' AND Gross IS NOT NULL AND Gross != 0 ORDER BY Date DESC`);
   const sel = document.getElementById('stablefordDate');
   sel.innerHTML = dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
   if (!sel.dataset.listener) {
@@ -7671,7 +7670,7 @@ function loadSfStandings() {
 
   const seasonSel = document.getElementById('sfStandingsSeason');
   if (seasonSel.options.length === 0) {
-    const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+    const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
     const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
     seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
     seasonSel.value = currentSeason;
@@ -7897,7 +7896,7 @@ function loadStableford() {
 }
 
 function initSkinsTab() {
-  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
   const seasonSel = document.getElementById('skinsSeason');
   const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -7919,7 +7918,7 @@ function populateSkinsDateDropdown(loadAfter = true) {
   const skSel = document.getElementById('skinsDate');
   const skinDates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='Skin' AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     UNION
-    SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League="Hugh's"), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
+    SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League=CURRENT_LEAGUE), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     ORDER BY sDate DESC`);
   skSel.innerHTML = skinDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
   if (loadAfter) loadSkins();
@@ -8081,14 +8080,14 @@ function loadNoShows() {
         const pd = parsePostSeasonDates(psR.PostSeasonDt);
         if (pd) { psExcl.add(String(pd.week1)); psExcl.add(String(pd.week2)); }
       }
-      const playedDates = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="Hugh's" AND Date >= '${s}0101' AND Date < '${parseInt(s)+1}0101' ORDER BY Date`)
+      const playedDates = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League=CURRENT_LEAGUE AND Date >= '${s}0101' AND Date < '${parseInt(s)+1}0101' ORDER BY Date`)
         .map(r => r.sDate||r.Date).filter(d => !psExcl.has(String(d)));
       const teamPlayers = query(`SELECT Player, Team, Grade FROM Teams WHERE Year=${s} ORDER BY Team, Grade`);
       totalWeeks += playedDates.length;
       playedDates.forEach(date => {
-        const scored = new Set(query(`SELECT Player FROM Scores WHERE Date=${date} AND League="Hugh's"`).map(r => r.Player));
+        const scored = new Set(query(`SELECT Player FROM Scores WHERE Date=${date} AND League=CURRENT_LEAGUE`).map(r => r.Player));
         teamPlayers.forEach(tp => {
-          const subbedOut = query(`SELECT 1 FROM Subs WHERE Date=${date} AND Team=${tp.Team} AND Grade='${tp.Grade}' AND League="Hugh's"`).length > 0;
+          const subbedOut = query(`SELECT 1 FROM Subs WHERE Date=${date} AND Team=${tp.Team} AND Grade='${tp.Grade}' AND League=CURRENT_LEAGUE`).length > 0;
           if (!scored.has(tp.Player) && !subbedOut) {
             if (!careerMap[tp.Player]) careerMap[tp.Player] = { count: 0, seasons: {} };
             careerMap[tp.Player].count++;
@@ -8157,7 +8156,7 @@ function loadNoShows() {
   // Get all played dates for this season
   const playedDates = query(`
     SELECT DISTINCT Date as sDate FROM Scores 
-    WHERE League="Hugh's" AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
+    WHERE League=CURRENT_LEAGUE AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     ORDER BY Date
   `).map(r => r.sDate||r.Date).filter(date => !psExclude.has(String(date)));
 
@@ -8168,14 +8167,14 @@ function loadNoShows() {
   const noshows = [];
   playedDates.forEach(date => {
     const scoredPlayers = new Set(
-      query(`SELECT Player FROM Scores WHERE Date=${date} AND League="Hugh's"`).map(r => r.Player)
+      query(`SELECT Player FROM Scores WHERE Date=${date} AND League=CURRENT_LEAGUE`).map(r => r.Player)
     );
     const subPlayers = new Set(
-      query(`SELECT Player FROM Subs WHERE Date=${date} AND League="Hugh's"`).map(r => r.Player)
+      query(`SELECT Player FROM Subs WHERE Date=${date} AND League=CURRENT_LEAGUE`).map(r => r.Player)
     );
     teamPlayers.forEach(tp => {
       // Check if a sub covered this player's slot
-      const subbedOut = query(`SELECT 1 FROM Subs WHERE Date=${date} AND Team=${tp.Team} AND Grade='${tp.Grade}' AND League="Hugh's"`).length > 0;
+      const subbedOut = query(`SELECT 1 FROM Subs WHERE Date=${date} AND Team=${tp.Team} AND Grade='${tp.Grade}' AND League=CURRENT_LEAGUE`).length > 0;
       // Only count as no-show if they didn't play AND no sub covered their slot
       if (!scoredPlayers.has(tp.Player) && !subbedOut) {
         noshows.push({ date, player: tp.Player, team: tp.Team, grade: tp.Grade });
@@ -8342,14 +8341,14 @@ function loadHandicaps() {
   // Populate As Of date dropdown (most recent first, defaults to most recent = current)
   const asOfSel = document.getElementById('hdcpAsOfDate');
   if (asOfSel && asOfSel.options.length === 0) {
-    const dates = query(`SELECT DISTINCT Date as sDate FROM Handicaps WHERE League="Hugh's" ORDER BY Date DESC LIMIT 60`);
+    const dates = query(`SELECT DISTINCT Date as sDate FROM Handicaps WHERE League=CURRENT_LEAGUE ORDER BY Date DESC LIMIT 60`);
     asOfSel.innerHTML = '<option value="">Most Recent</option>' +
       dates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
   }
   const asOfDate = asOfSel ? asOfSel.value : '';
 
   const rosterPlayers = regularsOnly
-    ? new Set(query(`SELECT DISTINCT Player FROM Teams WHERE League="Hugh's" AND Year=${season}`).map(r => r.Player))
+    ? new Set(query(`SELECT DISTINCT Player FROM Teams WHERE League=CURRENT_LEAGUE AND Year=${season}`).map(r => r.Player))
     : null;
 
   // If a specific "as of" date is chosen, snapshot handicaps as they stood on/before that date;
@@ -8381,7 +8380,7 @@ function loadHandicaps() {
     const cutoff = asOfDate || '99999999';
     const scoreRows = query(`
       SELECT Gross, Date FROM Scores
-      WHERE League="Hugh's" AND Player=? AND Gross IS NOT NULL AND Gross != 0 AND Date <= ?
+      WHERE League=CURRENT_LEAGUE AND Player=? AND Gross IS NOT NULL AND Gross != 0 AND Date <= ?
       ORDER BY Date DESC LIMIT 5
     `, [r.Player, cutoff]);
     if (scoreRows.length) {
@@ -8460,7 +8459,7 @@ function loadHandicaps() {
 // ── CTPs TAB ──
 function loadCtpsTab() {
   if (!db) return;
-  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
   const seasonSel = document.getElementById('ctpsSeason');
   const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -8511,7 +8510,7 @@ function populateCtpsDateDropdown(loadAfter = true) {
   const sel = document.getElementById('ctpsDate');
   const dates = query(`SELECT DISTINCT Date as sDate FROM Payments WHERE Desc='CTP' AND Detail='Payment' AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     UNION
-    SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League="Hugh's"), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
+    SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League=CURRENT_LEAGUE), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     ORDER BY sDate DESC`);
   sel.innerHTML = dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
   if (loadAfter) {
@@ -8554,7 +8553,7 @@ function loadCtps() {
   if (repairedCarryovers) saveDBToServer();
 
   // CTP holes = par 3 holes on the current 9
-  const courseRow = query(`SELECT * FROM Courses WHERE Name=(SELECT Course FROM SeasonSettings WHERE League="Hugh's" AND Season=${season})`)[0];
+  const courseRow = query(`SELECT * FROM Courses WHERE Name=(SELECT Course FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND Season=${season})`)[0];
   const holeSet = new Set();
   if (courseRow) {
     const pars = fb === 'Front'
@@ -8874,7 +8873,7 @@ function reconcileCtpCarryovers(date) {
   const league = "Hugh's";
   const season = String(date).substring(0, 4);
   const fb = getScheduledFrontBack(date, league);
-  const courseRow = query(`SELECT * FROM Courses WHERE Name=(SELECT Course FROM SeasonSettings WHERE League="Hugh's" AND Season=${season})`)[0];
+  const courseRow = query(`SELECT * FROM Courses WHERE Name=(SELECT Course FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND Season=${season})`)[0];
   if (!courseRow) return;
 
   const pars = fb === 'Front'
@@ -8922,7 +8921,7 @@ function loadPaymentsTab() {
 function populatePaymentsDateDropdown() {
   const season = document.getElementById('paymentsSeason').value;
   const dSel   = document.getElementById('paymentsDate');
-  const dates  = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="Hugh's" AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' ORDER BY Date DESC`);
+  const dates  = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League=CURRENT_LEAGUE AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' ORDER BY Date DESC`);
   dSel.innerHTML = `<option value="">All Season</option>` +
     dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
 }
@@ -9664,7 +9663,7 @@ function renderStatsHistory() {
     // Build set of all post-season dates from SeasonSettings
     if (!window._psDateSet) {
       window._psDateSet = new Set();
-      query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`).forEach(r => {
+      query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL`).forEach(r => {
         const parsed = parsePostSeasonDates(r.PostSeasonDt);
         if (parsed) { window._psDateSet.add(parsed.week1); window._psDateSet.add(parsed.week2); }
       });
@@ -9690,7 +9689,7 @@ function loadPlayerStats() {
   // Populate player dropdown once
   const playerSel = document.getElementById('statsPlayer');
   if (playerSel && playerSel.options.length === 0) {
-    const players = query(`SELECT DISTINCT Player FROM Teams WHERE League="Hugh's" ORDER BY Player`);
+    const players = query(`SELECT DISTINCT Player FROM Teams WHERE League=CURRENT_LEAGUE ORDER BY Player`);
     players.forEach(r => {
       const o = document.createElement('option');
       o.value = r.Player; o.textContent = r.Player;
@@ -9705,7 +9704,7 @@ function loadPlayerStats() {
   // Populate season dropdown once
   const seasonSel = document.getElementById('statsSeason');
   if (seasonSel && seasonSel.options.length === 1) {
-    const years = query(`SELECT DISTINCT Year FROM Teams WHERE League="Hugh's" ORDER BY Year DESC`);
+    const years = query(`SELECT DISTINCT Year FROM Teams WHERE League=CURRENT_LEAGUE ORDER BY Year DESC`);
     years.forEach(r => {
       const o = document.createElement('option');
       o.value = r.Year; o.textContent = r.Year;
@@ -9720,14 +9719,14 @@ function loadPlayerStats() {
   const seasonClause = season ? `AND Date >= ${season}0101 AND Date <= ${season}1231` : '';
 
   // ── Summary stats ──────────────────────────────────────────────────────────
-  const frontAvgRow = query(`SELECT AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE Player=? AND League="Hugh's" AND FrontBack='Front' AND Gross > 0 ${seasonClause}`, [player])[0];
-  const backAvgRow  = query(`SELECT AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE Player=? AND League="Hugh's" AND FrontBack='Back'  AND Gross > 0 ${seasonClause}`, [player])[0];
+  const frontAvgRow = query(`SELECT AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE Player=? AND League=CURRENT_LEAGUE AND FrontBack='Front' AND Gross > 0 ${seasonClause}`, [player])[0];
+  const backAvgRow  = query(`SELECT AVG(Gross) as avg, COUNT(*) as cnt FROM Scores WHERE Player=? AND League=CURRENT_LEAGUE AND FrontBack='Back'  AND Gross > 0 ${seasonClause}`, [player])[0];
   const frontAvg    = frontAvgRow?.avg != null ? Number(frontAvgRow.avg).toFixed(1) : '—';
   const backAvg     = backAvgRow?.avg  != null ? Number(backAvgRow.avg).toFixed(1)  : '—';
   const frontRounds = frontAvgRow?.cnt || 0;
   const backRounds  = backAvgRow?.cnt  || 0;
-  const frontBest   = query(`SELECT MIN(Gross) as v FROM Scores WHERE Player=? AND League="Hugh's" AND FrontBack='Front' AND Gross > 0 ${seasonClause}`, [player])[0]?.v ?? '—';
-  const backBest    = query(`SELECT MIN(Gross) as v FROM Scores WHERE Player=? AND League="Hugh's" AND FrontBack='Back'  AND Gross > 0 ${seasonClause}`, [player])[0]?.v ?? '—';
+  const frontBest   = query(`SELECT MIN(Gross) as v FROM Scores WHERE Player=? AND League=CURRENT_LEAGUE AND FrontBack='Front' AND Gross > 0 ${seasonClause}`, [player])[0]?.v ?? '—';
+  const backBest    = query(`SELECT MIN(Gross) as v FROM Scores WHERE Player=? AND League=CURRENT_LEAGUE AND FrontBack='Back'  AND Gross > 0 ${seasonClause}`, [player])[0]?.v ?? '—';
 
   const summaryEl = document.getElementById('statsSummary');
   if (summaryEl) {
@@ -9756,7 +9755,7 @@ function loadPlayerStats() {
 
     // Gross avg per hole (SQL)
     const cols = [1,2,3,4,5,6,7,8,9].map(i => `AVG("${i}") as h${i}`).join(', ');
-    const row  = query(`SELECT ${cols} FROM Scores WHERE Player=? AND League="Hugh's" AND FrontBack=? AND Gross > 0 ${seasonClause}`, [player, fb])[0];
+    const row  = query(`SELECT ${cols} FROM Scores WHERE Player=? AND League=CURRENT_LEAGUE AND FrontBack=? AND Gross > 0 ${seasonClause}`, [player, fb])[0];
     const avgs = Array.from({length:9}, (_, i) => row?.[`h${i+1}`] ?? null);
 
     // Net avg per hole — computed from history rows using PHdcp
@@ -9887,7 +9886,7 @@ function loadH2H() {
   // Populate player dropdown once
   const playerSel = document.getElementById('h2hPlayer');
   if (playerSel && playerSel.options.length === 0) {
-    const players = query(`SELECT DISTINCT Player FROM Matches WHERE League="Hugh's" ORDER BY Player`);
+    const players = query(`SELECT DISTINCT Player FROM Matches WHERE League=CURRENT_LEAGUE ORDER BY Player`);
     players.forEach(r => {
       const o = document.createElement('option');
       o.value = o.textContent = r.Player;
@@ -9900,7 +9899,7 @@ function loadH2H() {
   // Populate season dropdown once
   const seasonSel = document.getElementById('h2hSeason');
   if (seasonSel && seasonSel.options.length === 1) {
-    const years = query(`SELECT DISTINCT SUBSTR(CAST(Date AS TEXT),1,4) as yr FROM Matches WHERE League="Hugh's" ORDER BY yr DESC`);
+    const years = query(`SELECT DISTINCT SUBSTR(CAST(Date AS TEXT),1,4) as yr FROM Matches WHERE League=CURRENT_LEAGUE ORDER BY yr DESC`);
     years.forEach(r => {
       const o = document.createElement('option');
       o.value = o.textContent = r.yr;
@@ -9915,11 +9914,11 @@ function loadH2H() {
   const yearClause = season ? `AND CAST(Date AS TEXT) LIKE '${season}%'` : '';
 
   // Get all match dates for this league/season
-  const matchDates = query(`SELECT DISTINCT CAST(Date AS TEXT) as d FROM Matches WHERE League="Hugh's" ${yearClause} ORDER BY d`);
+  const matchDates = query(`SELECT DISTINCT CAST(Date AS TEXT) as d FROM Matches WHERE League=CURRENT_LEAGUE ${yearClause} ORDER BY d`);
 
   // Get schedule rows to find team matchups per date
   const schedFilter = season ? `AND CAST(Date AS TEXT) LIKE '${season}%'` : '';
-  const schedRows = query(`SELECT * FROM Schedule WHERE League="Hugh's" ${schedFilter}`);
+  const schedRows = query(`SELECT * FROM Schedule WHERE League=CURRENT_LEAGUE ${schedFilter}`);
   const dateMatchups = {};
   for (const s of schedRows) {
     const date = String(s.Date);
@@ -9935,7 +9934,7 @@ function loadH2H() {
 
   // Get Teams: year → team → grade → player
   const teamFilter = season ? `AND Year='${season}'` : '';
-  const teamsRows = query(`SELECT Player, CAST(Team AS INTEGER) as Team, Grade, CAST(Year AS TEXT) as Year FROM Teams WHERE League="Hugh's" ${teamFilter}`);
+  const teamsRows = query(`SELECT Player, CAST(Team AS INTEGER) as Team, Grade, CAST(Year AS TEXT) as Year FROM Teams WHERE League=CURRENT_LEAGUE ${teamFilter}`);
   const teamMap = {}; // {year: {team: {grade: player}}}
   for (const t of teamsRows) {
     if (!teamMap[t.Year]) teamMap[t.Year] = {};
@@ -9944,7 +9943,7 @@ function loadH2H() {
   }
 
   // Get Subs: date → team → grade → player
-  const subsRows = query(`SELECT Player, CAST(Team AS INTEGER) as Team, Grade, CAST(Date AS TEXT) as Date FROM Subs WHERE League="Hugh's"`);
+  const subsRows = query(`SELECT Player, CAST(Team AS INTEGER) as Team, Grade, CAST(Date AS TEXT) as Date FROM Subs WHERE League=CURRENT_LEAGUE`);
   const subsMap = {};
   for (const s of subsRows) {
     if (!subsMap[s.Date]) subsMap[s.Date] = {};
@@ -9953,7 +9952,7 @@ function loadH2H() {
   }
 
   // Get Matches points: date → player → points
-  const matchPts = query(`SELECT Player, CAST(Date AS TEXT) as Date, Points FROM Matches WHERE League="Hugh's" ${yearClause}`);
+  const matchPts = query(`SELECT Player, CAST(Date AS TEXT) as Date, Points FROM Matches WHERE League=CURRENT_LEAGUE ${yearClause}`);
   const pointsMap = {};
   for (const m of matchPts) {
     if (!pointsMap[m.Date]) pointsMap[m.Date] = {};
@@ -10084,7 +10083,7 @@ function loadRankings() {
   // Populate season dropdown once
   const seasonSel = document.getElementById('rankingsSeason');
   if (seasonSel && seasonSel.options.length === 1) {
-    query(`SELECT DISTINCT Year FROM Teams WHERE League="Hugh's" ORDER BY Year DESC`).forEach(r => {
+    query(`SELECT DISTINCT Year FROM Teams WHERE League=CURRENT_LEAGUE ORDER BY Year DESC`).forEach(r => {
       const o = document.createElement('option');
       o.value = r.Year; o.textContent = r.Year;
       seasonSel.appendChild(o);
@@ -10101,7 +10100,7 @@ function loadRankings() {
     SELECT Player, FrontBack, Gross, Net,
            "1","2","3","4","5","6","7","8","9"
     FROM Scores
-    WHERE League="Hugh's" AND Gross > 0 ${seasonClause}
+    WHERE League=CURRENT_LEAGUE AND Gross > 0 ${seasonClause}
   `);
 
   if (!allRows.length) {
@@ -10339,11 +10338,11 @@ function loadSchedule() {
   });
 }
 
-// ── ADMIN TAB ──
 // ── League identity — single place to change for multi-league support ──
 // TODO (multi-league): read this from DB or URL param when supporting multiple leagues
 const CURRENT_LEAGUE = "Hugh's";
 
+// ── ADMIN TAB ──
 const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','scores','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','emaillog','proposals','seasonsetup'];
 const ADMIN_GROUPS = {
   tables: ['players','teams','subs','leaguesettings'],
@@ -10928,12 +10927,12 @@ function checkReadyToSendPdf(date) {
   if (!db || !date) return;
   // Check 1: all scores in — compare against players who actually played (Points > 0),
   // so no-shows (0-pt forfeits in Matches, no Scores row) don't block the prompt
-  const playedCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Matches WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Points > 0`)[0]?.c || 0;
-  const scoredCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Gross IS NOT NULL AND Gross != 0`)[0]?.c || 0;
+  const playedCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Matches WHERE CAST(Date AS INTEGER)=${date} AND League=CURRENT_LEAGUE AND Points > 0`)[0]?.c || 0;
+  const scoredCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League=CURRENT_LEAGUE AND Gross IS NOT NULL AND Gross != 0`)[0]?.c || 0;
   if (playedCount === 0 || scoredCount < playedCount) return; // scores not complete yet — stay quiet
 
   // Check 2: all CTP holes resolved (winner or carryover)
-  const fb = query(`SELECT FrontBack FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" LIMIT 1`)[0]?.FrontBack || 'Front';
+  const fb = query(`SELECT FrontBack FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League=CURRENT_LEAGUE LIMIT 1`)[0]?.FrontBack || 'Front';
   const nine = fb === 'Back' ? courseData?.back : courseData?.front;
   const par3Holes = (nine?.nums || []).filter((n, i) => parseInt(nine?.pars?.[i]) === 3);
   const allCtpsResolved = par3Holes.every(hole => {
@@ -10965,19 +10964,19 @@ async function sendWeekResults() {
   const date = parseInt(dateVal);
 
   // ── Check 1: Scores — exclude no-shows (0-pt Matches rows, no Scores row) ──
-  const playedCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Matches WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Points > 0`)[0]?.c || 0;
-  const scoredCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Gross IS NOT NULL AND Gross != 0`)[0]?.c || 0;
+  const playedCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Matches WHERE CAST(Date AS INTEGER)=${date} AND League=CURRENT_LEAGUE AND Points > 0`)[0]?.c || 0;
+  const scoredCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League=CURRENT_LEAGUE AND Gross IS NOT NULL AND Gross != 0`)[0]?.c || 0;
   const scoresOk = playedCount > 0 && scoredCount >= playedCount;
 
   // ── Check 2: CTPs assigned ────────────────────────────────────────────────
-  const fb = query(`SELECT FrontBack FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" LIMIT 1`)[0]?.FrontBack || 'Front';
+  const fb = query(`SELECT FrontBack FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League=CURRENT_LEAGUE LIMIT 1`)[0]?.FrontBack || 'Front';
   const nine = (fb === 'Back' ? courseData?.back : courseData?.front);
   const par3Count = nine?.pars ? nine.pars.filter(p => parseInt(p) === 3).length : 0;
   const ctpWinners = query(`SELECT COUNT(DISTINCT Detail) as c FROM Payments WHERE CAST(Date AS INTEGER)=${date} AND Desc='CTP' AND Detail LIKE '#%' AND Player!='Kitty'`)[0]?.c || 0;
   const ctpsOk = par3Count > 0 && ctpWinners >= par3Count;
 
   // ── Check 3: Money paid out ───────────────────────────────────────────────
-  const unpaidCount = query(`SELECT COUNT(*) as c FROM Payments WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','') AND Player!='Kitty' AND (DatePaid IS NULL OR DatePaid='')`)[0]?.c || 0;
+  const unpaidCount = query(`SELECT COUNT(*) as c FROM Payments WHERE CAST(Date AS INTEGER)=${date} AND League=CURRENT_LEAGUE AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','') AND Player!='Kitty' AND (DatePaid IS NULL OR DatePaid='')`)[0]?.c || 0;
   const moneyOk = unpaidCount === 0;
 
   const allGood = scoresOk && ctpsOk && moneyOk;
@@ -11084,16 +11083,12 @@ function createReportPdf(kind) {
 
 function loadAdminTab() {
   if (!db) return;
-  refreshSeasonSetupVisibility();
   showAdminSection('scores');
   document.getElementById('playerSearch').addEventListener('input', loadAdminPlayers);
   // Show Compare Live button only in sandbox environment
   const isSandboxEnv = isSandboxHost() || location.port === '8446';
   const compareBtn = document.getElementById('adminBtnCompare');
   if (compareBtn) compareBtn.style.display = isSandboxEnv ? '' : 'none';
-  // Show Sync button only in sandbox environment
-  const syncBtn = document.getElementById('adminBtnSync');
-  if (syncBtn) syncBtn.style.display = isSandboxEnv ? '' : 'none';
 }
 
 // ── PLAYERS ──
@@ -11101,7 +11096,7 @@ let scheduleSnapshot = null;
 
 function saveScheduleSnapshot(season) {
   const iSeason2 = parseInt(season);
-  const rows = query(`SELECT Date as sDate,"1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24",FrontBack,Status FROM Schedule WHERE League="Hugh's" AND Date >= '${iSeason2}0101' AND Date < '${iSeason2+1}0101' ORDER BY Date`);
+  const rows = query(`SELECT Date as sDate,"1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24",FrontBack,Status FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= '${iSeason2}0101' AND Date < '${iSeason2+1}0101' ORDER BY Date`);
   scheduleSnapshot = {
     season,
     schedule: rows,
@@ -11115,7 +11110,7 @@ function undoScheduleChange() {
   if (!scheduleSnapshot) { alert('Nothing to undo'); return; }
   const { season, schedule, lp } = scheduleSnapshot;
   const iSeason3 = parseInt(season);
-  serverRun(`DELETE FROM Schedule WHERE League="Hugh's" AND Date >= '${iSeason3}0101' AND Date < '${iSeason3+1}0101'`);
+  serverRun(`DELETE FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= '${iSeason3}0101' AND Date < '${iSeason3+1}0101'`);
   schedule.forEach(r => {
   if (!r.sDate) { alert('Skipping row with null sDate: ' + JSON.stringify(r)); return; }
     serverRun(`INSERT INTO Schedule (League,Date,"1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24",FrontBack,Status) VALUES ("Hugh's",?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -11354,7 +11349,7 @@ async function markSelectedPaid(season) {
   const now = new Date().toLocaleString();
   const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
   for (const r of rows) {
-    await serverRun(`UPDATE Payments SET DatePaid=? WHERE League="Hugh's" AND Player=? AND Date=? AND Desc=? AND Detail=? AND (DatePaid IS NULL OR DatePaid='')`,
+    await serverRun(`UPDATE Payments SET DatePaid=? WHERE League=CURRENT_LEAGUE AND Player=? AND Date=? AND Desc=? AND Detail=? AND (DatePaid IS NULL OR DatePaid='')`,
       [now, r.Player, r.Date, r.Desc, r.Detail]);
     await serverRun(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
       [logTime, 'INFO', 'markSelectedPaid', 'HughsGolf', `Bulk marked ${r.Desc} ${r.Detail} paid to ${r.Player}`, `amount=$${r.Earned.toFixed(2)} by=${currentUser.name}`, logTime]);
@@ -11371,7 +11366,7 @@ async function sendUnpaidReminders() {
   const seasonEnd = `${parseInt(season)+1}0101`;
   const heldRows = query(`
     SELECT Player, Date, "Desc", Detail, Earned FROM Payments
-    WHERE League="Hugh's" AND "Desc" IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','')
+    WHERE League=CURRENT_LEAGUE AND "Desc" IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','')
     AND Player != 'Kitty' AND (DatePaid IS NULL OR DatePaid='') AND Date >= ${season}0101 AND Date < ${seasonEnd}
     ORDER BY Player, Date
   `);
@@ -11462,11 +11457,11 @@ async function confirmMarkPaid() {
   }
 
   // Get existing comment and append notify tag
-  const existing = query(`SELECT Comment FROM Payments WHERE League="Hugh's" AND Player=? AND Date=? AND Desc=? AND Detail=?`, [player, date, desc, detail])[0];
+  const existing = query(`SELECT Comment FROM Payments WHERE League=CURRENT_LEAGUE AND Player=? AND Date=? AND Desc=? AND Detail=?`, [player, date, desc, detail])[0];
   const baseComment = (existing?.Comment || '').replace(/\s*\[notified:[^\]]*\]/, '');
   const newComment = baseComment + notifyTag;
 
-  await serverRun(`UPDATE Payments SET DatePaid=?, Comment=? WHERE League="Hugh's" AND Player=? AND Date=? AND Desc=? AND Detail=?`,
+  await serverRun(`UPDATE Payments SET DatePaid=?, Comment=? WHERE League=CURRENT_LEAGUE AND Player=? AND Date=? AND Desc=? AND Detail=?`,
     [now, newComment, player, date, desc, detail]);
 
   // Log it
@@ -11525,25 +11520,25 @@ function showEmailResultsToast(date) {
 
 // ── Need a Sub ─────────────────────────────────────────────────────────────────
 function buildNeedSubMessage(forPlayer, dateLabel, dateVal) {
-  const schedFb = query(`SELECT FrontBack FROM Schedule WHERE League="Hugh's" AND Date=?`, [dateVal])[0]?.FrontBack;
+  const schedFb = query(`SELECT FrontBack FROM Schedule WHERE League=CURRENT_LEAGUE AND Date=?`, [dateVal])[0]?.FrontBack;
   const nineLabel = schedFb ? ` (${schedFb} 9)` : '';
   let msg = `Hi! ${forPlayer} needs a sub for the round on ${dateLabel}${nineLabel} at 4pm at Boone Links. Can you play? Let us know if you're interested!`;
 
   // Try to find partner and foursome from Matches table (most recent date before selected)
   // Or from Teams table if no match data exists yet for this date
   const season = needSubSeason || query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
-  const teamRow = query(`SELECT Team, Grade FROM Teams WHERE League="Hugh's" AND Year=${season} AND Player=?`, [forPlayer])[0];
+  const teamRow = query(`SELECT Team, Grade FROM Teams WHERE League=CURRENT_LEAGUE AND Year=${season} AND Player=?`, [forPlayer])[0];
   if (!teamRow) return msg;
 
   // Partner = other player on same team
-  const partnerRow = query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season} AND Team=? AND Grade!=?`, [teamRow.Team, teamRow.Grade])[0];
+  const partnerRow = query(`SELECT Player FROM Teams WHERE League=CURRENT_LEAGUE AND Year=${season} AND Team=? AND Grade!=?`, [teamRow.Team, teamRow.Grade])[0];
   const partner = partnerRow?.Player || null;
 
   if (partner) msg += `\n\nYour partner is ${partner}.`;
 
   // Find probable foursome from Schedule slot pairing
   // Slots are paired: 1+2, 3+4, 5+6, etc. — each pair is a foursome
-  const sched = query(`SELECT * FROM Schedule WHERE League="Hugh's" AND Date=?`, [dateVal])[0];
+  const sched = query(`SELECT * FROM Schedule WHERE League=CURRENT_LEAGUE AND Date=?`, [dateVal])[0];
   if (sched && teamRow) {
     let playerSlot = null;
     for (let i = 1; i <= 24; i++) {
@@ -11553,7 +11548,7 @@ function buildNeedSubMessage(forPlayer, dateLabel, dateVal) {
       const oppSlot  = playerSlot % 2 === 1 ? playerSlot + 1 : playerSlot - 1;
       const oppTeam  = parseInt(sched[String(oppSlot)]);
       if (oppTeam) {
-        const oppPlayers = query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season} AND Team=?`, [oppTeam]).map(r => r.Player);
+        const oppPlayers = query(`SELECT Player FROM Teams WHERE League=CURRENT_LEAGUE AND Year=${season} AND Team=?`, [oppTeam]).map(r => r.Player);
         const foursome   = [partner, ...oppPlayers].filter(Boolean);
         if (foursome.length) msg += `\nProbable foursome: ${foursome.join(', ')} + sub.`;
       }
@@ -11616,35 +11611,35 @@ function showNeedSub() {
   const skipCb = document.getElementById('needSubSkipEmail');
   if (skipCb) skipCb.checked = false;
 
-  const season = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League="Hugh's"`)[0]?.s
-              || query(`SELECT MAX(Year) as y FROM Teams WHERE League="Hugh's"`)[0]?.y
+  const season = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League=CURRENT_LEAGUE`)[0]?.s
+              || query(`SELECT MAX(Year) as y FROM Teams WHERE League=CURRENT_LEAGUE`)[0]?.y
               || new Date().getFullYear();
   needSubSeason = parseInt(season);
 
   // "Requesting sub for" dropdown
   const forSel = document.getElementById('needSubFor');
-  const allPlayers = query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season} ORDER BY Player`).map(r => r.Player);
+  const allPlayers = query(`SELECT Player FROM Teams WHERE League=CURRENT_LEAGUE AND Year=${season} ORDER BY Player`).map(r => r.Player);
   forSel.innerHTML = allPlayers.map(p => `<option value="${p}" ${p===currentUser.name?'selected':''}>${p}</option>`).join('');
   const today = new Date();
   const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
 
   // Upcoming dates from schedule
-  const dates = query(`SELECT DISTINCT Date as sDate FROM Schedule WHERE League="Hugh's" AND CAST(Date AS INTEGER) >= ${todayInt} AND Date >= ${season}0101 ORDER BY Date LIMIT 8`);
+  const dates = query(`SELECT DISTINCT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND CAST(Date AS INTEGER) >= ${todayInt} AND Date >= ${season}0101 ORDER BY Date LIMIT 8`);
   const dateSel = document.getElementById('needSubDate');
   dateSel.innerHTML = dates.map(d => `<option value="${d.sDate}">${fmtDate(d.sDate)}</option>`).join('');
 
   // Eligible sub candidates = non-roster players who have subbed now or in prior years.
   needSubCandidates = query(`
     SELECT p.Player, p.Email, p.Phone, p.CellCarrier,
-      (SELECT COUNT(*) FROM Subs su WHERE su.Player = p.Player AND su.League="Hugh's" AND su.Date >= ${season}0101 AND su.Date < ${parseInt(season)+1}0101) as SubCount,
-      (SELECT COUNT(*) FROM Scores s WHERE s.Player = p.Player AND s.League="Hugh's" AND s.Date >= ${season}0101 AND s.Date < ${parseInt(season)+1}0101) as PlayedCount,
-      (SELECT MAX(CAST(su2.Date AS INTEGER)) FROM Subs su2 WHERE su2.Player = p.Player AND su2.League="Hugh's" AND CAST(su2.Date AS INTEGER) < ${season}0101) as LastSubDate
+      (SELECT COUNT(*) FROM Subs su WHERE su.Player = p.Player AND su.League=CURRENT_LEAGUE AND su.Date >= ${season}0101 AND su.Date < ${parseInt(season)+1}0101) as SubCount,
+      (SELECT COUNT(*) FROM Scores s WHERE s.Player = p.Player AND s.League=CURRENT_LEAGUE AND s.Date >= ${season}0101 AND s.Date < ${parseInt(season)+1}0101) as PlayedCount,
+      (SELECT MAX(CAST(su2.Date AS INTEGER)) FROM Subs su2 WHERE su2.Player = p.Player AND su2.League=CURRENT_LEAGUE AND CAST(su2.Date AS INTEGER) < ${season}0101) as LastSubDate
     FROM Players p
-    WHERE p.Player NOT IN (SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season})
+    WHERE p.Player NOT IN (SELECT Player FROM Teams WHERE League=CURRENT_LEAGUE AND Year=${season})
       AND COALESCE(p.BlockSubs,'N') != 'Y'
       AND (
-        EXISTS (SELECT 1 FROM Subs su WHERE su.Player = p.Player AND su.League="Hugh's" AND su.Date >= ${season}0101 AND su.Date < ${parseInt(season)+1}0101)
-        OR EXISTS (SELECT 1 FROM Subs su2 WHERE su2.Player = p.Player AND su2.League="Hugh's" AND CAST(su2.Date AS INTEGER) < ${season}0101)
+        EXISTS (SELECT 1 FROM Subs su WHERE su.Player = p.Player AND su.League=CURRENT_LEAGUE AND su.Date >= ${season}0101 AND su.Date < ${parseInt(season)+1}0101)
+        OR EXISTS (SELECT 1 FROM Subs su2 WHERE su2.Player = p.Player AND su2.League=CURRENT_LEAGUE AND CAST(su2.Date AS INTEGER) < ${season}0101)
       )
     ORDER BY SubCount DESC, PlayedCount DESC, LastSubDate DESC, p.Player
   `);
@@ -11674,12 +11669,12 @@ function updateNeedSubGroupSuggestion() {
 
   // Find the player's team
   const season = needSubSeason || query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
-  const teamRow = query(`SELECT Team FROM Teams WHERE League="Hugh's" AND Year=${season} AND Player=?`, [forPlayer])[0];
+  const teamRow = query(`SELECT Team FROM Teams WHERE League=CURRENT_LEAGUE AND Year=${season} AND Player=?`, [forPlayer])[0];
   if (!teamRow) { banner.style.display = 'none'; return; }
 
   // Find subs already assigned to the same team on this date
   const existing = query(
-    `SELECT Player FROM Subs WHERE League="Hugh's" AND Date=? AND Team=? AND Player IS NOT NULL AND Player != ''`,
+    `SELECT Player FROM Subs WHERE League=CURRENT_LEAGUE AND Date=? AND Team=? AND Player IS NOT NULL AND Player != ''`,
     [dateVal, teamRow.Team]
   ).map(r => r.Player);
 
@@ -11910,15 +11905,15 @@ function ptGetBalance(source, season) {
   const s = season || _ptSeason;
   const seasonEnd = `${parseInt(s)+1}0101`;
   if (source === 'Skin') {
-    const collected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Payment' AND Date >= ${s}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
-    const paidOut   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND Date >= ${s}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
-    const transferred = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Pool Transfer' AND Date >= ${s}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
+    const collected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Detail='Payment' AND Date >= ${s}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
+    const paidOut   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND Date >= ${s}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
+    const transferred = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Detail='Pool Transfer' AND Date >= ${s}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
     return Math.max(0, Math.round((collected - paidOut - transferred) * 100) / 100);
   }
   if (source === 'CTP-Front' || source === 'CTP-Back') {
     const side = source === 'CTP-Front' ? 'Front' : 'Back';
     // Sum active carryover amounts for this side
-    const rows = query(`SELECT Detail, Earned FROM Payments WHERE League="Hugh's" AND Desc='CTP' AND Player='Kitty' AND Detail LIKE 'Carryover%-${side}' AND Date >= ${s}0101 AND Date < ${seasonEnd} ORDER BY Date DESC`);
+    const rows = query(`SELECT Detail, Earned FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='CTP' AND Player='Kitty' AND Detail LIKE 'Carryover%-${side}' AND Date >= ${s}0101 AND Date < ${seasonEnd} ORDER BY Date DESC`);
     const seenHoles = new Set();
     let total = 0;
     rows.forEach(r => {
@@ -11947,7 +11942,7 @@ function ptUseMax() {
 function ptLoadHistory() {
   if (!_ptSeason) return;
   const seasonEnd = `${parseInt(_ptSeason)+1}0101`;
-  const rows = query(`SELECT Date, Desc, Earned, Comment, DatePaid FROM Payments WHERE League="Hugh's" AND Detail='Pool Transfer' AND Date >= ${_ptSeason}0101 AND Date < ${seasonEnd} ORDER BY Date DESC, rowid DESC LIMIT 20`);
+  const rows = query(`SELECT Date, Desc, Earned, Comment, DatePaid FROM Payments WHERE League=CURRENT_LEAGUE AND Detail='Pool Transfer' AND Date >= ${_ptSeason}0101 AND Date < ${seasonEnd} ORDER BY Date DESC, rowid DESC LIMIT 20`);
   const el = document.getElementById('ptHistory');
   if (!el) return;
   if (!rows.length) { el.innerHTML = '<div style="color:#bbb;font-style:italic">No transfers yet</div>'; return; }
@@ -12339,12 +12334,12 @@ async function loadLoginActivity(options = {}) {
   };
   const subBadge = '<span style="background:#b3e5fc;color:#01579b;font-size:10px;padding:1px 4px;border-radius:3px;margin-left:4px">SUB</span>';
 
-  const currentSeason = query(`SELECT MAX(Year) as y FROM Teams WHERE League="Hugh's"`)[0]?.y || new Date().getFullYear();
+  const currentSeason = query(`SELECT MAX(Year) as y FROM Teams WHERE League=CURRENT_LEAGUE`)[0]?.y || new Date().getFullYear();
   const regularRows = query(`
     SELECT t.Player, t.Team, t.Grade, COALESCE(p.Login,'N') as Login, COALESCE(p.Email,'') as Email, COALESCE(p.Phone,'') as Phone, COALESCE(p.Officer,'') as Officer
     FROM Teams t
     LEFT JOIN Players p ON p.Player=t.Player
-    WHERE t.League="Hugh's" AND t.Year=?
+    WHERE t.League=CURRENT_LEAGUE AND t.Year=?
     ORDER BY t.Team, t.Grade
   `, [currentSeason]).filter(r => includeLoginStatPlayer(r.Player));
   const regularNames = new Set(regularRows.map(r => r.Player));
@@ -12353,7 +12348,7 @@ async function loadLoginActivity(options = {}) {
            COALESCE(p.Login,'N') as Login, COALESCE(p.Email,'') as Email, COALESCE(p.Phone,'') as Phone, COALESCE(p.Officer,'') as Officer
     FROM Subs s
     LEFT JOIN Players p ON p.Player=s.Player
-    WHERE s.League="Hugh's" AND CAST(s.Date AS TEXT) LIKE ?
+    WHERE s.League=CURRENT_LEAGUE AND CAST(s.Date AS TEXT) LIKE ?
     ORDER BY s.Date DESC, s.Player
   `, [`${currentSeason}%`]).filter(r => includeLoginStatPlayer(r.Player) && !regularNames.has(r.Player));
   const seenSubNames = new Set();
@@ -12821,7 +12816,7 @@ function renderBackupDates(dates) {
 function loadExpenses() {
   if (!db) return;
   // Populate season dropdown
-  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" ORDER BY Season DESC`);
+  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League=CURRENT_LEAGUE ORDER BY Season DESC`);
   const sel = document.getElementById('expensesSeason');
   if (sel && sel.options.length === 0) {
     seasons.forEach(r => {
@@ -12837,7 +12832,7 @@ function loadExpenses() {
 }
 
 function _renderExpenses(season) {
-  const rows = query(`SELECT * FROM LeagueExpenses WHERE League="Hugh's" AND Season=? ORDER BY Date ASC, ID ASC`, [season]);
+  const rows = query(`SELECT * FROM LeagueExpenses WHERE League=CURRENT_LEAGUE AND Season=? ORDER BY Date ASC, ID ASC`, [season]);
   const tbody = document.getElementById('expensesBody');
   const tfoot = document.getElementById('expensesFoot');
   const ledger = document.getElementById('expensesLedger');
@@ -12855,8 +12850,8 @@ function _renderExpenses(season) {
   });
 
   // Ledger: dues collected vs expenses
-  const duesRow = query(`SELECT SUM(Earned) as total FROM Payments WHERE League="Hugh's" AND Desc='League Dues' AND Detail='Payment' AND CAST(Date AS TEXT) LIKE '${season}%'`)[0];
-  const eoyRow  = query(`SELECT SUM(Earned) as total FROM Payments WHERE League="Hugh's" AND Desc='EOY Skins' AND Detail='Payment' AND CAST(Date AS TEXT) LIKE '${season}%'`)[0];
+  const duesRow = query(`SELECT SUM(Earned) as total FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='League Dues' AND Detail='Payment' AND CAST(Date AS TEXT) LIKE '${season}%'`)[0];
+  const eoyRow  = query(`SELECT SUM(Earned) as total FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='EOY Skins' AND Detail='Payment' AND CAST(Date AS TEXT) LIKE '${season}%'`)[0];
   const duesIn  = parseFloat(duesRow?.total || 0);
   const eoyIn   = parseFloat(eoyRow?.total || 0);
   const duesBalance = duesIn - grandTotal;
@@ -13193,90 +13188,73 @@ function loadHomeProposals() {
 // ── End Proposals & Suggestions ───────────────────────────────────────────────
 
 // ── Season Setup Wizard ────────────────────────────────────────────────────────
-function seasonIsUnderway(season) {
-  // Season is "underway" once any scores exist for this season
-  return (query(`SELECT COUNT(*) as c FROM Scores WHERE League='${CURRENT_LEAGUE}' AND Date >= ${season}0101 AND Date < ${season+1}0101`)[0]?.c || 0) > 0;
-}
-
-function postSeasonEnded(season) {
-  const ss = getSeasonSettings(season);
-  if (!ss?.PostSeasonDt) return false;
-  const today = new Date();
-  const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
-  const psd = new Date(ss.PostSeasonDt);
-  if (isNaN(psd)) return false;
-  const psInt = psd.getFullYear()*10000 + (psd.getMonth()+1)*100 + psd.getDate();
-  return todayInt > psInt;
-}
-
-function refreshSeasonSetupVisibility() {
-  const btn = document.getElementById('adminBtnSeasonsetup');
-  if (!btn) return;
-  const curSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League='${CURRENT_LEAGUE}'`)[0]?.s || new Date().getFullYear();
-  // Show wizard during pre-season OR after post-season ends (to set up next year)
-  const underway = seasonIsUnderway(curSeason);
-  const psEnded = postSeasonEnded(curSeason);
-  btn.style.display = (!underway || psEnded) ? '' : 'none';
-}
-
 function loadSeasonSetup() {
   const el = document.getElementById('seasonSetupContent');
   if (!el) return;
 
-  const curSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League='${CURRENT_LEAGUE}'`)[0]?.s || new Date().getFullYear();
-  const nextSeason = postSeasonEnded(curSeason) ? curSeason + 1 : curSeason;
-  const prevSeason = nextSeason - 1;
-  const prevSS = getSeasonSettings(prevSeason);
+  // Get current and next season
+  const curSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League=CURRENT_LEAGUE`)[0]?.s || new Date().getFullYear();
+  const nextSeason = curSeason + 1;
+  const curSS = getSeasonSettings(curSeason);
   const nextSS = getSeasonSettings(nextSeason);
-  const ls = query(`SELECT * FROM LeagueSettings WHERE League='${CURRENT_LEAGUE}' LIMIT 1`)[0] || {};
-  const teams = query(`SELECT * FROM Teams WHERE League='${CURRENT_LEAGUE}' AND Season=${prevSeason} ORDER BY TeamNum`);
-  const numTeams = teams.length || prevSS?.Teams || 0;
-  const rounds = ls.RoundsPerSeason || 2;
-  const weeksPerRound = numTeams % 2 === 0 ? numTeams - 1 : numTeams;
+  const ls = query(`SELECT * FROM LeagueSettings WHERE League=CURRENT_LEAGUE LIMIT 1`)[0] || {};
 
+  // Current teams
+  const teams = query(`SELECT * FROM Teams WHERE League=CURRENT_LEAGUE AND Season=${curSeason} ORDER BY TeamNum`);
+  const players = query(`SELECT * FROM Players WHERE League=CURRENT_LEAGUE ORDER BY Player`);
+
+  // Calculate projected start date for next season (2nd Tuesday of April)
   function secondTuesdayOfApril(year) {
-    let d = new Date(year, 3, 1);
-    while (d.getDay() !== 2) d.setDate(d.getDate() + 1);
-    d.setDate(d.getDate() + 7);
+    let d = new Date(year, 3, 1); // April 1
+    while (d.getDay() !== 2) d.setDate(d.getDate() + 1); // first Tuesday
+    d.setDate(d.getDate() + 7); // second Tuesday
     return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
   }
   const projStart = secondTuesdayOfApril(nextSeason);
-  const hasNextSeason = !!nextSS;
-  const hasNextSchedule = query(`SELECT COUNT(*) as c FROM Schedule WHERE League='${CURRENT_LEAGUE}' AND Date >= ${nextSeason}0101`)[0]?.c > 0;
+  const numTeams = teams.length || curSS?.Teams || 0;
+  const rounds = ls.RoundsPerSeason || 2;
+  const weeksPerRound = numTeams % 2 === 0 ? numTeams - 1 : numTeams;
+  const totalWeeks = weeksPerRound * rounds;
 
-  const stepStyle = done => `display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:8px;margin-bottom:10px;background:${done?'#f1f8f1':'#fafafa'};border:1px solid ${done?'#c8e6c9':'#e0e0e0'}`;
-  const checkIcon = done => `<span style="font-size:18px;margin-top:1px">${done?'✅':'⬜'}</span>`;
+  // Status checks
+  const hasNextSeason = !!nextSS;
+  const hasNextSchedule = query(`SELECT COUNT(*) as c FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= ${nextSeason}0101`)[0]?.c > 0;
+
+  const stepStyle = (done) => `display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:8px;margin-bottom:10px;background:${done?'#f1f8f1':'#fafafa'};border:1px solid ${done?'#c8e6c9':'#e0e0e0'}`;
+  const checkIcon = (done) => `<span style="font-size:18px;margin-top:1px">${done?'✅':'⬜'}</span>`;
   const stepTitle = (t, done) => `<span style="font-weight:700;font-size:13px;color:${done?'#2e7d32':'#333'}">${t}</span>`;
-  const stepDesc = d => `<div style="font-size:12px;color:#666;margin-top:3px">${d}</div>`;
+  const stepDesc = (d) => `<div style="font-size:12px;color:#666;margin-top:3px">${d}</div>`;
   const actionBtn = (label, onclick, color='#1b4d2e') =>
     `<button onclick="${onclick}" style="margin-top:8px;padding:5px 14px;background:${color};color:white;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer">${label}</button>`;
 
   el.innerHTML = `
     <div style="max-width:700px">
       <div style="background:#e8f5e9;border:1px solid #c8e6c9;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:13px">
-        <strong>Setting up ${nextSeason} season</strong> — based on ${prevSeason} (${numTeams} teams, ${rounds} rounds of ${weeksPerRound} weeks each).
-        Projected start: <strong>${projStart}</strong>
+        <strong>Setting up ${nextSeason} season</strong> — based on ${curSeason} (${numTeams} teams, ${rounds} rounds of ${weeksPerRound} weeks).
+        Projected start: <strong>${projStart}</strong> &nbsp;|&nbsp; Total weeks: <strong>${totalWeeks}</strong>
       </div>
 
+      <!-- Step 1: Create season record -->
       <div style="${stepStyle(hasNextSeason)}">
         ${checkIcon(hasNextSeason)}
         <div style="flex:1">
-          ${stepTitle(`1. Create ${nextSeason} Season Record`, hasNextSeason)}
-          ${stepDesc(`Copies settings from ${prevSeason} as a starting point.`)}
-          ${!hasNextSeason ? actionBtn(`Create ${nextSeason} Season`, `createNextSeason(${prevSeason}, ${nextSeason})`)
-            : '<div style="font-size:12px;color:#2e7d32;margin-top:4px">Season record exists ✓</div>'}
+          ${stepTitle('1. Create ' + nextSeason + ' Season Record', hasNextSeason)}
+          ${stepDesc('Copies league settings from ' + curSeason + ' as a starting point.')}
+          ${!hasNextSeason ? actionBtn('Create ' + nextSeason + ' Season', `createNextSeason(${curSeason}, ${nextSeason})`) : '<div style="font-size:12px;color:#2e7d32;margin-top:4px">Season record exists ✓</div>'}
         </div>
       </div>
 
+      <!-- Step 2: Review & adjust settings -->
       <div style="${stepStyle(false)}">
         ${checkIcon(false)}
         <div style="flex:1">
           ${stepTitle('2. Review Money & Format Settings', false)}
-          ${stepDesc('Update weekly cost, skins amounts, payouts, and any format changes.')}
+          ${stepDesc('Update weekly cost, skins amounts, payouts, and any format changes for ' + nextSeason + '.')}
           ${actionBtn('Go to League Settings →', "showAdminSection('leaguesettings')", '#1565c0')}
         </div>
       </div>
 
+      <!-- Step 3: Teams & Players -->
       <div style="${stepStyle(false)}">
         ${checkIcon(false)}
         <div style="flex:1">
@@ -13286,24 +13264,25 @@ function loadSeasonSetup() {
         </div>
       </div>
 
+      <!-- Step 4: Generate Schedule -->
       <div style="${stepStyle(hasNextSchedule)}">
         ${checkIcon(hasNextSchedule)}
         <div style="flex:1">
-          ${stepTitle(`4. Generate ${nextSeason} Schedule`, hasNextSchedule)}
-          ${stepDesc('Creates a random round-robin first-half schedule with projected second-half dates.')}
+          ${stepTitle('4. Generate ' + nextSeason + ' Schedule', hasNextSchedule)}
+          ${stepDesc('Creates a random round-robin first-half schedule. Second-half matchups are auto-generated after the first half ends.')}
           ${!hasNextSchedule
-            ? (hasNextSeason ? actionBtn('Generate Schedule', `generateSeasonSchedule(${nextSeason})`)
-              : '<div style="font-size:12px;color:#999;margin-top:4px">Complete Step 1 first</div>')
-            : '<div style="font-size:12px;color:#2e7d32;margin-top:4px">Schedule generated ✓</div>'
-              + actionBtn('Regenerate', `generateSeasonSchedule(${nextSeason})`, '#b71c1c')}
+            ? (hasNextSeason ? actionBtn('Generate Schedule', `generateSeasonSchedule(${nextSeason})`) : '<div style="font-size:12px;color:#999;margin-top:4px">Complete Step 1 first</div>')
+            : '<div style="font-size:12px;color:#2e7d32;margin-top:4px">Schedule generated ✓</div>' +
+              actionBtn('Regenerate Schedule', `generateSeasonSchedule(${nextSeason})`, '#b71c1c')}
         </div>
       </div>
 
+      <!-- Step 5: Gallus -->
       <div style="${stepStyle(false)}">
         ${checkIcon(false)}
         <div style="flex:1">
-          ${stepTitle('5. Coordinate Gallus with Golf Course', false)}
-          ${stepDesc('Contact the course director to set up Gallus for the new season. Done outside the app.')}
+          ${stepTitle('5. Coordinate with Golf Course (Gallus)', false)}
+          ${stepDesc('Contact the course director to set up Gallus for the new season. This is done outside the app.')}
           <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;cursor:pointer">
             <input type="checkbox" id="gallusCheck" onchange="localStorage.setItem('hg_gallus_done_${nextSeason}', this.checked?'1':'')">
             Mark as done
@@ -13311,6 +13290,7 @@ function loadSeasonSetup() {
         </div>
       </div>
 
+      <!-- Step 6: Verify -->
       <div style="${stepStyle(false)}">
         ${checkIcon(false)}
         <div style="flex:1">
@@ -13322,36 +13302,44 @@ function loadSeasonSetup() {
     </div>
   `;
 
+  // Restore Gallus checkbox state
   if (localStorage.getItem(`hg_gallus_done_${nextSeason}`) === '1') {
     const cb = document.getElementById('gallusCheck');
     if (cb) cb.checked = true;
   }
 }
 
-function createNextSeason(prevSeason, nextSeason) {
-  const cur = getSeasonSettings(prevSeason);
-  if (!cur) { showToast('Cannot find prior season data', '#c62828', 3000); return; }
+function createNextSeason(curSeason, nextSeason) {
+  const cur = getSeasonSettings(curSeason);
+  if (!cur) { showToast('Cannot find current season data', '#c62828', 3000); return; }
+
+  // Copy current season as template, reset operational fields
   const cols = `League, Season, Cost, Course, Start9, Skins, Closest, EOYSkins, SkinsPS, ClosestPS,
     PayPlaces, ChampMode, ChampPlace1, ChampPlace2, ChampPlace3, ChampPlaces,
     StandPlace1, StandPlace2, StandPlace3, Teams, Rainouts, Byes`;
-  const vals = [CURRENT_LEAGUE, nextSeason, cur.Cost, cur.Course, cur.Start9, cur.Skins, cur.Closest,
-    cur.EOYSkins, cur.SkinsPS, cur.ClosestPS, cur.PayPlaces, cur.ChampMode,
-    cur.ChampPlace1, cur.ChampPlace2, cur.ChampPlace3, cur.ChampPlaces,
-    cur.StandPlace1, cur.StandPlace2, cur.StandPlace3, cur.Teams, 0, 0];
-  db.run(`INSERT OR IGNORE INTO SeasonSettings (${cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, vals);
-  serverRun(`INSERT OR IGNORE INTO SeasonSettings (${cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, vals);
+  db.run(`INSERT OR IGNORE INTO SeasonSettings (${cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0)`,
+    [CURRENT_LEAGUE, nextSeason, cur.Cost, cur.Course, cur.Start9, cur.Skins, cur.Closest,
+     cur.EOYSkins, cur.SkinsPS, cur.ClosestPS, cur.PayPlaces, cur.ChampMode,
+     cur.ChampPlace1, cur.ChampPlace2, cur.ChampPlace3, cur.ChampPlaces,
+     cur.StandPlace1, cur.StandPlace2, cur.StandPlace3, cur.Teams]);
+  serverRun(`INSERT OR IGNORE INTO SeasonSettings (${cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0)`,
+    [CURRENT_LEAGUE, nextSeason, cur.Cost, cur.Course, cur.Start9, cur.Skins, cur.Closest,
+     cur.EOYSkins, cur.SkinsPS, cur.ClosestPS, cur.PayPlaces, cur.ChampMode,
+     cur.ChampPlace1, cur.ChampPlace2, cur.ChampPlace3, cur.ChampPlaces,
+     cur.StandPlace1, cur.StandPlace2, cur.StandPlace3, cur.Teams]);
   saveDBToServer();
   showToast(`✅ ${nextSeason} season record created`, '#2e7d32', 3000);
-  loadSeasonSetup();
+  loadSeasonSetup(); // refresh wizard
 }
 
 function generateSeasonSchedule(season) {
   const ss = getSeasonSettings(season);
   if (!ss) { showToast('Create the season record first (Step 1)', '#c62828', 3000); return; }
-  const ls = query(`SELECT * FROM LeagueSettings WHERE League='${CURRENT_LEAGUE}' LIMIT 1`)[0] || {};
+  const ls = query(`SELECT * FROM LeagueSettings WHERE League=CURRENT_LEAGUE LIMIT 1`)[0] || {};
   const numTeams = ss.Teams || 0;
   if (!numTeams || numTeams < 2) { showToast('Set # of Teams in League Settings first', '#c62828', 3000); return; }
 
+  // Calculate start date (2nd Tuesday of April for the given season year)
   function secondTuesdayOfApril(year) {
     let d = new Date(year, 3, 1);
     while (d.getDay() !== 2) d.setDate(d.getDate() + 1);
@@ -13359,72 +13347,99 @@ function generateSeasonSchedule(season) {
     return d;
   }
   function dateToInt(d) { return d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate(); }
-  function fmtDate(d) { return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`; }
+  function fmtMM(d) { return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`; }
 
-  // Round-robin (Berger rotation)
+  // Round-robin algorithm (Berger tables)
   function roundRobin(n) {
     const hasBye = n % 2 !== 0;
-    const t = Array.from({length: hasBye ? n+1 : n}, (_,i) => i+1);
+    const teams = Array.from({length: hasBye ? n+1 : n}, (_,i) => i+1);
     const rounds = [];
-    for (let r = 0; r < t.length - 1; r++) {
+    for (let r = 0; r < teams.length - 1; r++) {
       const pairs = [];
-      for (let i = 0; i < t.length / 2; i++) {
-        const a = t[i], b = t[t.length-1-i];
-        pairs.push(hasBye && (a===n+1||b===n+1) ? [a===n+1?b:a,'BYE'] : [a,b]);
+      for (let i = 0; i < teams.length / 2; i++) {
+        const t1 = teams[i], t2 = teams[teams.length - 1 - i];
+        if (hasBye && (t1 === n+1 || t2 === n+1)) {
+          // bye week — one team gets BYE
+          pairs.push([t1 === n+1 ? t2 : t1, 'BYE']);
+        } else {
+          pairs.push([t1, t2]);
+        }
       }
       rounds.push(pairs);
-      t.splice(1, 0, t.pop());
-    }
-    // Shuffle for randomness
-    for (let i = rounds.length-1; i>0; i--) {
-      const j = Math.floor(Math.random()*(i+1));
-      [rounds[i],rounds[j]] = [rounds[j],rounds[i]];
+      // rotate teams[1..n-1], keep teams[0] fixed
+      teams.splice(1, 0, teams.pop());
     }
     return rounds;
   }
 
   const rounds = ls.RoundsPerSeason || 2;
   const schedule = roundRobin(numTeams);
+  // Shuffle for randomness
+  for (let i = schedule.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i+1));
+    [schedule[i], schedule[j]] = [schedule[j], schedule[i]];
+  }
+
+  // FrontBack rotation — monthly alternating starting with ss.Start9
+  let startDate = secondTuesdayOfApril(season);
+  let currentFB = (ss.Start9 || 'F').toUpperCase() === 'F' ? 'Front' : 'Back';
+  let currentMonth = startDate.getMonth();
+
+  // Delete existing schedule for this season first
+  db.run(`DELETE FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= ${season}0101 AND Date < ${season+1}0101`);
+  serverRun(`DELETE FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= ${season}0101 AND Date < ${season+1}0101`, []);
+
   const weeksPerRound = schedule.length;
   const totalWeeks = weeksPerRound * rounds;
-
-  // Delete existing schedule for this season
-  db.run(`DELETE FROM Schedule WHERE League='${CURRENT_LEAGUE}' AND Date >= ${season}0101 AND Date < ${season+1}0101`);
-  serverRun(`DELETE FROM Schedule WHERE League='${CURRENT_LEAGUE}' AND Date >= ${season}0101 AND Date < ${season+1}0101`, []);
-
-  let weekDate = secondTuesdayOfApril(season);
-  let currentFB = (ss.Start9 || 'F').toUpperCase() === 'F' ? 'Front' : 'Back';
-  let currentMonth = weekDate.getMonth();
+  let weekDate = new Date(startDate);
 
   for (let w = 0; w < totalWeeks; w++) {
+    const roundIdx = w % weeksPerRound; // first half: 0..weeksPerRound-1, second half same
+    const isFirstHalf = w < weeksPerRound;
+
+    // Track month for front/back rotation
     if (weekDate.getMonth() !== currentMonth) {
       currentFB = currentFB === 'Front' ? 'Back' : 'Front';
       currentMonth = weekDate.getMonth();
     }
-    const isFirstHalf = w < weeksPerRound;
+
     const dateInt = dateToInt(weekDate);
     const colVals = {};
+
     if (isFirstHalf) {
-      schedule[w].forEach((pair, idx) => { colVals[idx+1] = `${pair[0]}v${pair[1]}`; });
+      // First half: real matchups
+      const pairs = schedule[roundIdx];
+      pairs.forEach((pair, idx) => {
+        colVals[idx+1] = `${pair[0]}v${pair[1]}`;
+      });
     }
+    // Second half: dates only, no matchups (generated later)
+
     const colKeys = Object.keys(colVals);
-    const colSql = colKeys.length ? ',' + colKeys.map(k=>`[${k}]`).join(',') : '';
-    const colPh  = colKeys.length ? ',' + colKeys.map(()=>'?').join(',') : '';
-    const colV   = colKeys.map(k=>colVals[k]);
-    db.run(`INSERT INTO Schedule (Date,League,FrontBack,Status${colSql}) VALUES (?,?,?,?${colPh})`,
-      [dateInt, CURRENT_LEAGUE, currentFB, isFirstHalf?'':'projected', ...colV]);
-    serverRun(`INSERT INTO Schedule (Date,League,FrontBack,Status${colSql}) VALUES (?,?,?,?${colPh})`,
-      [dateInt, CURRENT_LEAGUE, currentFB, isFirstHalf?'':'projected', ...colV]);
-    weekDate.setDate(weekDate.getDate()+7);
+    const colSql = colKeys.length ? ',' + colKeys.map(k => `[${k}]`).join(',') : '';
+    const colPlaceholders = colKeys.length ? ',' + colKeys.map(()=>'?').join(',') : '';
+    const colValues = colKeys.map(k => colVals[k]);
+
+    db.run(`INSERT INTO Schedule (Date, League, FrontBack, Status${colSql}) VALUES (?,?,?,?${colPlaceholders})`,
+      [dateInt, CURRENT_LEAGUE, currentFB, isFirstHalf ? '' : 'projected', ...colValues]);
+    serverRun(`INSERT INTO Schedule (Date, League, FrontBack, Status${colSql}) VALUES (?,?,?,?${colPlaceholders})`,
+      [dateInt, CURRENT_LEAGUE, currentFB, isFirstHalf ? '' : 'projected', ...colValues]);
+
+    weekDate.setDate(weekDate.getDate() + 7);
   }
 
-  const endDate = new Date(weekDate); endDate.setDate(endDate.getDate()-7);
-  const startStr = fmtDate(secondTuesdayOfApril(season));
-  const endStr   = fmtDate(endDate);
-  db.run(`UPDATE SeasonSettings SET StartDate=?,EndDate=? WHERE League='${CURRENT_LEAGUE}' AND Season=?`, [startStr,endStr,season]);
-  serverRun(`UPDATE SeasonSettings SET StartDate=?,EndDate=? WHERE League='${CURRENT_LEAGUE}' AND Season=?`, [startStr,endStr,season]);
   saveDBToServer();
-  showToast(`✅ ${totalWeeks} weeks scheduled (${startStr} – ${endStr})`, '#2e7d32', 4000);
+  const endDate = new Date(weekDate); endDate.setDate(endDate.getDate() - 7);
+  // Update SeasonSettings with start and projected end dates
+  const startStr = fmtMM(startDate);
+  const endStr = fmtMM(endDate);
+  db.run(`UPDATE SeasonSettings SET StartDate=?, EndDate=? WHERE League=CURRENT_LEAGUE AND Season=?`,
+    [startStr, endStr, season]);
+  serverRun(`UPDATE SeasonSettings SET StartDate=?, EndDate=? WHERE League=CURRENT_LEAGUE AND Season=?`,
+    [startStr, endStr, season]);
+  saveDBToServer();
+
+  showToast(`✅ ${weeksPerRound * rounds} weeks scheduled (${startStr} – ${endStr})`, '#2e7d32', 4000);
   loadSeasonSetup();
 }
 
@@ -13484,7 +13499,7 @@ function loadCompareSection() {
   // Populate date selector from Scores table
   const sel = document.getElementById('compareDateSel');
   if (!sel) return;
-  const rows = query(`SELECT DISTINCT Date as d FROM Scores WHERE League="Hugh's" ORDER BY Date DESC LIMIT 30`);
+  const rows = query(`SELECT DISTINCT Date as d FROM Scores WHERE League=CURRENT_LEAGUE ORDER BY Date DESC LIMIT 30`);
   sel.innerHTML = rows.map(r => `<option value="${r.d}">${fmtDate(r.d)}</option>`).join('');
   document.getElementById('compareResults').innerHTML = '';
   document.getElementById('compareStatus').textContent = '';
@@ -13606,7 +13621,7 @@ async function runCompareWithLive() {
   const season = Math.floor(d / 10000);
   const standSQL = `SELECT m.Player, SUM(m.Points) as pts, COUNT(*) as rounds
     FROM Matches m
-    WHERE m.League="Hugh's" AND m.Date >= ${season}0101 AND m.Date < ${season+1}0101
+    WHERE m.League=CURRENT_LEAGUE AND m.Date >= ${season}0101 AND m.Date < ${season+1}0101
     GROUP BY m.Player ORDER BY pts DESC, rounds ASC`;
   const _tsFrom = `${season}0101`, _tsTo = `${season+1}0101`;
   const teamStandSQL = `SELECT t.Team,
@@ -13614,30 +13629,30 @@ async function runCompareWithLive() {
     MAX(CASE WHEN t.Grade='B' THEN t.Player END) as b_player,
     ROUND((
       SELECT COALESCE(SUM(m.Points),0) FROM Matches m
-      JOIN Teams ta ON ta.Player=m.Player AND ta.Year=${season} AND ta.Team=t.Team AND ta.Grade='A' AND ta.League="Hugh's"
-      WHERE m.League="Hugh's" AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
+      JOIN Teams ta ON ta.Player=m.Player AND ta.Year=${season} AND ta.Team=t.Team AND ta.Grade='A' AND ta.League=CURRENT_LEAGUE
+      WHERE m.League=CURRENT_LEAGUE AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
     ) + (
       SELECT COALESCE(SUM(m.Points),0) FROM Matches m
-      JOIN Subs s ON s.Player=m.Player AND s.Date=m.Date AND s.Team=t.Team AND s.Grade='A' AND s.League="Hugh's"
-      WHERE m.League="Hugh's" AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
+      JOIN Subs s ON s.Player=m.Player AND s.Date=m.Date AND s.Team=t.Team AND s.Grade='A' AND s.League=CURRENT_LEAGUE
+      WHERE m.League=CURRENT_LEAGUE AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
     ), 1) as a_pts,
     ROUND((
       SELECT COALESCE(SUM(m.Points),0) FROM Matches m
-      JOIN Teams tb ON tb.Player=m.Player AND tb.Year=${season} AND tb.Team=t.Team AND tb.Grade='B' AND tb.League="Hugh's"
-      WHERE m.League="Hugh's" AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
+      JOIN Teams tb ON tb.Player=m.Player AND tb.Year=${season} AND tb.Team=t.Team AND tb.Grade='B' AND tb.League=CURRENT_LEAGUE
+      WHERE m.League=CURRENT_LEAGUE AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
     ) + (
       SELECT COALESCE(SUM(m.Points),0) FROM Matches m
-      JOIN Subs s ON s.Player=m.Player AND s.Date=m.Date AND s.Team=t.Team AND s.Grade='B' AND s.League="Hugh's"
-      WHERE m.League="Hugh's" AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
+      JOIN Subs s ON s.Player=m.Player AND s.Date=m.Date AND s.Team=t.Team AND s.Grade='B' AND s.League=CURRENT_LEAGUE
+      WHERE m.League=CURRENT_LEAGUE AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
     ), 1) as b_pts,
     ROUND((
       SELECT COALESCE(SUM(m.Team_Points),0) FROM Matches m
-      JOIN Teams ta ON ta.Player=m.Player AND ta.Year=${season} AND ta.Team=t.Team AND ta.Grade='A' AND ta.League="Hugh's"
-      WHERE m.League="Hugh's" AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
+      JOIN Teams ta ON ta.Player=m.Player AND ta.Year=${season} AND ta.Team=t.Team AND ta.Grade='A' AND ta.League=CURRENT_LEAGUE
+      WHERE m.League=CURRENT_LEAGUE AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
     ) + (
       SELECT COALESCE(SUM(m.Team_Points),0) FROM Matches m
-      JOIN Subs s ON s.Player=m.Player AND s.Date=m.Date AND s.Team=t.Team AND s.Grade='A' AND s.League="Hugh's"
-      WHERE m.League="Hugh's" AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
+      JOIN Subs s ON s.Player=m.Player AND s.Date=m.Date AND s.Team=t.Team AND s.Grade='A' AND s.League=CURRENT_LEAGUE
+      WHERE m.League=CURRENT_LEAGUE AND m.Date >= ${_tsFrom} AND m.Date < ${_tsTo}
     ), 1) as team_pts
   FROM Teams t
   WHERE t.Year = ${season} AND t.League = "Hugh's"
@@ -14489,8 +14504,8 @@ function showGallusSubmit() {
   // Current league date = most recent past scheduled date, or next upcoming if none
   const todayInt = new Date().toISOString().substring(0,10).replace(/-/g,'');
   const season = new Date().getFullYear();
-  const lastLeagueDate = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date <= ? ORDER BY Date DESC LIMIT 1`, [todayInt])[0]?.sDate
-                      || query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date > ? ORDER BY Date ASC LIMIT 1`, [todayInt])[0]?.sDate
+  const lastLeagueDate = query(`SELECT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND Date <= ? ORDER BY Date DESC LIMIT 1`, [todayInt])[0]?.sDate
+                      || query(`SELECT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND Date > ? ORDER BY Date ASC LIMIT 1`, [todayInt])[0]?.sDate
                       || todayInt;
 
   if (isOfficer) {
@@ -14508,7 +14523,7 @@ function showGallusSubmit() {
     sentByRow.style.display = '';
     sentBySel.value = '';
     const season = new Date().getFullYear();
-    const rosterPlayers = query(`SELECT DISTINCT Player FROM Teams WHERE Year=${season} AND League="Hugh's" ORDER BY Player`).map(r => r.Player);
+    const rosterPlayers = query(`SELECT DISTINCT Player FROM Teams WHERE Year=${season} AND League=CURRENT_LEAGUE ORDER BY Player`).map(r => r.Player);
     sentBySel.innerHTML = '<option value="">— select player —</option>' + rosterPlayers.map(p => `<option value="${p}">${p}</option>`).join('');
     // Leave blank — will be resolved after URL is fetched
     const gallusBtn = document.querySelector('#gallusSubmitModal button');
@@ -14521,7 +14536,7 @@ function showGallusSubmit() {
     document.getElementById('gallusSubmitDateRow').style.display = '';
     document.getElementById('gallusSubmitDate').style.display = 'none';
     // Populate all season scheduled dates, default to current league date
-    const schedDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= ? AND Date < ? ORDER BY Date`,
+    const schedDates = query(`SELECT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= ? AND Date < ? ORDER BY Date`,
       [String(season)+'0101', String(season+1)+'0101']);
     const sel = document.getElementById('gallusSubmitDateSelect');
     if (schedDates.length) {
@@ -14707,8 +14722,8 @@ async function doGallusSubmit() {
 
     function renderContent() {
       const rows = playerNames.map(player => {
-        const unpaid = query(`SELECT Desc, Detail, Earned FROM Payments WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=${date} AND Detail='Payment' AND (DatePaid IS NULL OR DatePaid='')`, [player]);
-        const paidCount = query(`SELECT COUNT(*) as c FROM Payments WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=${date} AND Detail='Payment' AND DatePaid IS NOT NULL AND DatePaid!=''`, [player])[0]?.c || 0;
+        const unpaid = query(`SELECT Desc, Detail, Earned FROM Payments WHERE League=CURRENT_LEAGUE AND Player=? AND CAST(Date AS INTEGER)=${date} AND Detail='Payment' AND (DatePaid IS NULL OR DatePaid='')`, [player]);
+        const paidCount = query(`SELECT COUNT(*) as c FROM Payments WHERE League=CURRENT_LEAGUE AND Player=? AND CAST(Date AS INTEGER)=${date} AND Detail='Payment' AND DatePaid IS NOT NULL AND DatePaid!=''`, [player])[0]?.c || 0;
         return { player, unpaid, paidCount };
       });
 
@@ -14899,7 +14914,7 @@ async function doGallusSubmit() {
       // No-rounds-this-season safeguard: warn before importing an unexpected player
       const _importSeason = String(today).substring(0, 4);
       const _priorRounds = query(
-        `SELECT COUNT(*) as cnt FROM Scores WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER) >= ${_importSeason}0101`,
+        `SELECT COUNT(*) as cnt FROM Scores WHERE League=CURRENT_LEAGUE AND Player=? AND CAST(Date AS INTEGER) >= ${_importSeason}0101`,
         [resolvedName]
       )[0]?.cnt || 0;
       if (_priorRounds === 0) {
@@ -15241,7 +15256,7 @@ function loadGallusQueue() {
     const subs = query(`SELECT s.Player, s.Team, s.Grade, t.Player AS RegPlayer
       FROM Subs s
       JOIN Teams t ON t.Team=s.Team AND t.Grade=s.Grade AND t.League=s.League
-      WHERE s.Date=? AND s.Player != t.Player AND s.League="Hugh's"`, [date]);
+      WHERE s.Date=? AND s.Player != t.Player AND s.League=CURRENT_LEAGUE`, [date]);
     if (!subLookup[date]) subLookup[date] = {};
     subs.forEach(s => { subLookup[date][s.Player] = s.RegPlayer; });
   });
@@ -15249,8 +15264,8 @@ function loadGallusQueue() {
   // Build sub frequency map for "Import As" dropdown smart pre-selection
   const _qSubFreq = {}; // { regularPlayer: { subPlayer: count } }
   try {
-    const _qSubRows  = query(`SELECT Player, Team, Grade FROM Subs WHERE League="Hugh's" ORDER BY Date DESC`);
-    const _qTeamRows = query(`SELECT Player, Team, Grade FROM Teams WHERE League="Hugh's"`);
+    const _qSubRows  = query(`SELECT Player, Team, Grade FROM Subs WHERE League=CURRENT_LEAGUE ORDER BY Date DESC`);
+    const _qTeamRows = query(`SELECT Player, Team, Grade FROM Teams WHERE League=CURRENT_LEAGUE`);
     _qSubRows.forEach(s => {
       const reg = _qTeamRows.find(t => t.Team === s.Team && t.Grade === s.Grade);
       if (!reg) return;
@@ -15716,8 +15731,8 @@ async function undoGallusImport(idsCsv) {
   // Clear scores for affected players on affected dates
   for (const date of affectedDates) {
     for (const player of affectedPlayers) {
-      db.run(`DELETE FROM Scores WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER)`, [player, date]);
-      db.run(`DELETE FROM Handicaps WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER)`, [player, date]);
+      db.run(`DELETE FROM Scores WHERE League=CURRENT_LEAGUE AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER)`, [player, date]);
+      db.run(`DELETE FROM Handicaps WHERE League=CURRENT_LEAGUE AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER)`, [player, date]);
     }
   }
 
@@ -15796,8 +15811,8 @@ function renderGallusVerifyBody(allPlayers) {
   // Build sub frequency map: for each regular player, which subs appear most often
   const subFreq = {}; // { regularPlayer: { subPlayer: count } }
   try {
-    const subRows = query(`SELECT Player, Team, Grade FROM Subs WHERE League="Hugh's" ORDER BY Date DESC`);
-    const teamRows = query(`SELECT Player, Team, Grade FROM Teams WHERE League="Hugh's"`);
+    const subRows = query(`SELECT Player, Team, Grade FROM Subs WHERE League=CURRENT_LEAGUE ORDER BY Date DESC`);
+    const teamRows = query(`SELECT Player, Team, Grade FROM Teams WHERE League=CURRENT_LEAGUE`);
     subRows.forEach(s => {
       const regular = teamRows.find(t => t.Team === s.Team && t.Grade === s.Grade);
       if (!regular) return;
@@ -16386,7 +16401,7 @@ function updateWeeksLeftBanner() {
   const today = new Date();
   const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
 
-  const schedDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= ${season}0101 AND Date < ${parseInt(season)+1}0101 ORDER BY Date`);
+  const schedDates = query(`SELECT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= ${season}0101 AND Date < ${parseInt(season)+1}0101 ORDER BY Date`);
   if (!schedDates.length) { el.style.display = 'none'; return; }
 
   let weeksLeft, halfLabel;
@@ -16452,12 +16467,12 @@ function lgCalNav(delta) {
 
 function showLeagueCalendar() {
   if (!db) return;
-  const ls = query(`SELECT DayofWeek FROM LeagueSettings WHERE League="Hugh's"`)[0];
+  const ls = query(`SELECT DayofWeek FROM LeagueSettings WHERE League=CURRENT_LEAGUE`)[0];
   const dowName = ls?.DayofWeek || 'Tuesday';
   const dayMap = {sunday:0,monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
   const leagueDow = dayMap[dowName.toLowerCase()] ?? 2;
   const season = document.getElementById('seasonSelect')?.value || new Date().getFullYear();
-  const schedRows = query(`SELECT Date FROM Schedule WHERE League="Hugh's" AND Date >= ${season}0101 AND Date < ${parseInt(season)+1}0101 ORDER BY Date`);
+  const schedRows = query(`SELECT Date FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= ${season}0101 AND Date < ${parseInt(season)+1}0101 ORDER BY Date`);
   const todayInt = parseInt(new Date().toISOString().slice(0,10).replace(/-/g,''));
 
   window._lgCal = { calYear: new Date().getFullYear(), calMonth: new Date().getMonth(), leagueDow, schedSet: new Set(schedRows.map(r=>String(r.Date))), todayInt };
@@ -16517,15 +16532,15 @@ function showLoginScreen() {
   const overlay = document.getElementById('loginOverlay');
   overlay.style.display = 'flex';
   // Populate player dropdown — current-season players OR those with Login='Y'
-  const currentSeasonYear = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League="Hugh's"`)[0]?.s
-                         || query(`SELECT MAX(Year) as y FROM Teams WHERE League="Hugh's"`)[0]?.y
+  const currentSeasonYear = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League=CURRENT_LEAGUE`)[0]?.s
+                         || query(`SELECT MAX(Year) as y FROM Teams WHERE League=CURRENT_LEAGUE`)[0]?.y
                          || new Date().getFullYear();
   const players = query(`
     SELECT DISTINCT p.Player FROM Players p
     WHERE p.Login='Y'
        OR EXISTS (
          SELECT 1 FROM Teams t
-         WHERE t.Player=p.Player AND t.League="Hugh's" AND t.Year=?
+         WHERE t.Player=p.Player AND t.League=CURRENT_LEAGUE AND t.Year=?
        )
     ORDER BY p.Player
   `, [currentSeasonYear]);
@@ -17011,13 +17026,7 @@ async function loginSuccess(player, opts = {}) {
 
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('loggedInUser').textContent = currentUser.name;
-  const _leagueName = getLeagueSetting('LeagueName') || getLeagueSetting('Name') || 'Golf League';
-  document.title = `${_leagueName} — ${currentUser.name}`;
-  // Update header logo and login overlay league name to reflect this league's name
-  const _logoEl = document.querySelector('.logo');
-  if (_logoEl) _logoEl.innerHTML = `<span>${_leagueName}</span>`;
-  const _loginNameEl = document.getElementById('loginLeagueName');
-  if (_loginNameEl) _loginNameEl.textContent = _leagueName;
+  document.title = `Hugh's Golf League — ${currentUser.name}`;
   document.getElementById('loggedInUser').style.display = '';
   document.getElementById('logoutBtn').style.display = '';
   document.getElementById('changePwBtn').style.display = '';
@@ -17086,7 +17095,7 @@ function applyRoleAccess() {
       try {
         const curSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
         isRegular = curSeason ? query(
-          `SELECT 1 FROM Teams WHERE Player=? AND Year=? AND League="Hugh's" LIMIT 1`,
+          `SELECT 1 FROM Teams WHERE Player=? AND Year=? AND League=CURRENT_LEAGUE LIMIT 1`,
           [currentUser.name, curSeason]
         ).length > 0 : false;
       } catch(e) {}
@@ -17240,8 +17249,8 @@ function loadScheduleBuilder() {
   const season = parseInt(sel.value);
   const iSeason = season;
 
-  const dates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= '${iSeason}0101' AND Date < '${iSeason+1}0101' ORDER BY Date`).map(r=>r.sDate);
-  const teams = query(`SELECT Team, Player, Grade FROM Teams WHERE Year=${season} AND League="Hugh's" ORDER BY Team, Grade`);
+  const dates = query(`SELECT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= '${iSeason}0101' AND Date < '${iSeason+1}0101' ORDER BY Date`).map(r=>r.sDate);
+  const teams = query(`SELECT Team, Player, Grade FROM Teams WHERE Year=${season} AND League=CURRENT_LEAGUE ORDER BY Team, Grade`);
   const lp = getSeasonSettings(season);
 
   // Build team map: Team -> {A, B}
@@ -17255,7 +17264,7 @@ function loadScheduleBuilder() {
   // Build matchups from Schedule table
   const schedRows = {};
   dates.forEach(d => {
-    const row = query(`SELECT "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24" FROM Schedule WHERE League="Hugh's" AND Date='${d}'`)[0];
+    const row = query(`SELECT "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24" FROM Schedule WHERE League=CURRENT_LEAGUE AND Date='${d}'`)[0];
     const mus = [];
     if (row) {
       for (let i = 1; i <= 24; i++) {
@@ -17271,7 +17280,7 @@ function loadScheduleBuilder() {
   });
 
   // Check which dates have scores (played) or are rainouts
-  const playedDates = new Set(query(`SELECT DISTINCT Date as D FROM Scores WHERE League="Hugh's" AND Date >= ${iSeason}0101 AND Date < ${iSeason+1}0101`).map(r=>r.D));
+  const playedDates = new Set(query(`SELECT DISTINCT Date as D FROM Scores WHERE League=CURRENT_LEAGUE AND Date >= ${iSeason}0101 AND Date < ${iSeason+1}0101`).map(r=>r.D));
 
   // Build grid - matchup rows x date cols
   const numMatchups = Math.floor(teamNums.length / 2);
@@ -17393,10 +17402,10 @@ async function rainOutPsDate(week, season) {
   const newPsDates = parsePostSeasonDates(newDtStr);
   if (!confirm(`Rain out Post Season Week ${week} (${fmtDate(oldDate)})?\n\nBoth PS dates shift +1 week:\n  Week 1: ${fmtDate(newPsDates.week1)}\n  Week 2: ${fmtDate(newPsDates.week2)}\n\nAny scores on ${fmtDate(oldDate)} will be cleared.`)) return;
   // Clear scores on the old date being rained out
-  serverRun(`DELETE FROM Scores WHERE Date=${oldDate} AND League="Hugh's"`, []);
+  serverRun(`DELETE FROM Scores WHERE Date=${oldDate} AND League=CURRENT_LEAGUE`, []);
   serverRun(`UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE Date=${oldDate}`, []);
   // Update PostSeasonDt
-  serverRun(`UPDATE SeasonSettings SET PostSeasonDt=? WHERE Season=? AND League="Hugh's"`, [newDtStr, season]);
+  serverRun(`UPDATE SeasonSettings SET PostSeasonDt=? WHERE Season=? AND League=CURRENT_LEAGUE`, [newDtStr, season]);
   await SERVER_RUN_QUEUE;
   loadScheduleBuilder();
   buildEntryGrid();
@@ -17431,7 +17440,7 @@ function refreshScoresAfterRainout(removedDate) {
 
 function skipWeek(date, season) {
   saveScheduleSnapshot(season);
-  serverRun(`DELETE FROM Schedule WHERE Date='${date}' AND League="Hugh's"`);
+  serverRun(`DELETE FROM Schedule WHERE Date='${date}' AND League=CURRENT_LEAGUE`);
   incrementRainouts(season);
   loadScheduleBuilder();
   refreshScoresAfterRainout(date);
@@ -17443,7 +17452,7 @@ function extendSchedule(date, season) {
   const iSeason = parseInt(season);
   logIt(`extendSchedule called`, `date=${date} type=${typeof date} season=${season} iSeason=${iSeason}`);
 
-  const rows = query(`SELECT Date as sDate,"1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24",FrontBack FROM Schedule WHERE League="Hugh's" AND Date >= '${String(date)}' AND Date >= '${iSeason}0101' AND Date < '${iSeason+1}0101' ORDER BY Date ASC`);
+  const rows = query(`SELECT Date as sDate,"1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24",FrontBack FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= '${String(date)}' AND Date >= '${iSeason}0101' AND Date < '${iSeason+1}0101' ORDER BY Date ASC`);
   logIt(`rows loaded`, `count=${rows.length} first=${rows[0]?.sDate} last=${rows[rows.length-1]?.sDate}`);
 
   // Save last row's original matchups BEFORE any shifts
@@ -17452,16 +17461,16 @@ function extendSchedule(date, season) {
   for (let i = 1; i < rows.length; i++) {
     const thisDate = String(rows[i].sDate);
     const prev = rows[i-1];
-    serverRun(`UPDATE Schedule SET "1"=?,"2"=?,"3"=?,"4"=?,"5"=?,"6"=?,"7"=?,"8"=?,"9"=?,"10"=?,"11"=?,"12"=?,"13"=?,"14"=?,"15"=?,"16"=?,"17"=?,"18"=?,"19"=?,"20"=?,"21"=?,"22"=?,"23"=?,"24"=?,FrontBack=? WHERE Date='${thisDate}' AND League="Hugh's"`,
+    serverRun(`UPDATE Schedule SET "1"=?,"2"=?,"3"=?,"4"=?,"5"=?,"6"=?,"7"=?,"8"=?,"9"=?,"10"=?,"11"=?,"12"=?,"13"=?,"14"=?,"15"=?,"16"=?,"17"=?,"18"=?,"19"=?,"20"=?,"21"=?,"22"=?,"23"=?,"24"=?,FrontBack=? WHERE Date='${thisDate}' AND League=CURRENT_LEAGUE`,
       [prev['1'],prev['2'],prev['3'],prev['4'],prev['5'],prev['6'],prev['7'],prev['8'],prev['9'],
        prev['10'],prev['11'],prev['12'],prev['13'],prev['14'],prev['15'],prev['16'],prev['17'],prev['18'],
        prev['19'],prev['20'],prev['21'],prev['22'],prev['23'],prev['24'],prev['FrontBack']||null]);
     logIt(`shifted`, `${rows[i-1].sDate} -> ${thisDate} matchup1=${prev['1']}`);
   }
 
-  serverRun(`DELETE FROM Schedule WHERE Date='${String(date)}' AND League="Hugh's"`);
+  serverRun(`DELETE FROM Schedule WHERE Date='${String(date)}' AND League=CURRENT_LEAGUE`);
   incrementRainouts(season);
-  const afterDel = query(`SELECT Date as sDate FROM Schedule WHERE Date='${String(date)}' AND League="Hugh's"`);
+  const afterDel = query(`SELECT Date as sDate FROM Schedule WHERE Date='${String(date)}' AND League=CURRENT_LEAGUE`);
   logIt(`after DELETE`, `date=${date} stillExists=${afterDel.length > 0}`);
 
   const lp = getSeasonSettings(season);
@@ -17481,7 +17490,7 @@ function extendSchedule(date, season) {
   }
   logIt(`SeasonSettings updated`, `newEndDate=${newEndDate}`);
 
-  const lastDateRow = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= '${iSeason}0101' AND Date < '${iSeason+1}0101' ORDER BY Date DESC LIMIT 1`)[0];
+  const lastDateRow = query(`SELECT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND Date >= '${iSeason}0101' AND Date < '${iSeason+1}0101' ORDER BY Date DESC LIMIT 1`)[0];
   if (lastDateRow) {
     const ld = String(lastDateRow.sDate);
     const ldt = new Date(parseInt(ld.substring(0,4)), parseInt(ld.substring(4,6))-1, parseInt(ld.substring(6,8)));
@@ -17663,11 +17672,11 @@ function loadAdminKitty() {
   const today = new Date();
   const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
 
-  const skinCollected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Payment' AND Date >= ${season}0101`)[0]?.t || 0);
-  const skinPaidOut   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail LIKE '#%' AND Player != 'Kitty' AND Date >= ${season}0101`)[0]?.t || 0);
+  const skinCollected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Detail='Payment' AND Date >= ${season}0101`)[0]?.t || 0);
+  const skinPaidOut   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='Skin' AND Detail LIKE '#%' AND Player != 'Kitty' AND Date >= ${season}0101`)[0]?.t || 0);
   const skinKitty     = Math.round((skinCollected - skinPaidOut) * 100) / 100;
 
-  const ctpKittyRows  = query(`SELECT Detail, Earned, Date as cDate FROM Payments WHERE League="Hugh's" AND Desc='CTP' AND Player='Kitty' AND Date >= ${season}0101 ORDER BY Date DESC`);
+  const ctpKittyRows  = query(`SELECT Detail, Earned, Date as cDate FROM Payments WHERE League=CURRENT_LEAGUE AND Desc='CTP' AND Player='Kitty' AND Date >= ${season}0101 ORDER BY Date DESC`);
   const ctpKittyMap   = {};
   ctpKittyRows.forEach(r => {
     const m = r.Detail?.match(/Carryover(\d+)/);
@@ -17685,7 +17694,7 @@ function loadAdminKitty() {
 
   const heldRows = query(`
     SELECT COALESCE(SUM(Earned),0) as t FROM Payments 
-    WHERE League="Hugh's" AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','') 
+    WHERE League=CURRENT_LEAGUE AND Desc IN ('Skin','CTP') AND Detail NOT IN ('Payment','Kitty Payout','') 
     AND Player != 'Kitty' AND (DatePaid IS NULL OR DatePaid='') AND Date >= ${season}0101
   `);
   const heldBalance = parseFloat(heldRows[0]?.t || 0);
@@ -17917,12 +17926,12 @@ const LS_MID_SEASON_OK = new Set([
 function loadLeagueSettings() {
   const sel = document.getElementById('lsSeason');
   if (!sel.options.length) {
-    const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" ORDER BY Season DESC`);
+    const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League=CURRENT_LEAGUE ORDER BY Season DESC`);
     sel.innerHTML = seasons.map(r => `<option value="${r.Season}">${r.Season}</option>`).join('');
   }
   const season = sel.value;
   const ss = getSeasonSettings(season);
-  const gsRaw = query(`SELECT * FROM LeagueSettings WHERE League="Hugh's" LIMIT 1`)[0] || {};
+  const gsRaw = query(`SELECT * FROM LeagueSettings WHERE League=CURRENT_LEAGUE LIMIT 1`)[0] || {};
   // Normalize column name differences so LS_FIELDS keys match
   const gsettings = { ...gsRaw,
     Name:      gsRaw.Name      || gsRaw.LeagueName,   // LS_FIELDS uses 'Name'
@@ -18360,7 +18369,7 @@ function loadAdminTeams() {
   const rows = query(`SELECT Team, "Group", 
     MAX(CASE WHEN Grade='A' THEN Player END) as A,
     MAX(CASE WHEN Grade='B' THEN Player END) as B
-    FROM Teams WHERE Year=${season} AND League="Hugh's"
+    FROM Teams WHERE Year=${season} AND League=CURRENT_LEAGUE
     GROUP BY Team ORDER BY "Group", Team`);
 
   document.getElementById('teamsBody').innerHTML = '';
@@ -18431,7 +18440,7 @@ function saveTeamPlayer() {
   if (!player || !team || !group) { alert('Please fill all fields'); return; }
 
   // Check for existing assignment to show in confirmation
-  const existing = query(`SELECT Team, Grade, "Group" FROM Teams WHERE League="Hugh's" AND Year=? AND Player=?`, [season, player])[0];
+  const existing = query(`SELECT Team, Grade, "Group" FROM Teams WHERE League=CURRENT_LEAGUE AND Year=? AND Player=?`, [season, player])[0];
   let confirmMsg = `Assign ${player} to Team ${team}${grade}, Group ${group} for ${season}?`;
   if (existing) {
     confirmMsg = `${player} is currently on Team ${existing.Team}${existing.Grade}, Group ${existing.Group} for ${season}.\n\nMove to Team ${team}${grade}, Group ${group}?`;
@@ -18439,7 +18448,7 @@ function saveTeamPlayer() {
   if (!confirm(confirmMsg)) return;
 
   // Remove existing entry for this player/season
-  serverRun(`DELETE FROM Teams WHERE League="Hugh's" AND Year=? AND Player=?`, [season, player]);
+  serverRun(`DELETE FROM Teams WHERE League=CURRENT_LEAGUE AND Year=? AND Player=?`, [season, player]);
   serverRun(`INSERT INTO Teams (League,Year,Player,Team,Grade,"Group",CTP,EOY) VALUES ("Hugh's",?,?,?,?,?,'Y','Y')`,
     [season,player,team,grade,group]);
   document.getElementById('teamPlayerModal').style.display = 'none';
@@ -18449,7 +18458,7 @@ function saveTeamPlayer() {
 
 function removeTeamPlayer(season, team, grade) {
   if (!confirm(`Remove ${grade} player from Team ${team}?`)) return;
-  serverRun(`DELETE FROM Teams WHERE League="Hugh's" AND Year=? AND Team=? AND Grade=?`, [season,team,grade]);
+  serverRun(`DELETE FROM Teams WHERE League=CURRENT_LEAGUE AND Year=? AND Team=? AND Grade=?`, [season,team,grade]);
   loadAdminTeams();
   saveDBToServer();
 }
@@ -18459,14 +18468,14 @@ function loadAdminSubs() {
   const sel = document.getElementById('subsDate');
   if (!sel.options.length) {
     const season = query("SELECT MAX(Season) as s FROM SeasonSettings"  )[0]?.s;
-    const dates = query(`SELECT DISTINCT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date>='${season}0101' ORDER BY Date DESC`);
+    const dates = query(`SELECT DISTINCT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE AND Date>='${season}0101' ORDER BY Date DESC`);
     const opts = dates.map(r=>`<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
     sel.innerHTML = opts;
     document.getElementById('smDate').innerHTML = opts;
     sel.addEventListener('change', loadAdminSubs);
   }
   const date = sel.value;
-  const rows = query(`SELECT * FROM Subs WHERE Date=${date} AND League="Hugh's" ORDER BY Team, Grade`);
+  const rows = query(`SELECT * FROM Subs WHERE Date=${date} AND League=CURRENT_LEAGUE ORDER BY Team, Grade`);
   const tbody = document.getElementById('subsBody');
   tbody.innerHTML = '';
   rows.forEach(r => {
@@ -18659,7 +18668,7 @@ function getEoySkinPlayersForWeek(season, week) {
   const fullAmt = parseFloat(getSeasonSettings(season).EOYSkins || 20);
   const rows = query(`SELECT Player, CAST(Earned AS REAL) as Earned, COALESCE(Comment,'') as Comment
     FROM Payments
-    WHERE League="Hugh's"
+    WHERE League=CURRENT_LEAGUE
       AND "Desc"='EOY Skins'
       AND Detail='Payment'
       AND CAST(Earned AS REAL) > 0
@@ -18708,8 +18717,8 @@ function refundEoyPayment(player, season) {
   const psDates = lp?.PostSeasonDt ? parsePostSeasonDates(lp.PostSeasonDt) : null;
 
   // Check existing refund
-  const existingRefund = parseFloat(query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player])[0]?.t || 0);
-  const paidTotal = parseFloat(query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player])[0]?.t || 0);
+  const existingRefund = parseFloat(query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Player=? AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player])[0]?.t || 0);
+  const paidTotal = parseFloat(query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Player=? AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player])[0]?.t || 0);
   const maxRefund = Math.max(0, paidTotal + existingRefund); // existingRefund is negative
 
   if (maxRefund <= 0) { alert(`${player} has no remaining payment to refund.`); return; }
@@ -18732,7 +18741,7 @@ function refundEoyPayment(player, season) {
   const refundDate = psDates ? psDates.week1 : parseInt(`${season}${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getDate()).padStart(2,'0')}`);
 
   // Remove any existing manual refund rows for this player this season, then insert fresh
-  serverRun(`DELETE FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player]);
+  serverRun(`DELETE FROM Payments WHERE League=CURRENT_LEAGUE AND Player=? AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player]);
   serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,Comment) VALUES ("Hugh's",?,?,'EOY Skins','Refund',?,?)`,
     [player, refundDate, -refundAmt, reasonInput]);
   SERVER_RUN_QUEUE.then(() => { saveDBToServer(); loadPrizeMoney(); });
@@ -18771,8 +18780,8 @@ function showEoyPaymentPrompt(player, season, ctx) {
   const halfAmt = fullAmt / 2;
   // Determine which weeks the player just got a score for
   const psDates = ctx && ctx.week1 && ctx.week2 ? ctx : (lp?.PostSeasonDt ? parsePostSeasonDates(lp.PostSeasonDt) : null);
-  const hasW1Score = psDates ? (query(`SELECT 1 FROM Scores WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0)>0 LIMIT 1`, [player, psDates.week1]).length > 0) : false;
-  const hasW2Score = psDates ? (query(`SELECT 1 FROM Scores WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0)>0 LIMIT 1`, [player, psDates.week2]).length > 0) : false;
+  const hasW1Score = psDates ? (query(`SELECT 1 FROM Scores WHERE League=CURRENT_LEAGUE AND Player=? AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0)>0 LIMIT 1`, [player, psDates.week1]).length > 0) : false;
+  const hasW2Score = psDates ? (query(`SELECT 1 FROM Scores WHERE League=CURRENT_LEAGUE AND Player=? AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0)>0 LIMIT 1`, [player, psDates.week2]).length > 0) : false;
   const inBoth = hasW1Score && hasW2Score;
   const weekNum = hasW1Score && !hasW2Score ? '1' : hasW2Score && !hasW1Score ? '2' : '';
 
@@ -18839,7 +18848,7 @@ function getEoySkinPlayersForDate(season, date, postSeasonDt) {
 
 function getPostSeasonContextForDate(date) {
   const season = parseInt(date.toString().substring(0,4));
-  const rows = query(`SELECT PostSeasonDt, EOYSkins as EoySkins FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`);
+  const rows = query(`SELECT PostSeasonDt, EOYSkins as EoySkins FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL`);
   for (const r of rows) {
     const week = getPostSeasonWeekForDate(date, r.PostSeasonDt);
     if (week) {
@@ -18875,7 +18884,7 @@ function getPostSeasonPaymentStatus(player, date) {
 
   const rows = query(`SELECT ID, CAST(Earned AS REAL) as Earned, COALESCE(Comment,'') as Comment
     FROM Payments
-    WHERE League="Hugh's"
+    WHERE League=CURRENT_LEAGUE
       AND Player=?
       AND "Desc"='EOY Skins'
       AND Detail='Payment'
@@ -18902,7 +18911,7 @@ function getPostSeasonPaymentStatus(player, date) {
 function hasPostSeasonScore(player, date, frontBack) {
   return query(`SELECT 1
     FROM Scores
-    WHERE League="Hugh's"
+    WHERE League=CURRENT_LEAGUE
       AND Player=?
       AND CAST(Date AS INTEGER)=CAST(? AS INTEGER)
       AND FrontBack=?
@@ -18929,7 +18938,7 @@ function recalcPostSeasonEoyRefunds(season) {
     const paid = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as amt
       FROM Payments
       WHERE Player=?
-        AND League="Hugh's"
+        AND League=CURRENT_LEAGUE
         AND "Desc"='EOY Skins'
         AND Detail='Payment'
         AND Date >= ${season}0101
@@ -18945,7 +18954,7 @@ function recalcPostSeasonEoyRefunds(season) {
     refund = Math.min(refund, paid);
 
     serverRun(`DELETE FROM Payments
-      WHERE League="Hugh's"
+      WHERE League=CURRENT_LEAGUE
         AND Player=?
         AND "Desc"='EOY Skins'
         AND Detail='Refund'
@@ -18985,7 +18994,7 @@ function calcEoySkins(season, silent=false) {
   // Check if results already exist — just load them
   const psD1check = psDate1;
   const psD2check = psDate2;
-  const existingWinners = query(`SELECT rowid as RowID, Date, Player, Detail FROM Payments WHERE Date IN (${psD1check},${psD2check}) AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND League="Hugh's" ORDER BY Date, Player, Detail, rowid`);
+  const existingWinners = query(`SELECT rowid as RowID, Date, Player, Detail FROM Payments WHERE Date IN (${psD1check},${psD2check}) AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND League=CURRENT_LEAGUE ORDER BY Date, Player, Detail, rowid`);
   if (existingWinners.length > 0) {
     window.skinWinnerCells = {};
     const seen = new Set();
@@ -19014,7 +19023,7 @@ function calcEoySkins(season, silent=false) {
   const frontPars = courseData.front.pars;
 
   function getPhdcp(player, beforeDate) {
-    return query(`SELECT Hdcp FROM Handicaps WHERE Player=? AND League="Hugh's" AND Date < ? ORDER BY Date DESC LIMIT 1`, [player, beforeDate])[0]?.Hdcp || 0;
+    return query(`SELECT Hdcp FROM Handicaps WHERE Player=? AND League=CURRENT_LEAGUE AND Date < ? ORDER BY Date DESC LIMIT 1`, [player, beforeDate])[0]?.Hdcp || 0;
   }
 
   function netHoles(gross, phdcp, hcps) {
@@ -19040,7 +19049,7 @@ function calcEoySkins(season, silent=false) {
   const w1Hcps = w1Fb === 'Back' ? backHcps : frontHcps;
   const w1HoleNums = w1Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w1Scores = {};
-  query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${psDate1} AND League="Hugh's"`)
+  query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${psDate1} AND League=CURRENT_LEAGUE`)
     .filter(r => eoyWeek1Players.has(r.Player))
     .filter(r => [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']].some(v => v != null))
     .forEach(r => { w1Scores[r.Player] = [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']]; });
@@ -19054,7 +19063,7 @@ function calcEoySkins(season, silent=false) {
   const w2Hcps = w2Fb === 'Back' ? backHcps : frontHcps;
   const w2HoleNums = w2Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w2Scores = {};
-  query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${psDate2} AND League="Hugh's"`)
+  query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${psDate2} AND League=CURRENT_LEAGUE`)
     .filter(r => eoyWeek2Players.has(r.Player))
     .filter(r => [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']].some(v => v != null))
     .forEach(r => { w2Scores[r.Player] = [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']]; });
@@ -19074,7 +19083,7 @@ function calcEoySkins(season, silent=false) {
   const allUniqPayers = new Set([...eoyWeek1Players, ...eoyWeek2Players]);
   const ccPool = [];
   allUniqPayers.forEach(player => {
-    const paidTotal = parseFloat(query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player])[0]?.t || 0);
+    const paidTotal = parseFloat(query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League=CURRENT_LEAGUE AND Player=? AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player])[0]?.t || 0);
     if (paidTotal >= eoyFullAmtForCC && w1Scores[player] && w2Scores[player]) ccPool.push(player);
   });
 
@@ -19103,7 +19112,7 @@ function calcEoySkins(season, silent=false) {
   if (!silent && !confirm(lines.join('\n'))) return;
 
   // Write skin winner hole records
-  serverRun(`DELETE FROM Payments WHERE Date IN (${psDate1},${psDate2}) AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%'`);
+  serverRun(`DELETE FROM Payments WHERE Date IN (${psDate1},${psDate2}) AND League=CURRENT_LEAGUE AND "Desc"='Skin' AND Detail LIKE '#%'`);
   allWinners.forEach(w => {
     const date = w1HoleNums.includes(w.hole) ? psDate1 : psDate2;
     serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned) VALUES ("Hugh's",?,?,'Skin',?,?)`,
@@ -19128,7 +19137,7 @@ function populateEntryDates() {
 
   if (isPS) {
     // Build post season dates from SeasonSettings (one per season = Week 1 date)
-    const psRows = query(`SELECT Season, PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL ORDER BY Season DESC`);
+    const psRows = query(`SELECT Season, PostSeasonDt FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL ORDER BY Season DESC`);
     const psDates = psRows.map(r => {
       const p = r.PostSeasonDt.split('/');
       const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
@@ -19141,7 +19150,7 @@ function populateEntryDates() {
     else if (psDates.length) sel.value = psDates[0].date;
   } else {
     // Regular season dates from Schedule, excluding post season dates
-    const psRows = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`);
+    const psRows = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL`);
     const psDates = new Set();
     psRows.forEach(r => {
       const p = r.PostSeasonDt.split('/');
@@ -19151,7 +19160,7 @@ function populateEntryDates() {
       psDates.add(d1); psDates.add(d2);
     });
 
-    const allDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" ORDER BY Date DESC`).map(r=>r.sDate);
+    const allDates = query(`SELECT Date as sDate FROM Schedule WHERE League=CURRENT_LEAGUE ORDER BY Date DESC`).map(r=>r.sDate);
     const filtered = allDates.filter(d => !psDates.has(d));
 
     const byYear = {};
@@ -19323,7 +19332,7 @@ function loadGroupIntake() {
   const season = parseInt(String(date).substring(0, 4));
 
   // Schedule for this date
-  const sched = query(`SELECT "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24",FrontBack FROM Schedule WHERE League="Hugh's" AND Date='${date}'`)[0];
+  const sched = query(`SELECT "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24",FrontBack FROM Schedule WHERE League=CURRENT_LEAGUE AND Date='${date}'`)[0];
 
   // FrontBack: prefer schedule row, then fall back to SeasonSettings math
   const fb = sched?.FrontBack || getScheduledFrontBack(date, "Hugh's") || 'Front';
@@ -19340,8 +19349,8 @@ function loadGroupIntake() {
 
   // Player → team/grade map (subs override regulars)
   const playerTeam = {}, playerGrade = {};
-  query(`SELECT Player, Team, Grade FROM Teams WHERE Year=${season} AND League="Hugh's"`).forEach(r => { playerTeam[r.Player] = r.Team; playerGrade[r.Player] = r.Grade; });
-  query(`SELECT Player, Team, Grade FROM Subs WHERE Date=${date} AND League="Hugh's"`).forEach(r => { playerTeam[r.Player] = r.Team; playerGrade[r.Player] = r.Grade; });
+  query(`SELECT Player, Team, Grade FROM Teams WHERE Year=${season} AND League=CURRENT_LEAGUE`).forEach(r => { playerTeam[r.Player] = r.Team; playerGrade[r.Player] = r.Grade; });
+  query(`SELECT Player, Team, Grade FROM Subs WHERE Date=${date} AND League=CURRENT_LEAGUE`).forEach(r => { playerTeam[r.Player] = r.Team; playerGrade[r.Player] = r.Grade; });
 
   const allPlayers = Object.keys(playerTeam);
 
@@ -19360,7 +19369,7 @@ function loadGroupIntake() {
 
   // Already scored (any method) for this date
   const scoredPlayers = new Set(
-    query(`SELECT DISTINCT Player FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's"`).map(r => r.Player)
+    query(`SELECT DISTINCT Player FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League=CURRENT_LEAGUE`).map(r => r.Player)
   );
 
   // fb already set above from schedule or SeasonSettings
@@ -19561,7 +19570,7 @@ async function clearAllPsScores() {
   const dateClause = (d1 && d2) ? `Date IN (${d1},${d2})` : `Date=${d1||d2}`;
   const label = (d1 && d2) ? `dates ${d1} and ${d2}` : `date ${d1||d2}`;
   if (!confirm(`⚠️ Clear ALL scores for post season (${label})?\nThis resets all Gallus import status too. Cannot be undone.`)) return;
-  serverRun(`DELETE FROM Scores WHERE ${dateClause} AND League="Hugh's"`, []);
+  serverRun(`DELETE FROM Scores WHERE ${dateClause} AND League=CURRENT_LEAGUE`, []);
   serverRun(`UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE ${dateClause}`, []);
   Object.keys(entryState).forEach(k => { if (!k.startsWith('_ps')) delete entryState[k]; });
   entryStateDate = null;
@@ -19581,7 +19590,7 @@ function buildEntryGrid() {
   const league = "Hugh's";
   let season = parseInt(date.toString().substring(0,4));
   // Check if this is a post season date (check all seasons)
-  const psRows = query(`SELECT PostSeasonDt, SkinsPS, ClosestPS FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`);
+  const psRows = query(`SELECT PostSeasonDt, SkinsPS, ClosestPS FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL`);
   let isPostSeason = false, lp = null;
   for (const r of psRows) {
     const p = r.PostSeasonDt.split('/');
@@ -19592,7 +19601,7 @@ function buildEntryGrid() {
   }
   const psTestMode = !!document.getElementById('entryPostSeason')?.checked;
   if (!isPostSeason && psTestMode) {
-    const fallbackRow = query(`SELECT Season, PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL AND PostSeasonDt != '' ORDER BY Season DESC LIMIT 1`)[0];
+    const fallbackRow = query(`SELECT Season, PostSeasonDt FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL AND PostSeasonDt != '' ORDER BY Season DESC LIMIT 1`)[0];
     const fallbackSeason = fallbackRow?.Season;
     if (fallbackSeason) season = fallbackSeason;
     lp = (fallbackSeason ? getSeasonSettings(fallbackSeason) : null) || lp;
@@ -19617,7 +19626,7 @@ function buildEntryGrid() {
 
   // Auto-detect Front/Back for regular season dates unless the user just chose a side.
   if (!isPostSeason && !entryManual9) {
-    const existingFb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="Hugh's" LIMIT 1`)[0]?.FrontBack;
+    const existingFb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League=CURRENT_LEAGUE LIMIT 1`)[0]?.FrontBack;
     if (existingFb) {
       document.getElementById('entry9').value = existingFb;
       entryLast9Value = existingFb;
@@ -19712,8 +19721,8 @@ function buildEntryGrid() {
   // If scores exist for this date but no skin winners recorded yet, calculate now
   // (must happen before skinWinnerCells cache is built below)
   if (date && !blockFutureScores) {
-    const hasScores = query(`SELECT 1 FROM Scores WHERE League="Hugh's" AND Date=${date} LIMIT 1`).length > 0;
-    const hasWinners = query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Date=${date} LIMIT 1`).length > 0;
+    const hasScores = query(`SELECT 1 FROM Scores WHERE League=CURRENT_LEAGUE AND Date=${date} LIMIT 1`).length > 0;
+    const hasWinners = query(`SELECT 1 FROM Payments WHERE League=CURRENT_LEAGUE AND "Desc"='Skin' AND Detail LIKE '#%' AND Date=${date} LIMIT 1`).length > 0;
     if (hasScores && !hasWinners) {
       const result = saveSkinWinnersForDate(date);
       if (result?.ok) SERVER_RUN_QUEUE.then(() => saveDBToServer());
@@ -19721,7 +19730,7 @@ function buildEntryGrid() {
   }
 
   // Find the next upcoming date (first future schedule date)
-  const nextDate = query(`SELECT MIN(Date) as d FROM Schedule WHERE League="Hugh's" AND CAST(Date AS INTEGER) > ${todayInt}`)[0]?.d;
+  const nextDate = query(`SELECT MIN(Date) as d FROM Schedule WHERE League=CURRENT_LEAGUE AND CAST(Date AS INTEGER) > ${todayInt}`)[0]?.d;
   const isNextDate = date == nextDate;
   const isLocked = isFuture && !isNextDate;
 
@@ -19788,7 +19797,7 @@ function buildEntryGrid() {
 
   // Subs recorded in DB for this date: { team+grade key -> subName }
   const dbSubs = {};  // key: `${team}-${grade}` -> player name
-  query(`SELECT Player, Team, Grade FROM Subs WHERE Date=${date} AND League="Hugh's"`)
+  query(`SELECT Player, Team, Grade FROM Subs WHERE Date=${date} AND League=CURRENT_LEAGUE`)
     .forEach(r => { dbSubs[`${r.Team}-${r.Grade}`] = r.Player; });
 
   // Team players for current season
@@ -19839,12 +19848,12 @@ function buildEntryGrid() {
   // Handicap map — phdcp for a given date is the Hdcp from the most recent record BEFORE that date
   const hdcpMap = {};
   query(`SELECT h.Player, h.Hdcp, h.PHdcp FROM Handicaps h
-    WHERE h.League="Hugh's" AND h.Date=(SELECT MAX(h2.Date) FROM Handicaps h2
+    WHERE h.League=CURRENT_LEAGUE AND h.Date=(SELECT MAX(h2.Date) FROM Handicaps h2
       WHERE h2.Player=h.Player AND h2.League=h.League AND h2.Date<${date} AND h2.Date>=${season}0101)`)
     .forEach(r => { hdcpMap[r.Player] = { hdcp: parseInt(r.Hdcp)||0, phdcp: parseInt(r.Hdcp)||0 }; });
   // For players with no prior record this season, fall back to Hdcp on or before date
   query(`SELECT h.Player, h.Hdcp FROM Handicaps h
-    WHERE h.League="Hugh's" AND h.Date=(SELECT MAX(h2.Date) FROM Handicaps h2
+    WHERE h.League=CURRENT_LEAGUE AND h.Date=(SELECT MAX(h2.Date) FROM Handicaps h2
       WHERE h2.Player=h.Player AND h2.League=h.League AND h2.Date<=${date} AND h2.Date>=${season}0101)`)
     .forEach(r => { if (!hdcpMap[r.Player]) hdcpMap[r.Player] = { hdcp: parseInt(r.Hdcp)||0, phdcp: parseInt(r.Hdcp)||0 }; });
 
@@ -19896,7 +19905,7 @@ function buildEntryGrid() {
       ...getEoySkinPlayersForWeek(season, 1),
       ...getEoySkinPlayersForWeek(season, 2)
     ]);
-    const scorePlayers = new Set(query(`SELECT DISTINCT Player FROM Scores WHERE Date IN (${psDates.week1},${psDates.week2}) AND League="Hugh's"`).map(r=>r.Player));
+    const scorePlayers = new Set(query(`SELECT DISTINCT Player FROM Scores WHERE Date IN (${psDates.week1},${psDates.week2}) AND League=CURRENT_LEAGUE`).map(r=>r.Player));
     // Only flag no-shows once some scores exist — if nobody has played yet, don't mark anyone red
     window.eoyNoShows = scorePlayers.size > 0
       ? new Set([...eoyPayers].filter(p => !scorePlayers.has(p)))
@@ -19970,7 +19979,7 @@ async function _autoMarkEntryPaid(player, date, focusKey, focusHi) {
   });
   // Refresh inSkins state and re-render (no save — just visual update)
   const freshSkinPlayers = new Set(
-    query(`SELECT DISTINCT Player FROM Payments WHERE League="Hugh's" AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc"='Skin' AND Detail='Payment'`, [date]).map(r => r.Player)
+    query(`SELECT DISTINCT Player FROM Payments WHERE League=CURRENT_LEAGUE AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc"='Skin' AND Detail='Payment'`, [date]).map(r => r.Player)
   );
   Object.values(entryState).forEach(st => {
     st.inSkins = freshSkinPlayers.has(st.active) || freshSkinPlayers.has(st.regular);
@@ -20063,7 +20072,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
   const psContext = isPostSeason ? getPostSeasonContextForDate(gridDate) : null;
   const paidPlayers = isPostSeason && psContext
     ? getEoySkinPlayersForWeek(gridSeason, psContext.week)
-    : new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League="Hugh's" AND CAST(Date AS INTEGER)=CAST(${gridDate||0} AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment'`).map(r=>r.Player));
+    : new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League=CURRENT_LEAGUE AND CAST(Date AS INTEGER)=CAST(${gridDate||0} AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment'`).map(r=>r.Player));
 
   // Fixed column widths via colgroup
   const oldCg = grid.querySelector('colgroup');
@@ -20376,13 +20385,13 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
               const _isPS = document.getElementById('entryGrid')?.dataset?.postSeason === '1';
               if (!_isPS && _date && _activePlayer) {
                 const _paid = query(
-                  `SELECT 1 FROM Payments WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment'`,
+                  `SELECT 1 FROM Payments WHERE League=CURRENT_LEAGUE AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment'`,
                   [_activePlayer, _date]
                 ).length > 0;
                 if (!_paid) {
                   // If player has been paid on any prior round, auto-mark silently
                   const _priorPaid = query(
-                    `SELECT 1 FROM Payments WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)<CAST(? AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment' LIMIT 1`,
+                    `SELECT 1 FROM Payments WHERE League=CURRENT_LEAGUE AND Player=? AND CAST(Date AS INTEGER)<CAST(? AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail='Payment' LIMIT 1`,
                     [_activePlayer, _date]
                   ).length > 0;
                   if (_priorPaid) {
@@ -20699,12 +20708,12 @@ function openSubPicker(key) {
 
   // Build ranked sub list: slot-frequent first, then season-frequent, then everyone else
   const slotFrequent = query(`SELECT Player, COUNT(*) as cnt FROM Subs 
-    WHERE League="Hugh's" AND Team=? AND Grade=? AND Date >= '${season}0101'
+    WHERE League=CURRENT_LEAGUE AND Team=? AND Grade=? AND Date >= '${season}0101'
     AND Player != ?
     GROUP BY Player ORDER BY cnt DESC`, [st.team, st.grade, st.regular]).map(r=>r.Player);
 
   const seasonFrequent = query(`SELECT Player, COUNT(*) as cnt FROM Subs 
-    WHERE League="Hugh's" AND Date >= '${season}0101'
+    WHERE League=CURRENT_LEAGUE AND Date >= '${season}0101'
     AND Player != ?
     GROUP BY Player ORDER BY cnt DESC`, [st.regular]).map(r=>r.Player)
     .filter(p => !slotFrequent.includes(p));
@@ -20737,13 +20746,13 @@ function confirmSub() {
   const date = document.getElementById('entryDate').value;
 
   // Write to Subs table
-  serverRun(`DELETE FROM Subs WHERE Date=? AND Team=? AND Grade=? AND League="Hugh's"`, [date, st.team, st.grade]);
+  serverRun(`DELETE FROM Subs WHERE Date=? AND Team=? AND Grade=? AND League=CURRENT_LEAGUE`, [date, st.team, st.grade]);
   serverRun(`INSERT INTO Subs (League, Player, Date, Team, Grade) VALUES ("Hugh's", ?, ?, ?, ?)`,
     [name, date, st.team, st.grade]);
 
   // Look up sub's current handicap
-  const subHdcp = query(`SELECT Hdcp, PHdcp FROM Handicaps WHERE Player=? AND League="Hugh's"
-    AND Date=(SELECT MAX(Date) FROM Handicaps WHERE Player=? AND League="Hugh's")`, [name, name]);
+  const subHdcp = query(`SELECT Hdcp, PHdcp FROM Handicaps WHERE Player=? AND League=CURRENT_LEAGUE
+    AND Date=(SELECT MAX(Date) FROM Handicaps WHERE Player=? AND League=CURRENT_LEAGUE)`, [name, name]);
   const hdcp  = subHdcp.length ? subHdcp[0].Hdcp  : 0;
   const phdcp = subHdcp.length ? subHdcp[0].PHdcp : 0;
 
@@ -20760,11 +20769,11 @@ function clearSub(key) {
   const date = document.getElementById('entryDate').value;
 
   // Remove from Subs table
-  serverRun(`DELETE FROM Subs WHERE Date=? AND Team=? AND Grade=? AND League="Hugh's"`, [date, st.team, st.grade]);
+  serverRun(`DELETE FROM Subs WHERE Date=? AND Team=? AND Grade=? AND League=CURRENT_LEAGUE`, [date, st.team, st.grade]);
 
   // Remove sub's handicap record for this date if we added it
   if (st.sub) {
-    serverRun(`DELETE FROM Handicaps WHERE Player=? AND Date=? AND League="Hugh's"`, [st.sub, date]);
+    serverRun(`DELETE FROM Handicaps WHERE Player=? AND Date=? AND League=CURRENT_LEAGUE`, [st.sub, date]);
   }
 
   buildEntryGrid();
@@ -20785,7 +20794,7 @@ async function clearEntryGroup(groupNum) {
   const _psD1 = entryState._psDate1;
   const _psD2 = entryState._psDate2;
   const _dateClause = (_psD1 && _psD2) ? `Date IN (${_psD1},${_psD2})` : `Date=${date}`;
-  serverRun(`DELETE FROM Scores WHERE Player IN (${playerList}) AND ${_dateClause} AND League="Hugh's"`, []);
+  serverRun(`DELETE FROM Scores WHERE Player IN (${playerList}) AND ${_dateClause} AND League=CURRENT_LEAGUE`, []);
   serverRun(`UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE ResolvedName IN (${playerList}) AND ${_dateClause}`, []);
   await SERVER_RUN_QUEUE;
   buildEntryGrid();
@@ -21041,7 +21050,7 @@ function saveSkinWinnersForDate(date) {
   if (psContext) {
     const psDates = parsePostSeasonDates(psContext.postSeasonDt);
     serverRun(`DELETE FROM Payments
-      WHERE League="Hugh's"
+      WHERE League=CURRENT_LEAGUE
         AND "Desc"='Skin'
         AND Detail LIKE '#%'
         AND Date IN (${psDates.week1},${psDates.week2})`);
@@ -21257,7 +21266,7 @@ function showHoleBreakdown(holeNum, hi, evt) {
 
 function applyCellClasses(nine) {
   // For post season, check both dates for skin payments
-  const psRows = db ? query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`) : [];
+  const psRows = db ? query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL`) : [];
   let skinDateCheck = `Date=${entryStateDate}`;
   for (const r of psRows) {
     const psDates = parsePostSeasonDates(r.PostSeasonDt);
@@ -21404,7 +21413,7 @@ function updateCompletedEntryHandicap(key, nine, writeDb = true) {
   // First-timer fix: if phdcp=0 and no prior handicap records exist, use newHdcp as playing hdcp
   // (A true scratch player would have a prior Hdcp=0 row; a first-timer has nothing)
   const isFirstTimer  = phdcp === 0 &&
-    query(`SELECT 1 FROM Handicaps WHERE Player=? AND League="Hugh's" AND Date < ? LIMIT 1`, [st.active, date]).length === 0;
+    query(`SELECT 1 FROM Handicaps WHERE Player=? AND League=CURRENT_LEAGUE AND Date < ? LIMIT 1`, [st.active, date]).length === 0;
   const effectivePhdcp = isFirstTimer ? newHdcp : phdcp;
   st.hdcp = newHdcp;
 
@@ -21799,7 +21808,7 @@ async function savePlayerScoreNow(key, gross, net) {
     const season = parseInt(date.toString().substring(0,4));
     if (savedHalf) {
       // Check if player has an EOY Skins payment — if not, offer to pay
-      const hasEoyPay = query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season+1}0101 LIMIT 1`, [playerName]).length > 0;
+      const hasEoyPay = query(`SELECT 1 FROM Payments WHERE League=CURRENT_LEAGUE AND Player=? AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season+1}0101 LIMIT 1`, [playerName]).length > 0;
       if (!hasEoyPay) {
         const psCtx = { week1: entryState._psFrontDate || entryState._psDate1, week2: entryState._psBackDate || entryState._psDate2 };
         showEoyPaymentPrompt(playerName, season, psCtx);
@@ -22019,7 +22028,7 @@ async function saveEntryToDB() {
   const fb     = document.getElementById('entry9').value;
   const league = "Hugh's";
   const season = query("SELECT MAX(Season) as s FROM SeasonSettings"  )[0]?.s;
-  const psRows2 = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`);
+  const psRows2 = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL`);
   let isPS = false;
   for (const r of psRows2) {
     const p = r.PostSeasonDt.split('/');
@@ -22148,7 +22157,7 @@ document.getElementById('entryClear')?.addEventListener('click', async ()=>{
   const league = "Hugh's";
   if (!confirm(`Clear scores for ${st.active} on ${fmtDate(date)}?\n\nWarning: clearing this score causes cascading recalculations for handicaps, matches, skins, CTPs, standings, and related reports.`)) return;
 
-  const psRows3 = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`);
+  const psRows3 = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League=CURRENT_LEAGUE AND PostSeasonDt IS NOT NULL`);
   let isPS2 = false;
   for (const r of psRows3) {
     const p = r.PostSeasonDt.split('/');

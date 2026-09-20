@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Golf League Manager</title>
+<title>Hugh's Golf League</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
@@ -528,7 +528,7 @@
 <body>
 
 <header>
-  <div class="logo">Golf League <span>Manager</span></div>
+  <div class="logo">Hugh's <span>Golf League</span></div>
   <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#d6ead2;font-family:'DM Mono',monospace;font-weight:700">
     <span id="appVersionDisplay">v—</span>
     <span style="color:#9bc59a">|</span>
@@ -583,8 +583,7 @@
 </div>
 <div id="loginOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center">
   <div style="background:white;border-radius:12px;padding:32px;width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
-    <div style="font-family:'Bebas Neue',cursive;font-size:22px;color:#aaa;margin-bottom:0px;letter-spacing:1px">Golf League Manager</div>
-    <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px" id="loginLeagueName">Hugh's Golf League</div>
+    <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
     <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v—</span></div>
     <!-- Sandbox quick-login (no password) -->
@@ -1338,7 +1337,6 @@
       <button onclick="showAdminSection('sql')" id="adminGroupSql" class="admin-btn">🔍 SQL</button>
       <button onclick="showAdminSection('players')" id="adminGroupTables" class="admin-btn">Table Maintenance</button>
       <button onclick="showAdminSection('loginactivity')" id="adminGroupLogging" class="admin-btn">Logging</button>
-      <button onclick="showAdminSection('seasonsetup')" id="adminBtnSeasonsetup" class="admin-btn" style="background:#1b4d2e;color:#fff;font-weight:700">🗓 Season Setup</button>
       <button onclick="showAdminSection('pdfs')" id="adminBtnPdfs" class="admin-btn">📄 PDFs</button>
       <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
       <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">💾 Backups</button>
@@ -1609,16 +1607,6 @@
         </div>
       </div>
     </div>
-    <!-- ── Season Setup Wizard ─────────────────────────────────────────── -->
-    <div id="adminSeasonsetup" style="display:none">
-      <div class="card">
-        <div class="card-header">🗓 Season Setup Wizard</div>
-        <div style="padding:16px" id="seasonSetupContent">
-          <p style="color:#666;font-size:13px">Loading...</p>
-        </div>
-      </div>
-    </div>
-
     <div id="adminBackups" style="display:none">
       <div class="card">
         <div class="card-header">Database Backups</div>
@@ -10340,11 +10328,7 @@ function loadSchedule() {
 }
 
 // ── ADMIN TAB ──
-// ── League identity — single place to change for multi-league support ──
-// TODO (multi-league): read this from DB or URL param when supporting multiple leagues
-const CURRENT_LEAGUE = "Hugh's";
-
-const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','scores','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','emaillog','proposals','seasonsetup'];
+const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','scores','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','emaillog','proposals'];
 const ADMIN_GROUPS = {
   tables: ['players','teams','subs','leaguesettings'],
   logging: ['loginactivity','serverlog','pageviews','emaillog']
@@ -10381,7 +10365,7 @@ function showAdminSection(section) {
     const btn = document.getElementById(`adminGroup${g}`);
     if (btn) btn.className = 'admin-btn' + (group === g.toLowerCase() || (g === 'Sql' && section === 'sql') ? ' active-admin-btn' : '');
   });
-  ['pdfs','rainout','sync','scores','gallus','backups','changelog','expenses','compare','proposals','seasonsetup'].forEach(s => {
+  ['pdfs','rainout','sync','scores','gallus','backups','changelog','expenses','compare','proposals'].forEach(s => {
     const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
     if (btn) btn.className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
@@ -10409,9 +10393,8 @@ function showAdminSection(section) {
   if (section==='expenses')  loadExpenses();
   if (section==='compare')   loadCompareSection();
   if (section==='pageviews') loadPageViews();
-  if (section==='emaillog')    loadEmailLog();
-  if (section==='seasonsetup') loadSeasonSetup();
-  if (section==='testdb')      loadTestDbPanel();
+  if (section==='emaillog')  loadEmailLog();
+  if (section==='testdb')    loadTestDbPanel();
 }
 
 function selectedOptionText(selectId) {
@@ -11084,16 +11067,12 @@ function createReportPdf(kind) {
 
 function loadAdminTab() {
   if (!db) return;
-  refreshSeasonSetupVisibility();
   showAdminSection('scores');
   document.getElementById('playerSearch').addEventListener('input', loadAdminPlayers);
   // Show Compare Live button only in sandbox environment
   const isSandboxEnv = isSandboxHost() || location.port === '8446';
   const compareBtn = document.getElementById('adminBtnCompare');
   if (compareBtn) compareBtn.style.display = isSandboxEnv ? '' : 'none';
-  // Show Sync button only in sandbox environment
-  const syncBtn = document.getElementById('adminBtnSync');
-  if (syncBtn) syncBtn.style.display = isSandboxEnv ? '' : 'none';
 }
 
 // ── PLAYERS ──
@@ -13191,242 +13170,6 @@ function loadHomeProposals() {
   }).join('');
 }
 // ── End Proposals & Suggestions ───────────────────────────────────────────────
-
-// ── Season Setup Wizard ────────────────────────────────────────────────────────
-function seasonIsUnderway(season) {
-  // Season is "underway" once any scores exist for this season
-  return (query(`SELECT COUNT(*) as c FROM Scores WHERE League='${CURRENT_LEAGUE}' AND Date >= ${season}0101 AND Date < ${season+1}0101`)[0]?.c || 0) > 0;
-}
-
-function postSeasonEnded(season) {
-  const ss = getSeasonSettings(season);
-  if (!ss?.PostSeasonDt) return false;
-  const today = new Date();
-  const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
-  const psd = new Date(ss.PostSeasonDt);
-  if (isNaN(psd)) return false;
-  const psInt = psd.getFullYear()*10000 + (psd.getMonth()+1)*100 + psd.getDate();
-  return todayInt > psInt;
-}
-
-function refreshSeasonSetupVisibility() {
-  const btn = document.getElementById('adminBtnSeasonsetup');
-  if (!btn) return;
-  const curSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League='${CURRENT_LEAGUE}'`)[0]?.s || new Date().getFullYear();
-  // Show wizard during pre-season OR after post-season ends (to set up next year)
-  const underway = seasonIsUnderway(curSeason);
-  const psEnded = postSeasonEnded(curSeason);
-  btn.style.display = (!underway || psEnded) ? '' : 'none';
-}
-
-function loadSeasonSetup() {
-  const el = document.getElementById('seasonSetupContent');
-  if (!el) return;
-
-  const curSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League='${CURRENT_LEAGUE}'`)[0]?.s || new Date().getFullYear();
-  const nextSeason = postSeasonEnded(curSeason) ? curSeason + 1 : curSeason;
-  const prevSeason = nextSeason - 1;
-  const prevSS = getSeasonSettings(prevSeason);
-  const nextSS = getSeasonSettings(nextSeason);
-  const ls = query(`SELECT * FROM LeagueSettings WHERE League='${CURRENT_LEAGUE}' LIMIT 1`)[0] || {};
-  const teams = query(`SELECT * FROM Teams WHERE League='${CURRENT_LEAGUE}' AND Season=${prevSeason} ORDER BY TeamNum`);
-  const numTeams = teams.length || prevSS?.Teams || 0;
-  const rounds = ls.RoundsPerSeason || 2;
-  const weeksPerRound = numTeams % 2 === 0 ? numTeams - 1 : numTeams;
-
-  function secondTuesdayOfApril(year) {
-    let d = new Date(year, 3, 1);
-    while (d.getDay() !== 2) d.setDate(d.getDate() + 1);
-    d.setDate(d.getDate() + 7);
-    return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
-  }
-  const projStart = secondTuesdayOfApril(nextSeason);
-  const hasNextSeason = !!nextSS;
-  const hasNextSchedule = query(`SELECT COUNT(*) as c FROM Schedule WHERE League='${CURRENT_LEAGUE}' AND Date >= ${nextSeason}0101`)[0]?.c > 0;
-
-  const stepStyle = done => `display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:8px;margin-bottom:10px;background:${done?'#f1f8f1':'#fafafa'};border:1px solid ${done?'#c8e6c9':'#e0e0e0'}`;
-  const checkIcon = done => `<span style="font-size:18px;margin-top:1px">${done?'✅':'⬜'}</span>`;
-  const stepTitle = (t, done) => `<span style="font-weight:700;font-size:13px;color:${done?'#2e7d32':'#333'}">${t}</span>`;
-  const stepDesc = d => `<div style="font-size:12px;color:#666;margin-top:3px">${d}</div>`;
-  const actionBtn = (label, onclick, color='#1b4d2e') =>
-    `<button onclick="${onclick}" style="margin-top:8px;padding:5px 14px;background:${color};color:white;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer">${label}</button>`;
-
-  el.innerHTML = `
-    <div style="max-width:700px">
-      <div style="background:#e8f5e9;border:1px solid #c8e6c9;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:13px">
-        <strong>Setting up ${nextSeason} season</strong> — based on ${prevSeason} (${numTeams} teams, ${rounds} rounds of ${weeksPerRound} weeks each).
-        Projected start: <strong>${projStart}</strong>
-      </div>
-
-      <div style="${stepStyle(hasNextSeason)}">
-        ${checkIcon(hasNextSeason)}
-        <div style="flex:1">
-          ${stepTitle(`1. Create ${nextSeason} Season Record`, hasNextSeason)}
-          ${stepDesc(`Copies settings from ${prevSeason} as a starting point.`)}
-          ${!hasNextSeason ? actionBtn(`Create ${nextSeason} Season`, `createNextSeason(${prevSeason}, ${nextSeason})`)
-            : '<div style="font-size:12px;color:#2e7d32;margin-top:4px">Season record exists ✓</div>'}
-        </div>
-      </div>
-
-      <div style="${stepStyle(false)}">
-        ${checkIcon(false)}
-        <div style="flex:1">
-          ${stepTitle('2. Review Money & Format Settings', false)}
-          ${stepDesc('Update weekly cost, skins amounts, payouts, and any format changes.')}
-          ${actionBtn('Go to League Settings →', "showAdminSection('leaguesettings')", '#1565c0')}
-        </div>
-      </div>
-
-      <div style="${stepStyle(false)}">
-        ${checkIcon(false)}
-        <div style="flex:1">
-          ${stepTitle('3. Finalize Teams & Roster', false)}
-          ${stepDesc('Add or drop teams, swap players. New players start with no handicap history.')}
-          ${actionBtn('Go to Teams →', "showAdminSection('teams')", '#1565c0')}
-        </div>
-      </div>
-
-      <div style="${stepStyle(hasNextSchedule)}">
-        ${checkIcon(hasNextSchedule)}
-        <div style="flex:1">
-          ${stepTitle(`4. Generate ${nextSeason} Schedule`, hasNextSchedule)}
-          ${stepDesc('Creates a random round-robin first-half schedule with projected second-half dates.')}
-          ${!hasNextSchedule
-            ? (hasNextSeason ? actionBtn('Generate Schedule', `generateSeasonSchedule(${nextSeason})`)
-              : '<div style="font-size:12px;color:#999;margin-top:4px">Complete Step 1 first</div>')
-            : '<div style="font-size:12px;color:#2e7d32;margin-top:4px">Schedule generated ✓</div>'
-              + actionBtn('Regenerate', `generateSeasonSchedule(${nextSeason})`, '#b71c1c')}
-        </div>
-      </div>
-
-      <div style="${stepStyle(false)}">
-        ${checkIcon(false)}
-        <div style="flex:1">
-          ${stepTitle('5. Coordinate Gallus with Golf Course', false)}
-          ${stepDesc('Contact the course director to set up Gallus for the new season. Done outside the app.')}
-          <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;cursor:pointer">
-            <input type="checkbox" id="gallusCheck" onchange="localStorage.setItem('hg_gallus_done_${nextSeason}', this.checked?'1':'')">
-            Mark as done
-          </label>
-        </div>
-      </div>
-
-      <div style="${stepStyle(false)}">
-        ${checkIcon(false)}
-        <div style="flex:1">
-          ${stepTitle('6. Verify & Test', false)}
-          ${stepDesc('Do a test score entry for the first week, confirm schedule and standings look correct.')}
-          ${actionBtn('Go to Scores →', "showAdminSection('scores')", '#1565c0')}
-        </div>
-      </div>
-    </div>
-  `;
-
-  if (localStorage.getItem(`hg_gallus_done_${nextSeason}`) === '1') {
-    const cb = document.getElementById('gallusCheck');
-    if (cb) cb.checked = true;
-  }
-}
-
-function createNextSeason(prevSeason, nextSeason) {
-  const cur = getSeasonSettings(prevSeason);
-  if (!cur) { showToast('Cannot find prior season data', '#c62828', 3000); return; }
-  const cols = `League, Season, Cost, Course, Start9, Skins, Closest, EOYSkins, SkinsPS, ClosestPS,
-    PayPlaces, ChampMode, ChampPlace1, ChampPlace2, ChampPlace3, ChampPlaces,
-    StandPlace1, StandPlace2, StandPlace3, Teams, Rainouts, Byes`;
-  const vals = [CURRENT_LEAGUE, nextSeason, cur.Cost, cur.Course, cur.Start9, cur.Skins, cur.Closest,
-    cur.EOYSkins, cur.SkinsPS, cur.ClosestPS, cur.PayPlaces, cur.ChampMode,
-    cur.ChampPlace1, cur.ChampPlace2, cur.ChampPlace3, cur.ChampPlaces,
-    cur.StandPlace1, cur.StandPlace2, cur.StandPlace3, cur.Teams, 0, 0];
-  db.run(`INSERT OR IGNORE INTO SeasonSettings (${cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, vals);
-  serverRun(`INSERT OR IGNORE INTO SeasonSettings (${cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, vals);
-  saveDBToServer();
-  showToast(`✅ ${nextSeason} season record created`, '#2e7d32', 3000);
-  loadSeasonSetup();
-}
-
-function generateSeasonSchedule(season) {
-  const ss = getSeasonSettings(season);
-  if (!ss) { showToast('Create the season record first (Step 1)', '#c62828', 3000); return; }
-  const ls = query(`SELECT * FROM LeagueSettings WHERE League='${CURRENT_LEAGUE}' LIMIT 1`)[0] || {};
-  const numTeams = ss.Teams || 0;
-  if (!numTeams || numTeams < 2) { showToast('Set # of Teams in League Settings first', '#c62828', 3000); return; }
-
-  function secondTuesdayOfApril(year) {
-    let d = new Date(year, 3, 1);
-    while (d.getDay() !== 2) d.setDate(d.getDate() + 1);
-    d.setDate(d.getDate() + 7);
-    return d;
-  }
-  function dateToInt(d) { return d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate(); }
-  function fmtDate(d) { return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`; }
-
-  // Round-robin (Berger rotation)
-  function roundRobin(n) {
-    const hasBye = n % 2 !== 0;
-    const t = Array.from({length: hasBye ? n+1 : n}, (_,i) => i+1);
-    const rounds = [];
-    for (let r = 0; r < t.length - 1; r++) {
-      const pairs = [];
-      for (let i = 0; i < t.length / 2; i++) {
-        const a = t[i], b = t[t.length-1-i];
-        pairs.push(hasBye && (a===n+1||b===n+1) ? [a===n+1?b:a,'BYE'] : [a,b]);
-      }
-      rounds.push(pairs);
-      t.splice(1, 0, t.pop());
-    }
-    // Shuffle for randomness
-    for (let i = rounds.length-1; i>0; i--) {
-      const j = Math.floor(Math.random()*(i+1));
-      [rounds[i],rounds[j]] = [rounds[j],rounds[i]];
-    }
-    return rounds;
-  }
-
-  const rounds = ls.RoundsPerSeason || 2;
-  const schedule = roundRobin(numTeams);
-  const weeksPerRound = schedule.length;
-  const totalWeeks = weeksPerRound * rounds;
-
-  // Delete existing schedule for this season
-  db.run(`DELETE FROM Schedule WHERE League='${CURRENT_LEAGUE}' AND Date >= ${season}0101 AND Date < ${season+1}0101`);
-  serverRun(`DELETE FROM Schedule WHERE League='${CURRENT_LEAGUE}' AND Date >= ${season}0101 AND Date < ${season+1}0101`, []);
-
-  let weekDate = secondTuesdayOfApril(season);
-  let currentFB = (ss.Start9 || 'F').toUpperCase() === 'F' ? 'Front' : 'Back';
-  let currentMonth = weekDate.getMonth();
-
-  for (let w = 0; w < totalWeeks; w++) {
-    if (weekDate.getMonth() !== currentMonth) {
-      currentFB = currentFB === 'Front' ? 'Back' : 'Front';
-      currentMonth = weekDate.getMonth();
-    }
-    const isFirstHalf = w < weeksPerRound;
-    const dateInt = dateToInt(weekDate);
-    const colVals = {};
-    if (isFirstHalf) {
-      schedule[w].forEach((pair, idx) => { colVals[idx+1] = `${pair[0]}v${pair[1]}`; });
-    }
-    const colKeys = Object.keys(colVals);
-    const colSql = colKeys.length ? ',' + colKeys.map(k=>`[${k}]`).join(',') : '';
-    const colPh  = colKeys.length ? ',' + colKeys.map(()=>'?').join(',') : '';
-    const colV   = colKeys.map(k=>colVals[k]);
-    db.run(`INSERT INTO Schedule (Date,League,FrontBack,Status${colSql}) VALUES (?,?,?,?${colPh})`,
-      [dateInt, CURRENT_LEAGUE, currentFB, isFirstHalf?'':'projected', ...colV]);
-    serverRun(`INSERT INTO Schedule (Date,League,FrontBack,Status${colSql}) VALUES (?,?,?,?${colPh})`,
-      [dateInt, CURRENT_LEAGUE, currentFB, isFirstHalf?'':'projected', ...colV]);
-    weekDate.setDate(weekDate.getDate()+7);
-  }
-
-  const endDate = new Date(weekDate); endDate.setDate(endDate.getDate()-7);
-  const startStr = fmtDate(secondTuesdayOfApril(season));
-  const endStr   = fmtDate(endDate);
-  db.run(`UPDATE SeasonSettings SET StartDate=?,EndDate=? WHERE League='${CURRENT_LEAGUE}' AND Season=?`, [startStr,endStr,season]);
-  serverRun(`UPDATE SeasonSettings SET StartDate=?,EndDate=? WHERE League='${CURRENT_LEAGUE}' AND Season=?`, [startStr,endStr,season]);
-  saveDBToServer();
-  showToast(`✅ ${totalWeeks} weeks scheduled (${startStr} – ${endStr})`, '#2e7d32', 4000);
-  loadSeasonSetup();
-}
 
 function loadAdminChangelog() {
   ensureAppChangelogTable();
@@ -17011,13 +16754,7 @@ async function loginSuccess(player, opts = {}) {
 
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('loggedInUser').textContent = currentUser.name;
-  const _leagueName = getLeagueSetting('LeagueName') || getLeagueSetting('Name') || 'Golf League';
-  document.title = `${_leagueName} — ${currentUser.name}`;
-  // Update header logo and login overlay league name to reflect this league's name
-  const _logoEl = document.querySelector('.logo');
-  if (_logoEl) _logoEl.innerHTML = `<span>${_leagueName}</span>`;
-  const _loginNameEl = document.getElementById('loginLeagueName');
-  if (_loginNameEl) _loginNameEl.textContent = _leagueName;
+  document.title = `Hugh's Golf League — ${currentUser.name}`;
   document.getElementById('loggedInUser').style.display = '';
   document.getElementById('logoutBtn').style.display = '';
   document.getElementById('changePwBtn').style.display = '';
