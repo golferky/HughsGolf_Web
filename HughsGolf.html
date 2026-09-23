@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260902.13';
+const APP_VERSION = '20260923.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -17046,6 +17046,37 @@ function loadScheduleBuilder() {
   }
   html += '</tr></thead><tbody>';
 
+  // Add Front/Back toggle row
+  html += '<tr style="background:#f0f0f0;border-bottom:2px solid #ccc">';
+  html += '<td style="padding:6px 8px;font-size:10px;font-weight:600;color:#666">SIDE</td>';
+  dates.forEach(d => {
+    const fbRow = query(`SELECT FrontBack FROM Schedule WHERE Date='${d}' AND League="Hugh's"`)[0];
+    const fb = fbRow?.FrontBack || 'Front';
+    const sideLabel = fb === 'Back' ? '🔙 Back' : '🔰 Front';
+    html += `<td style="padding:6px 4px;text-align:center;font-size:10px;cursor:pointer;background:${fb==='Back'?'#e3f2fd':'#e8f5e9'};border:1px solid #ccc"
+      onclick="toggleFrontBack(${d})"
+      title="Click to toggle between Front/Back for ${fmtDate(d)}">
+      ${sideLabel}
+    </td>`;
+  });
+  // PS columns - show F/B for post-season
+  if (psDates) {
+    [1, 2].forEach(wk => {
+      const psDate = wk === 1 ? psDates.week1 : psDates.week2;
+      const fbRow = query(`SELECT FrontBack FROM Schedule WHERE Date='${psDate}' AND League="Hugh's"`)[0];
+      const fb = fbRow?.FrontBack || 'Front';
+      const sideLabel = fb === 'Back' ? '🔙 Back' : '🔰 Front';
+      html += `<td style="padding:6px 4px;text-align:center;font-size:10px;cursor:pointer;background:${fb==='Back'?'#f3e5f5':'#f0f4c3'};border:1px solid #c084fc"
+        onclick="toggleFrontBack(${psDate})"
+        title="Click to toggle Front/Back for PS Wk${wk}">
+        ${sideLabel}
+      </td>`;
+    });
+  }
+  html += '</tr>';
+
+
+
   // Matchup rows
   for (let i = 0; i < numMatchups; i++) {
     const rowBg = i % 2 === 0 ? 'white' : '#faf7f2';
@@ -17130,6 +17161,37 @@ async function rainOutPsDate(week, season) {
   buildEntryGrid();
   loadScores();
   alert(`Post Season dates updated.\n  Week 1: ${fmtDate(newPsDates.week1)}\n  Week 2: ${fmtDate(newPsDates.week2)}`);
+}
+function toggleFrontBack(date) {
+  const current = query(`SELECT FrontBack FROM Schedule WHERE Date='${date}' AND League="Hugh's"`)[0];
+  const fb = current?.FrontBack || 'Front';
+  const newFb = fb === 'Front' ? 'Back' : 'Front';
+  
+  if (!confirm(`Switch week of ${fmtDate(date)} from ${fb} 9 to ${newFb} 9?\n\nAll scores will be recalculated.`)) return;
+  
+  const season = parseInt(String(date).substring(0,4));
+  saveScheduleSnapshot(season);
+  serverRun(`UPDATE Schedule SET FrontBack=? WHERE Date=? AND League="Hugh's"`, [newFb, date]);
+  _scheduleScoreRecalc(date);
+  logIt('Front/Back toggled', `date=${date} from ${fb} to ${newFb}`);
+  loadScheduleBuilder();
+}
+
+
+
+function toggleFrontBack(date) {
+  const current = query(`SELECT FrontBack FROM Schedule WHERE Date='${date}' AND League="Hugh's"`)[0];
+  const fb = current?.FrontBack || 'Front';
+  const newFb = fb === 'Front' ? 'Back' : 'Front';
+  
+  if (!confirm(`Switch week of ${fmtDate(date)} from ${fb} 9 to ${newFb} 9?\n\nAll scores will be recalculated.`)) return;
+  
+  const season = parseInt(String(date).substring(0,4));
+  saveScheduleSnapshot(season);
+  serverRun(`UPDATE Schedule SET FrontBack=? WHERE Date=? AND League="Hugh's"`, [newFb, date]);
+  _scheduleScoreRecalc(date);
+  logIt('Front/Back toggled', `date=${date} from ${fb} to ${newFb}`);
+  loadScheduleBuilder();
 }
 
 function refreshScoresAfterRainout(removedDate) {
