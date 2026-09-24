@@ -938,7 +938,6 @@
         </div>
       </div>
       <div style="display:flex;gap:8px">
-        <button id="postSeasonTestBtn" onclick="togglePostSeasonTestMode()" style="display:none;padding:8px 16px;border:1px solid var(--gold);border-radius:6px;background:#fff8e1;color:#7a4b00;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px">Test Post Season</button>
         <button id="entryClear" disabled title="Select a score row to clear that player only" style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;cursor:not-allowed;opacity:.45;font-family:'DM Sans',sans-serif;font-size:13px">Clear</button>
         <button id="gallusSubmitBtn" onclick="showGallusSubmit()" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">📤 Submit Round</button>
         <button id="groupIntakeToggle" onclick="toggleGroupIntake()" style="padding:8px 16px;background:#37474f;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">👥 Groups</button>
@@ -2578,7 +2577,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260923.3';
+const APP_VERSION = '20260924.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -2635,7 +2634,9 @@ function storedPostSeasonTestModeEnabled() {
     localStorage.removeItem('hg_post_season_default_version');
     localStorage.setItem('hg_post_season_test_mode', 'N');
   }
-  return localStorage.getItem('hg_post_season_test_mode') === 'Y';
+  // Post-season mode now follows the selected date (Test Post Season button removed)
+  localStorage.removeItem('hg_post_season_test_mode');
+  return isDatePostSeason(document.getElementById('entryDate')?.value);
 }
 
 function getPostSeasonDateSet() {
@@ -18906,57 +18907,76 @@ function calcEoySkins(season, silent=false) {
   if (!silent) alert(`✓ EOY Skins calculated!\n${totalSkins} skins @ $${skinValue.toFixed(2)} each`);
 }
 
+function isDatePostSeason(dateStr) {
+  if (!dateStr) return false;
+  const psRows = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`);
+  for (const r of psRows) {
+    const p = r.PostSeasonDt.split('/');
+    const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
+    const d2obj = new Date(r.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
+    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
+    if (dateStr === d1 || dateStr === d2) return true;
+  }
+  return false;
+}
+
 function populateEntryDates() {
-  const isPS = isPostSeasonEntryMode();
   const sel  = document.getElementById('entryDate');
   const prev = sel.value;
 
-  if (isPS) {
-    // Build post season dates from SeasonSettings (one per season = Week 1 date)
-    const psRows = query(`SELECT Season, PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL ORDER BY Season DESC`);
-    const psDates = psRows.map(r => {
-      const p = r.PostSeasonDt.split('/');
-      const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
-      return { date: d1, season: r.Season };
-    });
+  // Always get post-season dates from SeasonSettings
+  const psRows = query(`SELECT Season, PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL ORDER BY Season DESC`);
+  const psDates = psRows.map(r => {
+    const p = r.PostSeasonDt.split('/');
+    const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
+    return { date: d1, season: r.Season };
+  });
 
-    sel.innerHTML = psDates.map(x => `<option value="${x.date}">${x.season} Post Season — ${fmtDate(x.date)}</option>`).join('');
+  // Get regular season dates from Schedule, excluding post season dates
+  const psDateSet = new Set();
+  psRows.forEach(r => {
+    const p = r.PostSeasonDt.split('/');
+    const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
+    const d2obj = new Date(r.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
+    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
+    psDateSet.add(d1); psDateSet.add(d2);
+  });
 
-    if (prev && psDates.some(x=>x.date===prev)) sel.value = prev;
-    else if (psDates.length) sel.value = psDates[0].date;
-  } else {
-    // Regular season dates from Schedule, excluding post season dates
-    const psRows = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`);
-    const psDates = new Set();
-    psRows.forEach(r => {
-      const p = r.PostSeasonDt.split('/');
-      const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
-      const d2obj = new Date(r.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
-      const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
-      psDates.add(d1); psDates.add(d2);
-    });
+  const allDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" ORDER BY Date DESC`).map(r=>r.sDate);
+  const regularDates = allDates.filter(d => !psDateSet.has(d));
 
-    const allDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" ORDER BY Date DESC`).map(r=>r.sDate);
-    const filtered = allDates.filter(d => !psDates.has(d));
+  const byYear = {};
+  regularDates.forEach(d => {
+    const yr = d.toString().substring(0,4);
+    if (!byYear[yr]) byYear[yr] = [];
+    byYear[yr].push(d);
+  });
 
-    const byYear = {};
-    filtered.forEach(d => {
-      const yr = d.toString().substring(0,4);
-      if (!byYear[yr]) byYear[yr] = [];
-      byYear[yr].push(d);
-    });
-    sel.innerHTML = Object.keys(byYear).sort((a,b)=>b-a).map(yr =>
-      `<optgroup label="${yr}">${byYear[yr].map(d=>`<option value="${d}">${fmtDate(d)}</option>`).join('')}</optgroup>`
-    ).join('');
-
-    if (prev && filtered.includes(prev)) {
-      sel.value = prev;
-    } else if (filtered.length) {
-      const todayInt = (() => { const d = new Date(); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); })();
-      const best = filtered.reduce((a,b) => Math.abs(parseInt(b)-todayInt) < Math.abs(parseInt(a)-todayInt) ? b : a);
-      sel.value = best;
-    }
+  // Build dropdown with post-season dates first, then regular season
+  const htmlParts = [];
+  if (psDates.length) {
+    htmlParts.push(`<optgroup label="Post Season">${psDates.map(x => `<option value="${x.date}">${x.season} Post Season — ${fmtDate(x.date)}</option>`).join('')}</optgroup>`);
   }
+  htmlParts.push(Object.keys(byYear).sort((a,b)=>b-a).map(yr =>
+    `<optgroup label="${yr}">${byYear[yr].map(d=>`<option value="${d}">${fmtDate(d)}</option>`).join('')}</optgroup>`
+  ).join(''));
+
+  sel.innerHTML = htmlParts.join('');
+
+  // Restore previous selection or pick best match
+  if (prev && (psDates.some(x=>x.date===prev) || regularDates.includes(prev))) {
+    sel.value = prev;
+  } else if (psDates.length) {
+    sel.value = psDates[0].date;
+  } else if (regularDates.length) {
+    const todayInt = (() => { const d = new Date(); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); })();
+    const best = regularDates.reduce((a,b) => Math.abs(parseInt(b)-todayInt) < Math.abs(parseInt(a)-todayInt) ? b : a);
+    sel.value = best;
+  }
+
+  // Keep post-season mode in sync with whatever date ended up selected
+  const psInput = document.getElementById('entryPostSeason');
+  if (psInput) psInput.checked = isDatePostSeason(sel.value);
 }
 
 function initEntry() {
@@ -18966,7 +18986,21 @@ function initEntry() {
   const sel = document.getElementById('entryDate');
 
   if (!entryInitialized) {
-    sel.addEventListener('change', () => { entryState = {}; entryStateDate = null; entryManual9 = false; buildEntryGrid(); loadScores(); });
+    sel.addEventListener('change', () => {
+      entryState = {};
+      entryStateDate = null;
+      entryManual9 = false;
+      // Auto-detect post-season mode based on selected date
+      const selectedDate = sel.value;
+      const psInput = document.getElementById('entryPostSeason');
+      if (isDatePostSeason(selectedDate) && psInput) {
+        psInput.checked = true;
+      } else if (psInput) {
+        psInput.checked = false;
+      }
+      buildEntryGrid();
+      loadScores();
+    });
     const entry9Sel = document.getElementById('entry9');
     entryLast9Value = entry9Sel?.value || null;
     entry9Sel?.addEventListener('focus', () => { entryLast9Value = entry9Sel.value; });
