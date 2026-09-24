@@ -2577,7 +2577,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260924.1';
+const APP_VERSION = '20260924.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -18945,21 +18945,23 @@ function populateEntryDates() {
   const allDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" ORDER BY Date DESC`).map(r=>r.sDate);
   const regularDates = allDates.filter(d => !psDateSet.has(d));
 
+  // Group every date (regular + post season) under its own year, newest first
+  const psDateMap = new Map(psDates.map(x => [String(x.date), x]));
   const byYear = {};
-  regularDates.forEach(d => {
-    const yr = d.toString().substring(0,4);
-    if (!byYear[yr]) byYear[yr] = [];
-    byYear[yr].push(d);
+  [...regularDates.map(String), ...psDates.map(x => String(x.date))].forEach(d => {
+    const yr = d.substring(0,4);
+    if (!byYear[yr]) byYear[yr] = new Set();
+    byYear[yr].add(d);
   });
 
-  // Build dropdown with post-season dates first, then regular season
-  const htmlParts = [];
-  if (psDates.length) {
-    htmlParts.push(`<optgroup label="Post Season">${psDates.map(x => `<option value="${x.date}">${x.season} Post Season — ${fmtDate(x.date)}</option>`).join('')}</optgroup>`);
-  }
-  htmlParts.push(Object.keys(byYear).sort((a,b)=>b-a).map(yr =>
-    `<optgroup label="${yr}">${byYear[yr].map(d=>`<option value="${d}">${fmtDate(d)}</option>`).join('')}</optgroup>`
-  ).join(''));
+  const htmlParts = Object.keys(byYear).sort((a,b)=>b-a).map(yr => {
+    const opts = [...byYear[yr]].sort((a,b)=>b-a).map(d =>
+      psDateMap.has(d)
+        ? `<option value="${d}">${fmtDate(d)} — Post Season</option>`
+        : `<option value="${d}">${fmtDate(d)}</option>`
+    ).join('');
+    return `<optgroup label="${yr}">${opts}</optgroup>`;
+  });
 
   sel.innerHTML = htmlParts.join('');
 
