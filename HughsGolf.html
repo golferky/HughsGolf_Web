@@ -2577,7 +2577,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260924.2';
+const APP_VERSION = '20260925.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -9265,7 +9265,7 @@ function confirmPaymentForPlayer(player, date, skinAmt, ctpAmt) {
     if (amt > 0) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid) VALUES (?,?,?,'League Dues','Payment',?,?)`, [league,player,date,amt,now]);
   }
   if (document.getElementById('payEoyCheck').checked) {
-    const amt = parseFloat(document.getElementById('payEoyAmt').value || 0);
+    const amt = clampPostSeasonEoyAmt(parseFloat(document.getElementById('payEoyAmt').value || 0), date);
     const wk  = document.querySelector('input[name="payEoyWk"]:checked')?.value || '';
     const comment = wk === '1' ? '(1st Week)' : wk === '2' ? '(2nd Week)' : '';
     if (amt > 0) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'EOY Skins','Payment',?,?,?)`, [league,player,date,amt,now,comment]);
@@ -18682,7 +18682,8 @@ function getPostSeasonPaymentStatus(player, date) {
     return !tagged && parseFloat(r.Earned || 0) >= ctx.fullAmt;
   });
 
-  return { ...ctx, eligible, weekOnly, fullRows };
+  const paidTotal = rows.reduce((sum, r) => sum + parseFloat(r.Earned || 0), 0);
+  return { ...ctx, eligible, weekOnly, fullRows, paidTotal };
 }
 
 function hasPostSeasonScore(player, date, frontBack) {
@@ -18934,21 +18935,23 @@ function populateEntryDates() {
 
   // Get regular season dates from Schedule, excluding post season dates
   const psDateSet = new Set();
+  const psLabels = new Map();   // date -> 'Post Season Wk 1' / 'Post Season Wk 2'
   psRows.forEach(r => {
     const p = r.PostSeasonDt.split('/');
     const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
     const d2obj = new Date(r.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
     const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
     psDateSet.add(d1); psDateSet.add(d2);
+    psLabels.set(d1, 'Post Season Wk 1');
+    psLabels.set(d2, 'Post Season Wk 2');
   });
 
   const allDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" ORDER BY Date DESC`).map(r=>r.sDate);
   const regularDates = allDates.filter(d => !psDateSet.has(d));
 
   // Group every date (regular + post season) under its own year, newest first
-  const psDateMap = new Map(psDates.map(x => [String(x.date), x]));
   const byYear = {};
-  [...regularDates.map(String), ...psDates.map(x => String(x.date))].forEach(d => {
+  [...regularDates.map(String), ...psLabels.keys()].forEach(d => {
     const yr = d.substring(0,4);
     if (!byYear[yr]) byYear[yr] = new Set();
     byYear[yr].add(d);
@@ -18956,8 +18959,8 @@ function populateEntryDates() {
 
   const htmlParts = Object.keys(byYear).sort((a,b)=>b-a).map(yr => {
     const opts = [...byYear[yr]].sort((a,b)=>b-a).map(d =>
-      psDateMap.has(d)
-        ? `<option value="${d}">${fmtDate(d)} — Post Season</option>`
+      psLabels.has(d)
+        ? `<option value="${d}">${fmtDate(d)} — ${psLabels.get(d)}</option>`
         : `<option value="${d}">${fmtDate(d)}</option>`
     ).join('');
     return `<optgroup label="${yr}">${opts}</optgroup>`;
@@ -18966,7 +18969,7 @@ function populateEntryDates() {
   sel.innerHTML = htmlParts.join('');
 
   // Restore previous selection or pick best match
-  if (prev && (psDates.some(x=>x.date===prev) || regularDates.includes(prev))) {
+  if (prev && (psLabels.has(String(prev)) || regularDates.includes(prev))) {
     sel.value = prev;
   } else if (psDates.length) {
     sel.value = psDates[0].date;
@@ -22153,16 +22156,44 @@ function updatePayTotal(skinAmt, ctpAmt) {
   document.getElementById('payBtn').textContent   = `Pay $${total.toFixed(2)}`;
 }
 
+// Max EOY Skins payment allowed in post season: one week = EOYSkins/2, both weeks = EOYSkins,
+// less whatever the player has already paid toward EOY Skins this season.
+let postSeasonEoyCap = null;
+
+function postSeasonEoyCapFor(psStatus, wk) {
+  const remain = Math.max(0, psStatus.fullAmt - (psStatus.paidTotal || 0));
+  return wk === 'both' ? remain : Math.min(psStatus.weekAmt, remain);
+}
+
 function wirePostSeasonEoyAmount(psStatus, skinAmt, ctpAmt) {
+  postSeasonEoyCap = null;
   if (!psStatus || psStatus.eligible) return;
+  const amtEl = document.getElementById('payEoyAmt');
+  const applyCap = (resetToCap) => {
+    const wk = document.querySelector('input[name="payEoyWk"]:checked')?.value || String(psStatus.week);
+    const cap = postSeasonEoyCapFor(psStatus, wk);
+    postSeasonEoyCap = cap;
+    amtEl.max = cap;
+    amtEl.min = 0;
+    const cur = parseFloat(amtEl.value || 0);
+    if (resetToCap || cur > cap) amtEl.value = cap;
+    if (cur < 0) amtEl.value = 0;
+    updatePayTotal(skinAmt, ctpAmt);
+  };
   document.querySelectorAll('input[name="payEoyWk"]').forEach(r => {
     r.onchange = () => {
       if (!r.checked) return;
-      document.getElementById('payEoyAmt').value = r.value === 'both' ? psStatus.fullAmt : psStatus.weekAmt;
       document.getElementById('payEoyCheck').checked = true;
-      updatePayTotal(skinAmt, ctpAmt);
+      applyCap(true);
     };
   });
+  amtEl.oninput = () => applyCap(false);
+  applyCap(false);
+}
+
+function clampPostSeasonEoyAmt(amt, date) {
+  if (postSeasonEoyCap === null || !getPostSeasonContextForDate(date)) return amt;
+  return Math.min(amt, postSeasonEoyCap);
 }
 
 function confirmPayment() {
@@ -22193,7 +22224,7 @@ function confirmPayment() {
   }
   // EOY Skins
   if (document.getElementById('payEoyCheck').checked) {
-    const amt = parseFloat(document.getElementById('payEoyAmt').value || 0);
+    const amt = clampPostSeasonEoyAmt(parseFloat(document.getElementById('payEoyAmt').value || 0), date);
     const wk  = document.querySelector('input[name="payEoyWk"]:checked')?.value || '';
     const comment = wk === '1' ? '(1st Week)' : wk === '2' ? '(2nd Week)' : '';
     if (amt > 0) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'EOY Skins','Payment',?,?,?)`,
@@ -22208,6 +22239,8 @@ function confirmPayment() {
 function closePaymentModal() {
   document.getElementById('paymentModal').style.display = 'none';
   paySlotKey = null;
+  postSeasonEoyCap = null;
+  document.getElementById('payEoyAmt')?.removeAttribute('max');
   // Remove listeners to prevent duplicates
   ['paySkinsCheck','payCtpCheck','payDuesCheck','payEoyCheck','payDuesAmt','payEoyAmt'].forEach(id => {
     const el = document.getElementById(id);
