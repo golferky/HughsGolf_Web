@@ -46,7 +46,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260925.7-sandbox'
+VERSION    = '20260925.8-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -135,6 +135,34 @@ def sms_address(phone, carrier):
 
     return f'{phone_digits}@{gateway}', None
 
+
+def _table_cols(cur, table):
+    cur.execute(f"PRAGMA table_info({table})")
+    return {r[1] for r in cur.fetchall()}
+
+def get_league_value(col):
+    """Read a global league setting (DuckDNSToken, DuckDNSDomain, AnthropicApiKey, ...).
+    LeagueSettings first (current schema), then legacy LeagueParms (latest season). Returns '' if not set."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        try:
+            if col in _table_cols(cur, 'LeagueSettings'):
+                cur.execute(f'SELECT "{col}" FROM LeagueSettings WHERE League="Hugh\'s"')
+                row = cur.fetchone()
+                if row and row[0]:
+                    return str(row[0]).strip()
+            if col in _table_cols(cur, 'LeagueParms'):
+                cur.execute(f'SELECT "{col}" FROM LeagueParms WHERE Name="Hugh\'s" AND "{col}" IS NOT NULL AND "{col}" != "" ORDER BY Season DESC LIMIT 1')
+                row = cur.fetchone()
+                if row and row[0]:
+                    return str(row[0]).strip()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f'get_league_value({col}) error: {e}')
+    return ''
 
 def get_gmail_creds():
     """Read Gmail credentials from LeagueSettings (falls back to LeagueParms for legacy DBs)."""
@@ -1561,19 +1589,8 @@ def parse_scorecard():
     if token != SAVE_TOKEN:
         return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
 
-    # Load Anthropic API key — LeagueParms table first, then env var, then file
-    api_key = ''
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute("SELECT AnthropicApiKey FROM LeagueParms WHERE Name=\"Hugh's\" AND Season=(SELECT MAX(Season) FROM LeagueParms WHERE Name=\"Hugh's\")")
-        row = cur.fetchone()
-        conn.close()
-        if row and row['AnthropicApiKey']:
-            api_key = row['AnthropicApiKey'].strip()
-    except Exception:
-        pass
+    # Load Anthropic API key — LeagueSettings / LeagueParms, then env var, then file
+    api_key = get_league_value('AnthropicApiKey')
     if not api_key:
         api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
     if not api_key:
@@ -1582,7 +1599,7 @@ def parse_scorecard():
             with open(key_file) as f:
                 api_key = f.read().strip()
     if not api_key:
-        return jsonify({'ok': False, 'error': 'Anthropic API key not configured. Add AnthropicApiKey to LeagueParms.'}), 500
+        return jsonify({'ok': False, 'error': 'Anthropic API key not configured. Add AnthropicApiKey to LeagueSettings.'}), 500
 
     if 'image' not in request.files:
         return jsonify({'ok': False, 'error': 'No image provided'}), 400
@@ -2122,15 +2139,8 @@ def update_duckdns():
     """Periodically update DuckDNS with current public IP."""
     while True:
         try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cur = conn.cursor()
-            cur.execute("SELECT DuckDNSToken, DuckDNSDomain FROM LeagueParms WHERE Name=\"Hugh's\" AND Season=(SELECT MAX(Season) FROM LeagueParms WHERE Name=\"Hugh's\")")
-            row = cur.fetchone()
-            conn.close()
-
-            token  = row['DuckDNSToken']  if row else None
-            domain = row['DuckDNSDomain'] if row else None
+            token  = get_league_value('DuckDNSToken')  or os.environ.get('HUGHSGOLF_DUCKDNS_TOKEN', '')
+            domain = get_league_value('DuckDNSDomain') or os.environ.get('HUGHSGOLF_DUCKDNS_DOMAIN', '')
 
             if token and domain:
                 url = f'https://www.duckdns.org/update?domains={domain}&token={token}&ip='
@@ -2138,7 +2148,7 @@ def update_duckdns():
                     result = resp.read().decode().strip()
                     print(f'[{now_local():%H:%M:%S}] DuckDNS update ({domain}.duckdns.org): {result}')
             else:
-                print(f'[{now_local():%H:%M:%S}] DuckDNS not configured (no token/domain in LeagueParms)')
+                print(f'[{now_local():%H:%M:%S}] DuckDNS NOT configured — no DuckDNSToken/DuckDNSDomain in LeagueSettings or LeagueParms')
         except Exception as e:
             print(f'[{now_local():%H:%M:%S}] DuckDNS update error: {e}')
 
@@ -2192,10 +2202,23 @@ def ensure_schema():
             cur.execute("ALTER TABLE Players ADD COLUMN BlockSubs TEXT DEFAULT 'N'")
             print(f'[{now_local():%H:%M:%S}] Schema check: added missing Players.BlockSubs column')
         conn.commit()
-        # Add AnthropicApiKey to LeagueParms if missing
-        cur.execute("PRAGMA table_info(LeagueParms)")
-        lp_cols = {row[1] for row in cur.fetchall()}
-        if 'AnthropicApiKey' not in lp_cols:
+        # Global service settings live in LeagueSettings (LeagueParms is legacy and may be dropped).
+        lp_cols = _table_cols(cur, 'LeagueParms')          # empty set if the table no longer exists
+        ls_cols = _table_cols(cur, 'LeagueSettings')
+        if ls_cols:
+            for col in ('DuckDNSToken', 'DuckDNSDomain', 'AnthropicApiKey'):
+                if col not in ls_cols:
+                    cur.execute(f'ALTER TABLE LeagueSettings ADD COLUMN "{col}" TEXT')
+                    print(f'[{now_local():%H:%M:%S}] Schema check: added LeagueSettings.{col}')
+                if col in lp_cols:
+                    # Backfill once from the legacy table if LeagueSettings has no value yet
+                    cur.execute(f'SELECT "{col}" FROM LeagueParms WHERE Name="Hugh\'s" AND "{col}" IS NOT NULL AND "{col}" != "" ORDER BY Season DESC LIMIT 1')
+                    r = cur.fetchone()
+                    if r and r[0]:
+                        cur.execute(f'UPDATE LeagueSettings SET "{col}"=? WHERE League="Hugh\'s" AND ("{col}" IS NULL OR "{col}"="")', (r[0],))
+                        if cur.rowcount:
+                            print(f'[{now_local():%H:%M:%S}] Schema check: copied {col} from LeagueParms to LeagueSettings')
+        elif lp_cols and 'AnthropicApiKey' not in lp_cols:
             cur.execute("ALTER TABLE LeagueParms ADD COLUMN AnthropicApiKey TEXT")
             print(f'[{now_local():%H:%M:%S}] Schema check: added missing LeagueParms.AnthropicApiKey column')
         conn.commit()
