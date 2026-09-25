@@ -2577,7 +2577,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260925.5';
+const APP_VERSION = '20260925.6';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4291,16 +4291,13 @@ function loadPrizeMoney(options = {}) {
   const eoyRefundMap = {};
   query(`SELECT Player, COALESCE(SUM(CAST(Earned AS REAL)),0) as total FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${seasonEnd} GROUP BY Player`)
     .forEach(r => { eoyRefundMap[r.Player] = parseFloat(r.total || 0); }); // Earned is negative, so total will be negative
-  // CC eligibility: paid full amount AND has scores in BOTH post-season weeks
+  // CC eligibility: regular roster player with scores in BOTH post-season weeks (no EOY $ requirement)
   const eoyLp = getSeasonSettings(season);
   const eoyFullAmt = parseFloat(eoyLp?.EOYSkins || 20);
   const eoyPsDates = eoyLp?.PostSeasonDt ? parsePostSeasonDates(eoyLp.PostSeasonDt) : null;
   function eoyPlayerCcEligible(player) {
     if (!eoyPsDates) return false;
     if (!ccRosterEligible(player, season)) return false;   // subs can't compete for League Championship
-    // Must have paid full amount (sum of untagged payments >= fullAmt, or any tagged week payment = full)
-    const paidTotal = eoyPaidRows.filter(r => r.Player === player).reduce((s, r) => s + parseFloat(r.Earned || 0), 0);
-    if (paidTotal < eoyFullAmt) return false;
     // Must have scores in both post-season weeks
     const hasW1 = query(`SELECT 1 FROM Scores WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0) > 0 LIMIT 1`, [player, eoyPsDates.week1]).length > 0;
     const hasW2 = query(`SELECT 1 FROM Scores WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0) > 0 LIMIT 1`, [player, eoyPsDates.week2]).length > 0;
@@ -4530,12 +4527,12 @@ function loadPrizeMoney(options = {}) {
           [...eoyUnpaidPlayers.map(p => ({ID:null, Player:p, Earned:null, Comment:'', DatePaid:null})), ...eoyPaidRows]
             .map((r,i) => {
               const paid = r.Earned !== null;
-              const ccElig = paid && eoyPlayerCcEligible(r.Player);
-              const ccBadge = !paid ? '' : ccElig
+              const ccElig = eoyPlayerCcEligible(r.Player);
+              const ccBadge = ccElig
                 ? `<span style="color:#2e7d32;font-weight:700;font-size:11px">✓ CC</span>`
                 : !ccRosterEligible(r.Player, season)
-                  ? `<span style="color:#999;font-size:11px" title="Subs can't compete for the League Championship">Skins only (sub)</span>`
-                  : `<span style="color:#999;font-size:11px">Skins only</span>`;
+                  ? `<span style="color:#999;font-size:11px" title="Subs can't compete for the League Championship">Sub — not CC</span>`
+                  : `<span style="color:#999;font-size:11px" title="Regular players are eligible once they have scores in both post-season weeks">CC · needs both wks</span>`;
               const refundAmt = paid ? (eoyRefundMap[r.Player] || 0) : 0; // negative number if refund exists
               const refundBadge = refundAmt < 0 ? `<span style="color:#e65100;font-size:11px;font-weight:700;margin-left:4px">↩ Refund $${Math.abs(refundAmt).toFixed(2)}</span>` : '';
               const noteText = r.Comment ? r.Comment : (r.DatePaid ? r.DatePaid : '');
@@ -5051,8 +5048,10 @@ async function loadHelpTab() {
       <p style="margin:0 0 4px;font-weight:700;color:#1b4d2e">Skins &amp; CTPs</p>
       <p style="margin:0 0 12px">Both are voluntary. Skins are net — the pot is split among holes with an outright winner (lowest net, no tie). Tied holes have no winner, giving remaining winners a larger share. CTPs are awarded on all par 3s; unclaimed prizes carry over to the following week.</p>
 
-      <p style="margin:0 0 4px;font-weight:700;color:#1b4d2e">League Championship (Voluntary)</p>
-      <p style="margin:0 0 12px">Played over 2 weeks after the 2nd half, combining front and back 9 net scores for an 18-hole champion. Entry is $10/week ($20 total). You must play both weeks to be eligible for individual prizes, but can participate in Skins/CTP for any week played.</p>
+      <p style="margin:0 0 4px;font-weight:700;color:#1b4d2e">League Championship</p>
+      <p style="margin:0 0 12px">Played over 2 weeks after the 2nd half, combining front and back 9 net scores for an 18-hole champion. Every regular player is eligible — prizes come from league dues, so there's no extra entry fee. You must play both weeks to be eligible. Subs are not eligible.</p>
+      <p style="margin:0 0 4px;font-weight:700;color:#1b4d2e">Post-Season Skins &amp; CTP (Optional)</p>
+      <p style="margin:0 0 12px">$10 per week ($20 for both weeks). You're in skins and CTP for each week you pay for. If you pay for a week and don't play it, that $10 is refunded.</p>
 
       <p style="margin:0 0 4px;font-weight:700;color:#1b4d2e">Local Rules</p>
       <ul style="margin:0 0 12px;padding-left:20px;line-height:2;font-size:14px">
@@ -18583,7 +18582,7 @@ function showEoyPaymentPrompt(player, season, ctx) {
 
   let btns = '';
   if (inBoth) {
-    // Played both — offer full pay for CC eligibility
+    // Played both — offer full pay (skins/CTP both weeks)
     btns += `<button onclick="quickPayEoySkins('${safePlayer}',${season},${fullAmt},'')" style="${btnStyle};background:#2e7d32;color:white">💰 Pay Both Weeks ($${fullAmt.toFixed(2)})</button>`;
     btns += `<button onclick="quickPayEoySkins('${safePlayer}',${season},${halfAmt},'1')" style="${btnStyle};background:#1565c0;color:white">💰 Week 1 Only ($${halfAmt.toFixed(2)})</button>`;
     btns += `<button onclick="quickPayEoySkins('${safePlayer}',${season},${halfAmt},'2')" style="${btnStyle};background:#1565c0;color:white">💰 Week 2 Only ($${halfAmt.toFixed(2)})</button>`;
@@ -18594,14 +18593,13 @@ function showEoyPaymentPrompt(player, season, ctx) {
     btns += `<button onclick="quickPayEoySkins('${safePlayer}',${season},${fullAmt},'')" style="${btnStyle};background:#2e7d32;color:white">💰 Pay Both Weeks ($${fullAmt.toFixed(2)})</button>`;
     btns += `<button onclick="quickPayEoySkins('${safePlayer}',${season},${thisWeekAmt},'${weekNum}')" style="${btnStyle};background:#1565c0;color:white">💰 ${thisWeekLabel} Only ($${thisWeekAmt.toFixed(2)})</button>`;
   }
-  btns += `<button onclick="dismissEoyPaymentPrompt()" style="${btnStyle};background:#546e7a;color:white">✓ CC Only — no skins fee</button>`;
   btns += `<button onclick="dismissEoyPaymentPrompt()" style="${btnStyle};background:#eee;color:#555">✕ Skip</button>`;
 
   el.style.display = 'block';
   el.innerHTML = `
     <div style="background:#fff8e1;border:2px solid #f9a825;border-radius:8px;padding:12px 16px">
       <div style="font-size:13px;font-weight:700;color:#e65100;margin-bottom:10px">
-        ⚠ <strong>${player}</strong> has no EOY Skins payment — playing for Club Championship only
+        ⚠ <strong>${player}</strong> has no EOY Skins payment — not in post-season skins/CTP
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
         ${btns}
@@ -18872,14 +18870,11 @@ function calcEoySkins(season, silent=false) {
   const totalSkins = allWinners.length;
   const skinValue = totalSkins ? Math.round((totalPot / totalSkins) * 100) / 100 : 0;
 
-  // CC eligibility: paid full EOY Skins amount AND has scores in BOTH post-season weeks
-  const eoyFullAmtForCC = parseFloat(lp.EOYSkins || 20);
-  const allUniqPayers = new Set([...eoyWeek1Players, ...eoyWeek2Players]);
-  const ccPool = [];
-  allUniqPayers.forEach(player => {
-    const paidTotal = parseFloat(query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player])[0]?.t || 0);
-    if (paidTotal >= eoyFullAmtForCC && w1Scores[player] && w2Scores[player] && ccRosterEligible(player, season)) ccPool.push(player);
-  });
+  // CC (League Championship) eligibility: every regular roster player who has scores in BOTH
+  // post-season weeks. The championship is funded by the $45 dues — EOY Skins payment doesn't matter.
+  const scoredPsWeek = d => new Set(query(`SELECT DISTINCT Player FROM Scores WHERE League="Hugh's" AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0) > 0`, [d]).map(r => r.Player));
+  const ccW1 = scoredPsWeek(psDate1), ccW2 = scoredPsWeek(psDate2);
+  const ccPool = [...ccW1].filter(p => ccW2.has(p) && ccRosterEligible(p, season)).sort();
 
   // Show confirmation dialog
   const lines = [
@@ -18888,7 +18883,7 @@ function calcEoySkins(season, silent=false) {
     `Week 2 (${w2Fb} 9): ${Object.keys(w2Scores).length} players · $${w2Pot} pot`,
     `Total pot: $${totalPot} · ${totalSkins} skins · $${skinValue.toFixed(2)} each`,
     '',
-    ccPool.length ? `CC Eligible (paid $${eoyFullAmtForCC} + both weeks, roster players only): ${ccPool.join(', ')}` : 'CC Eligible: nobody qualifies (need full payment + scores both weeks, roster players only)',
+    ccPool.length ? `CC Eligible (roster players with scores both weeks): ${ccPool.join(', ')}` : 'CC Eligible: nobody yet (roster players need scores both weeks)',
     '',
     'Winners:',
     ...w1Winners.map(w => `  Hole ${w.hole}: ${w.player} (net ${w.net})`),
