@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260925.8';
+const APP_VERSION = '20260925.9';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -2599,6 +2599,9 @@ window.eoyNoShows = new Set();
 window.psBackFirst = false;
 
 function isLocalTestHost() {
+  // QNAP ports: 8445 is always LIVE and 8446 is always the SANDBOX (isSandboxHost), even when
+  // opened by LAN IP — neither is a "local test" copy.
+  if (location.port === '8445' || location.port === '8446') return false;
   const h = location.hostname;
   return ['localhost', '127.0.0.1', '::1'].includes(h)
     || /^192\.168\.\d+\.\d+$/.test(h);  // LAN IPs (QNAP, dev machines)
@@ -2748,7 +2751,8 @@ function togglePostSeasonTestMode(forceEnabled = null) {
 }
 
 function isSandboxHost() {
-  return location.hostname.includes('sandbox');
+  // Sandbox = the sandbox DNS name, or port 8446 on the QNAP
+  return location.hostname.includes('sandbox') || location.port === '8446';
 }
 
 function refreshTestModeUi() {
