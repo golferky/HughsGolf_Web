@@ -12,6 +12,13 @@
 
 BASE="/share/CACHEDEV3_DATA/My Stuff/HughsGolf"
 PYTHON="/share/CACHEDEV1_DATA/.qpkg/Python3/opt/python3/bin/python3"
+RUN_AS="GaryAdmin"
+
+# The cron watchdog runs as root (QNAP only allows root's crontab). Never run the
+# sites as root — switch to GaryAdmin so files/DB stay owned by GaryAdmin.
+if [ "$(id -u)" = "0" ] && [ -z "$HG_NO_SU" ]; then
+  exec su "$RUN_AS" -s /bin/sh -c "HG_NO_SU=1 /bin/sh '$0' $*"
+fi
 
 site="$1"; action="$2"
 
