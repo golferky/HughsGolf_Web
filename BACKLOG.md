@@ -13,6 +13,7 @@ Last updated: 2026-09-25
 - [x] **PS handicap verification** — Confirmed correct. Both front/back 9 use last regular season Hdcp. PS rounds don't write new handicap records.
 - [ ] **Version bump + changelog** — All post-season work groups under a single "Post Season" changelog entry. Do at end-of-season cutover.
 - [ ] **PS skins / CTP split (future)** — Let a player choose Wk1 Skins ($SkinsPS), Wk1 CTP ($ClosestPS), Wk2 Skins, Wk2 CTP separately instead of one EOY Skins buy-in per week. Needs: per-game payment storage, separate skins/CTP eligibility per week, pot + winner calc, refunds, grid "in skins" display, prize money reports. Interim (v20260925.2): post-season EOY amount is fixed by Wk 1 / Wk 2 / Both, no typed amount.
+- [ ] **Season-long sub & League Championship** — Admins/league king to decide if a sub who replaced a player all season (e.g. Howard for Matt) can compete for League Championship. Current (v20260925.5): subs = not on season Teams roster → not CC eligible (flag SUBS_CC_ELIGIBLE = false). Subs can still play EOY skins/CTP.
 - [ ] **Post-season rules finalized** — Edge cases (all skins tied, all CTPs missed) pending admin discussion on League Board. Update rulebook once consensus reached.
 
 ---

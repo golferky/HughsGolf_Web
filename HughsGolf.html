@@ -2577,7 +2577,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260925.4';
+const APP_VERSION = '20260925.5';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4066,6 +4066,18 @@ function getLeagueSetting(key, defaultVal = '', league = "Hugh's") {
   const row = query(`SELECT * FROM LeagueSettings WHERE League=?`, [league])[0];
   return row?.[key] ?? defaultVal;
 }
+// League Championship (CC) eligibility for subs.
+// Rules: "Subs are allowed during the Regular Season but not for the League Championship."
+// A sub = anyone not on that season's Teams roster (even if he subbed every week).
+// Pending admin decision — flip to true if subs become eligible.
+const SUBS_CC_ELIGIBLE = false;
+function isSeasonRosterPlayer(player, season, league = "Hugh's") {
+  return query(`SELECT 1 FROM Teams WHERE League=? AND Year=? AND Player=? LIMIT 1`, [league, season, player]).length > 0;
+}
+function ccRosterEligible(player, season) {
+  return SUBS_CC_ELIGIBLE || isSeasonRosterPlayer(player, season);
+}
+
 function getCurrentSeason(league = "Hugh's") {
   return query(`SELECT MAX(Season) as s FROM SeasonSettings WHERE League=?`, [league])[0]?.s ||
          new Date().getFullYear();
@@ -4285,6 +4297,7 @@ function loadPrizeMoney(options = {}) {
   const eoyPsDates = eoyLp?.PostSeasonDt ? parsePostSeasonDates(eoyLp.PostSeasonDt) : null;
   function eoyPlayerCcEligible(player) {
     if (!eoyPsDates) return false;
+    if (!ccRosterEligible(player, season)) return false;   // subs can't compete for League Championship
     // Must have paid full amount (sum of untagged payments >= fullAmt, or any tagged week payment = full)
     const paidTotal = eoyPaidRows.filter(r => r.Player === player).reduce((s, r) => s + parseFloat(r.Earned || 0), 0);
     if (paidTotal < eoyFullAmt) return false;
@@ -4520,7 +4533,9 @@ function loadPrizeMoney(options = {}) {
               const ccElig = paid && eoyPlayerCcEligible(r.Player);
               const ccBadge = !paid ? '' : ccElig
                 ? `<span style="color:#2e7d32;font-weight:700;font-size:11px">✓ CC</span>`
-                : `<span style="color:#999;font-size:11px">Skins only</span>`;
+                : !ccRosterEligible(r.Player, season)
+                  ? `<span style="color:#999;font-size:11px" title="Subs can't compete for the League Championship">Skins only (sub)</span>`
+                  : `<span style="color:#999;font-size:11px">Skins only</span>`;
               const refundAmt = paid ? (eoyRefundMap[r.Player] || 0) : 0; // negative number if refund exists
               const refundBadge = refundAmt < 0 ? `<span style="color:#e65100;font-size:11px;font-weight:700;margin-left:4px">↩ Refund $${Math.abs(refundAmt).toFixed(2)}</span>` : '';
               const noteText = r.Comment ? r.Comment : (r.DatePaid ? r.DatePaid : '');
@@ -18863,7 +18878,7 @@ function calcEoySkins(season, silent=false) {
   const ccPool = [];
   allUniqPayers.forEach(player => {
     const paidTotal = parseFloat(query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player])[0]?.t || 0);
-    if (paidTotal >= eoyFullAmtForCC && w1Scores[player] && w2Scores[player]) ccPool.push(player);
+    if (paidTotal >= eoyFullAmtForCC && w1Scores[player] && w2Scores[player] && ccRosterEligible(player, season)) ccPool.push(player);
   });
 
   // Show confirmation dialog
@@ -18873,7 +18888,7 @@ function calcEoySkins(season, silent=false) {
     `Week 2 (${w2Fb} 9): ${Object.keys(w2Scores).length} players · $${w2Pot} pot`,
     `Total pot: $${totalPot} · ${totalSkins} skins · $${skinValue.toFixed(2)} each`,
     '',
-    ccPool.length ? `CC Eligible (paid $${eoyFullAmtForCC} + both weeks): ${ccPool.join(', ')}` : 'CC Eligible: nobody qualifies (need full payment + scores both weeks)',
+    ccPool.length ? `CC Eligible (paid $${eoyFullAmtForCC} + both weeks, roster players only): ${ccPool.join(', ')}` : 'CC Eligible: nobody qualifies (need full payment + scores both weeks, roster players only)',
     '',
     'Winners:',
     ...w1Winners.map(w => `  Hole ${w.hole}: ${w.player} (net ${w.net})`),
@@ -20452,15 +20467,17 @@ function renderPostSeasonBreakdown(nine) {
   let lbHtml = '';
   if (hasAnyScore) {
     lbHtml = `<div style="font-weight:700;font-size:12px;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">🏆 Leaderboard</div>`;
+    let ccPos = 0;
     lbHtml += leaderboard.map((p, i) => {
-      const pos = i + 1;
+      const isSubLb = season && !ccRosterEligible(p.name, season);
+      const pos = isSubLb ? null : ++ccPos;
       const net = p.totalNet !== '' ? p.totalNet : '—';
       const gross = p.totalGross !== '' ? p.totalGross : '—';
-      const bg = i === 0 && p.totalNet !== '' ? '#fff8e1' : i % 2 === 0 ? '#fafafa' : '#fff';
-      const medal = pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : `${pos}.`;
+      const bg = pos === 1 && p.totalNet !== '' ? '#fff8e1' : i % 2 === 0 ? '#fafafa' : '#fff';
+      const medal = pos === null ? '—' : pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : `${pos}.`;
       return `<div style="${rowStyle};background:${bg}">
         <span style="font-weight:700;text-align:center">${medal}</span>
-        <span style="font-weight:600">${p.name} <span style="color:#aaa;font-size:11px">(hdcp ${p.phdcp})</span></span>
+        <span style="font-weight:600">${p.name} <span style="color:#aaa;font-size:11px">(hdcp ${p.phdcp})</span>${isSubLb ? ' <span style="color:#999;font-size:10px;font-weight:600" title="Subs can\'t compete for the League Championship">SUB · not CC</span>' : ''}</span>
         <span style="font-family:'DM Mono',monospace;font-weight:700;color:#1a4d1a">Net ${net} <span style="color:#aaa;font-size:11px">/ ${gross}</span></span>
       </div>`;
     }).join('');
