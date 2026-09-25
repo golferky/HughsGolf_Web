@@ -1,4 +1,5 @@
 #!/bin/bash
+# DEPRECATED — deploys from an old Codex folder, not git. Use ./deploy_qnap.sh sandbox
 # deploy_sandbox.sh — push sandbox changes to QNAP and restart Flask
 # Mac terminal
 
