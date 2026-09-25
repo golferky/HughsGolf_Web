@@ -2577,7 +2577,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260925.2';
+const APP_VERSION = '20260925.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -9220,6 +9220,7 @@ function openPaymentModalForPlayer(player, date) {
   document.getElementById('payEoyCheck').disabled = eoyRemain <= 0;
   document.getElementById('payEoyAmt').disabled   = eoyRemain <= 0;
 
+  setPayRegularRowsVisible(!psStatus);
   if (psStatus) {
     document.getElementById('paySkinsCheck').checked = false;
     document.getElementById('paySkinsCheck').disabled = true;
@@ -18942,8 +18943,7 @@ function populateEntryDates() {
     const d2obj = new Date(r.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
     const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
     psDateSet.add(d1); psDateSet.add(d2);
-    psLabels.set(d1, 'Post Season Wk 1');
-    psLabels.set(d2, 'Post Season Wk 2');
+    psLabels.set(d1, 'Post Season');   // one entry: the grid covers Wk 1 (holes 1-9) and Wk 2 (holes 10-18)
   });
 
   const allDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" ORDER BY Date DESC`).map(r=>r.sDate);
@@ -18960,7 +18960,7 @@ function populateEntryDates() {
   const htmlParts = Object.keys(byYear).sort((a,b)=>b-a).map(yr => {
     const opts = [...byYear[yr]].sort((a,b)=>b-a).map(d =>
       psLabels.has(d)
-        ? `<option value="${d}">${fmtDate(d)} — ${psLabels.get(d)}</option>`
+        ? `<option value="${d}">${d.substring(0,4)} ${psLabels.get(d)}</option>`
         : `<option value="${d}">${fmtDate(d)}</option>`
     ).join('');
     return `<optgroup label="${yr}">${opts}</optgroup>`;
@@ -22115,6 +22115,7 @@ function openPaymentModal(key) {
     document.getElementById('payEoyAmt').disabled = true;
   }
 
+  setPayRegularRowsVisible(!psStatus);
   if (psStatus) {
     document.getElementById('paySkinsCheck').checked = false;
     document.getElementById('paySkinsCheck').disabled = true;
@@ -22163,6 +22164,14 @@ let postSeasonEoyCap = null;
 function postSeasonEoyCapFor(psStatus, wk) {
   const remain = Math.max(0, psStatus.fullAmt - (psStatus.paidTotal || 0));
   return wk === 'both' ? remain : Math.min(psStatus.weekAmt, remain);
+}
+
+// Weekly Skins/CTP rows only apply in the regular season; post season is paid through EOY Skins.
+function setPayRegularRowsVisible(show) {
+  ['paySkinsRow','payCtpRow'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? 'flex' : 'none';
+  });
 }
 
 function wirePostSeasonEoyAmount(psStatus, skinAmt, ctpAmt) {
@@ -22239,6 +22248,7 @@ function closePaymentModal() {
   document.getElementById('paymentModal').style.display = 'none';
   paySlotKey = null;
   postSeasonEoyCap = null;
+  setPayRegularRowsVisible(true);
   const eoyAmtEl = document.getElementById('payEoyAmt');
   if (eoyAmtEl) { eoyAmtEl.readOnly = false; eoyAmtEl.style.background = ''; eoyAmtEl.title = ''; eoyAmtEl.removeAttribute('max'); }
   // Remove listeners to prevent duplicates
@@ -22548,7 +22558,7 @@ function buildTableList() {
     </div>
 
     <!-- Skins -->
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0">
+    <div id="paySkinsRow" style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0">
       <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer">
         <input type="checkbox" id="paySkinsCheck" style="width:16px;height:16px"> Skins
       </label>
@@ -22556,7 +22566,7 @@ function buildTableList() {
     </div>
 
     <!-- CTP -->
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0">
+    <div id="payCtpRow" style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0">
       <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer">
         <input type="checkbox" id="payCtpCheck" style="width:16px;height:16px"> CTP
       </label>
