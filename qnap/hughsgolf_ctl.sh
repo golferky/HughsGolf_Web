@@ -17,7 +17,21 @@ RUN_AS="GaryAdmin"
 # The cron watchdog runs as root (QNAP only allows root's crontab). Never run the
 # sites as root — switch to GaryAdmin so files/DB stay owned by GaryAdmin.
 if [ "$(id -u)" = "0" ] && [ -z "$HG_NO_SU" ]; then
-  exec su "$RUN_AS" -s /bin/sh -c "HG_NO_SU=1 /bin/sh '$0' $*"
+  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+  for s in sudo /usr/bin/sudo /bin/sudo /sbin/sudo /usr/local/bin/sudo; do
+    if command -v "$s" >/dev/null 2>&1; then
+      exec "$s" -u "$RUN_AS" env HG_NO_SU=1 /bin/sh "$0" "$@"
+    fi
+  done
+  for s in su /bin/su /usr/bin/su; do
+    if command -v "$s" >/dev/null 2>&1; then
+      exec "$s" "$RUN_AS" -s /bin/sh -c "HG_NO_SU=1 /bin/sh '$0' $*"
+    fi
+  done
+  if command -v busybox >/dev/null 2>&1 && busybox su --help >/dev/null 2>&1; then
+    exec busybox su "$RUN_AS" -s /bin/sh -c "HG_NO_SU=1 /bin/sh '$0' $*"
+  fi
+  echo "$(date '+%Y-%m-%d %H:%M:%S') WARNING: no sudo/su found; running as root" >> "$BASE/watchdog.log"
 fi
 
 site="$1"; action="$2"
