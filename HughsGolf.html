@@ -2577,7 +2577,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260925.1';
+const APP_VERSION = '20260925.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -22168,27 +22168,26 @@ function postSeasonEoyCapFor(psStatus, wk) {
 function wirePostSeasonEoyAmount(psStatus, skinAmt, ctpAmt) {
   postSeasonEoyCap = null;
   if (!psStatus || psStatus.eligible) return;
+  // Post season: amount is not typed — it is set by the Wk 1 / Wk 2 / Both choice.
   const amtEl = document.getElementById('payEoyAmt');
-  const applyCap = (resetToCap) => {
+  amtEl.readOnly = true;
+  amtEl.style.background = '#f3f3f3';
+  amtEl.title = 'Set by Wk 1 / Wk 2 / Both';
+  const applyCap = () => {
     const wk = document.querySelector('input[name="payEoyWk"]:checked')?.value || String(psStatus.week);
     const cap = postSeasonEoyCapFor(psStatus, wk);
     postSeasonEoyCap = cap;
-    amtEl.max = cap;
-    amtEl.min = 0;
-    const cur = parseFloat(amtEl.value || 0);
-    if (resetToCap || cur > cap) amtEl.value = cap;
-    if (cur < 0) amtEl.value = 0;
+    amtEl.value = cap;
     updatePayTotal(skinAmt, ctpAmt);
   };
   document.querySelectorAll('input[name="payEoyWk"]').forEach(r => {
     r.onchange = () => {
       if (!r.checked) return;
       document.getElementById('payEoyCheck').checked = true;
-      applyCap(true);
+      applyCap();
     };
   });
-  amtEl.oninput = () => applyCap(false);
-  applyCap(false);
+  applyCap();
 }
 
 function clampPostSeasonEoyAmt(amt, date) {
@@ -22240,7 +22239,8 @@ function closePaymentModal() {
   document.getElementById('paymentModal').style.display = 'none';
   paySlotKey = null;
   postSeasonEoyCap = null;
-  document.getElementById('payEoyAmt')?.removeAttribute('max');
+  const eoyAmtEl = document.getElementById('payEoyAmt');
+  if (eoyAmtEl) { eoyAmtEl.readOnly = false; eoyAmtEl.style.background = ''; eoyAmtEl.title = ''; eoyAmtEl.removeAttribute('max'); }
   // Remove listeners to prevent duplicates
   ['paySkinsCheck','payCtpCheck','payDuesCheck','payEoyCheck','payDuesAmt','payEoyAmt'].forEach(id => {
     const el = document.getElementById(id);

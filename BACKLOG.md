@@ -1,6 +1,6 @@
 # Hugh's Golf — Backlog
 
-Last updated: 2026-09-15
+Last updated: 2026-09-25
 
 ---
 
@@ -12,6 +12,7 @@ Last updated: 2026-09-15
 - [ ] **PS skins/CTP end-to-end verification** — Confirm `calcEoySkins` handles PS correctly through to payout.
 - [x] **PS handicap verification** — Confirmed correct. Both front/back 9 use last regular season Hdcp. PS rounds don't write new handicap records.
 - [ ] **Version bump + changelog** — All post-season work groups under a single "Post Season" changelog entry. Do at end-of-season cutover.
+- [ ] **PS skins / CTP split (future)** — Let a player choose Wk1 Skins ($SkinsPS), Wk1 CTP ($ClosestPS), Wk2 Skins, Wk2 CTP separately instead of one EOY Skins buy-in per week. Needs: per-game payment storage, separate skins/CTP eligibility per week, pot + winner calc, refunds, grid "in skins" display, prize money reports. Interim (v20260925.2): post-season EOY amount is fixed by Wk 1 / Wk 2 / Both, no typed amount.
 - [ ] **Post-season rules finalized** — Edge cases (all skins tied, all CTPs missed) pending admin discussion on League Board. Update rulebook once consensus reached.
 
 ---
