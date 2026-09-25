@@ -586,6 +586,7 @@
     <div style="font-family:'Bebas Neue',cursive;font-size:28px;color:var(--green);margin-bottom:4px">Hugh's Golf League</div>
     <div style="font-size:13px;color:#666;margin-bottom:4px">Please log in to continue</div>
     <div style="font-size:13px;color:#aaa;margin-bottom:20px;font-family:'DM Mono',monospace"><span id="loginVersionDisplay">v—</span></div>
+    <div id="loginUpdateNotice" style="display:none;background:#fff3cd;border:1px solid #d6a928;color:#5c3f00;border-radius:6px;padding:10px 12px;font-size:12px;line-height:1.35;margin-bottom:16px;font-weight:700"></div>
     <!-- Sandbox quick-login (no password) -->
     <div id="sandboxQuickLogin" style="display:none;margin-bottom:16px;padding:12px;background:#f3e5f5;border-radius:8px;border:1px solid #ce93d8">
       <div style="font-size:11px;font-weight:700;color:#6a1b9a;margin-bottom:8px">🎭 SANDBOX — No password required</div>
@@ -2577,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260925.6';
+const APP_VERSION = '20260925.7';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3337,7 +3338,10 @@ function switchTab(tabName) {
   document.querySelector(`.tab[data-tab="${targetTab}"]`)?.classList.add('active');
   document.getElementById('tab-' + targetTab)?.classList.add('active');
   pvTrack(targetTab);
-  if (db) refreshTab(targetTab);
+  if (db) {
+    if (targetTab === 'scores' && DB_UPDATE_PENDING) refreshScoresForExternalDbUpdate();
+    else refreshTab(targetTab);
+  }
 }
 
 document.querySelectorAll('.tab').forEach(t => {
@@ -11201,11 +11205,78 @@ function showStaleDbSavePrompt(serverModifiedMs) {
   setTimeout(() => location.reload(), 2500);
 }
 
+// Maintenance/update notice (from update_notice.txt next to app.py) — shown on login and under the tabs
+function setUpdateNotice(message) {
+  const msg = (message || '').trim();
+  const loginNotice = document.getElementById('loginUpdateNotice');
+  if (loginNotice) {
+    loginNotice.textContent = msg;
+    loginNotice.style.display = msg ? 'block' : 'none';
+  }
+  let banner = document.getElementById('serverUpdateNoticeBanner');
+  if (!msg) {
+    if (banner) banner.remove();
+    return;
+  }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'serverUpdateNoticeBanner';
+    banner.style.cssText = 'background:#fff3cd;color:#5c3f00;border-bottom:2px solid #d6a928;padding:10px 16px;text-align:center;font-size:13px;font-weight:800;line-height:1.35;z-index:8500';
+    const nav = document.querySelector('.tabs');
+    if (nav && nav.parentNode) nav.parentNode.insertBefore(banner, nav.nextSibling);
+    else document.body.insertBefore(banner, document.body.firstChild);
+  }
+  banner.textContent = msg;
+}
+
+// Score grid auto-refresh when another admin saves (ported from live b28f448)
+let SCORE_DB_REFRESH_IN_PROGRESS = false;
+function activeTabName() {
+  return document.querySelector('.tab.active')?.dataset.tab || '';
+}
+async function refreshScoresForExternalDbUpdate() {
+  if (!DB_UPDATE_PENDING || !db || SCORE_DB_REFRESH_IN_PROGRESS) return false;
+  if (activeTabName() !== 'scores') return false;
+  // Personal test sandbox uses its own DB file — never swap in the shared DB
+  if (typeof _isTestMode === 'function' && _isTestMode()) return false;
+  if (_saveInProgress || _savePending || entryDirty) {
+    console.warn('External DB update detected, but score entry has unsaved changes; leaving Scores grid unchanged until the edit is complete.');
+    return false;
+  }
+  SCORE_DB_REFRESH_IN_PROGRESS = true;
+  const selectedDate = document.getElementById('entryDate')?.value || '';
+  const selectedNine = document.getElementById('entry9')?.value || '';
+  try {
+    const refreshed = await refreshLiveDbSnapshotForReadOnlyView();
+    if (!refreshed) return false;
+    if (selectedDate) {
+      const entrySel = document.getElementById('entryDate');
+      if (entrySel && [...entrySel.options].some(o => o.value === selectedDate)) entrySel.value = selectedDate;
+    }
+    if (selectedNine) {
+      const nineSel = document.getElementById('entry9');
+      if (nineSel) nineSel.value = selectedNine;
+    }
+    entryState = {};
+    entryStateDate = null;
+    entryStateFb = null;
+    selectedEntrySlotKey = null;
+    if (!courseData) initEntry(); else buildEntryGrid();
+    return true;
+  } catch (e) {
+    console.warn('Scores grid refresh after external DB update failed:', e);
+    return false;
+  } finally {
+    SCORE_DB_REFRESH_IN_PROGRESS = false;
+  }
+}
+
 async function checkServerVersion() {
   try {
     const resp = await fetch('/version?t=' + Date.now());
     if (!resp.ok) return;
-    const { dbModified } = await resp.json();
+    const { dbModified, updateNotice } = await resp.json();
+    setUpdateNotice(updateNotice);
     // Only track DB modification time — no version modal, no forced reloads
     if (dbModified) {
       if (SERVER_DB_MODIFIED === null) {
@@ -11213,7 +11284,8 @@ async function checkServerVersion() {
       } else if (dbModified > SERVER_DB_MODIFIED) {
         SERVER_DB_MODIFIED = dbModified;
         DB_UPDATE_PENDING = true;
-        if (typeof reRenderEntry === 'function') reRenderEntry();
+        if (activeTabName() === 'scores') refreshScoresForExternalDbUpdate();
+        else if (typeof reRenderEntry === 'function') reRenderEntry();
       }
     }
   } catch(e) { /* ignore network errors */ }
@@ -11221,6 +11293,8 @@ async function checkServerVersion() {
 
 // Poll every 10 minutes for DB modification tracking only
 setInterval(checkServerVersion, 10 * 60 * 1000);
+// Check quickly so login-page maintenance notices show without waiting
+setTimeout(checkServerVersion, 1000);
 // ─────────────────────────────────────────────────────────────────────────────
 
 document.addEventListener('keypress', resetSessionTimer);

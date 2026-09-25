@@ -46,13 +46,14 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260925.6-sandbox'
+VERSION    = '20260925.7-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
 PDF_RENDERER_URL = os.environ.get('HUGHSGOLF_PDF_RENDERER_URL', 'http://127.0.0.1:3009/render')
 LIVE_DB_PATH   = os.environ.get('HUGHSGOLF_LIVE_DB', '/Users/garyscudder/HughsGolfLive/HughsGolf.db')
 LIVE_SERVER_URL = os.environ.get('HUGHSGOLF_LIVE_URL', 'http://192.168.1.190:8445')  # Mac mini live server
+UPDATE_NOTICE_PATH = os.environ.get('HUGHSGOLF_UPDATE_NOTICE_PATH', os.path.join(BASE_DIR, 'update_notice.txt'))
 # ─────────────────────────────────────────────────────────────────────────────
 
 def backup_env_name():
@@ -72,6 +73,17 @@ def backup_dir():
     return path
 
 os.makedirs(backup_dir(), exist_ok=True)
+
+def read_update_notice():
+    """Optional maintenance/update notice (update_notice.txt next to app.py), shown on login and under the tabs."""
+    try:
+        if not os.path.exists(UPDATE_NOTICE_PATH):
+            return ''
+        with open(UPDATE_NOTICE_PATH, 'r', encoding='utf-8') as f:
+            return f.read().strip()[:500]
+    except Exception as e:
+        print(f'read_update_notice error: {e}')
+        return ''
 
 def db_modified_ms():
     """Current DB modified time in milliseconds, or 0 if no DB exists."""
@@ -189,7 +201,12 @@ def version():
         db_modified = os.path.getmtime(DB_PATH) if os.path.exists(DB_PATH) else 0
     except Exception:
         db_modified = 0
-    return jsonify({'version': html_version, 'flaskVersion': VERSION, 'dbModified': db_modified})
+    return jsonify({
+        'version': html_version,
+        'flaskVersion': VERSION,
+        'dbModified': db_modified,
+        'updateNotice': read_update_notice(),
+    })
 
 
 @app.route('/HughsGolf.html')
