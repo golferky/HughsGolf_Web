@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260926.11';
+const APP_VERSION = '20260926.12';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -5868,7 +5868,8 @@ function loadRecentSkins(date) {
   const winners = query(`
     SELECT DISTINCT p.Player, p.Desc, p.Detail, p.Earned, p.Comment
     FROM Payments p
-    WHERE p.Date=${date} AND p.Detail NOT IN ('Payment','') AND p.Player != 'Kitty'
+    WHERE p.Date=${date} AND p.Detail NOT IN ('Payment','','Refund') AND p.Player != 'Kitty'
+      AND p.Desc != 'EOY Skins'
       AND (
         p.Desc != 'Skin'
         OR EXISTS (
@@ -18900,6 +18901,13 @@ function recalcPostSeasonEoyRefunds(season) {
   const eoyPlayers = new Set([...week1Players, ...week2Players]);
   const noShows = new Set();
 
+  // A week only counts as "missed" once that week has actually been played (someone has a
+  // score for it). Otherwise just opening the post-season grid before the round refunded
+  // every paid player.
+  const weekPlayed = (d, fb) => query(`SELECT 1 FROM Scores WHERE League="Hugh's" AND CAST(Date AS INTEGER)=? AND FrontBack=? AND COALESCE(CAST(Gross AS REAL),0) > 0 LIMIT 1`, [d, fb]).length > 0;
+  const week1Played = weekPlayed(psDates.week1, 'Front');
+  const week2Played = weekPlayed(psDates.week2, 'Back');
+
   eoyPlayers.forEach(player => {
     const paid = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as amt
       FROM Payments
@@ -18912,27 +18920,36 @@ function recalcPostSeasonEoyRefunds(season) {
 
     let refund = 0;
     let missed = 0;
-    const playedWeek1 = !week1Players.has(player) || hasPostSeasonScore(player, psDates.week1, 'Front');
-    const playedWeek2 = !week2Players.has(player) || hasPostSeasonScore(player, psDates.week2, 'Back');
+    const playedWeek1 = !week1Players.has(player) || !week1Played || hasPostSeasonScore(player, psDates.week1, 'Front');
+    const playedWeek2 = !week2Players.has(player) || !week2Played || hasPostSeasonScore(player, psDates.week2, 'Back');
 
     if (week1Players.has(player) && !playedWeek1) { refund += weekAmt; missed++; }
     if (week2Players.has(player) && !playedWeek2) { refund += weekAmt; missed++; }
     refund = Math.min(refund, paid);
+    const comment = missed === 2 ? 'Missed both post-season weeks' : (playedWeek1 ? 'Missed post-season week 2' : 'Missed post-season week 1');
 
-    serverRun(`DELETE FROM Payments
-      WHERE League="Hugh's"
-        AND Player=?
-        AND "Desc"='EOY Skins'
-        AND Detail='Refund'
-        AND Date IN (${psDates.week1},${psDates.week2})`, [player]);
-
-    if (refund > 0) {
-      const comment = missed === 2 ? 'Missed both post-season weeks' : (playedWeek1 ? 'Missed post-season week 2' : 'Missed post-season week 1');
-      serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,Comment)
-        VALUES ("Hugh's",?,?,'EOY Skins','Refund',?,?)`, [player, psDates.week1, -refund, comment]);
+    // Only write when the refund actually changes (this runs every time the post-season grid opens)
+    const existing = query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as amt, MAX(COALESCE(Comment,'')) as c, COUNT(*) as n
+      FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Refund'
+        AND Date IN (${psDates.week1},${psDates.week2})`, [player])[0] || { amt: 0, c: '', n: 0 };
+    const unchanged = refund > 0
+      ? (existing.n === 1 && Math.abs(parseFloat(existing.amt) + refund) < 0.005 && existing.c === comment)
+      : existing.n === 0;
+    if (!unchanged) {
+      serverRun(`DELETE FROM Payments
+        WHERE League="Hugh's"
+          AND Player=?
+          AND "Desc"='EOY Skins'
+          AND Detail='Refund'
+          AND Date IN (${psDates.week1},${psDates.week2})`, [player]);
+      if (refund > 0) {
+        serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,Comment)
+          VALUES ("Hugh's",?,?,'EOY Skins','Refund',?,?)`, [player, psDates.week1, -refund, comment]);
+      }
     }
 
-    if (!playedWeek1 && !playedWeek2) noShows.add(player);
+    // No-show only once both weeks have been played and the player has neither
+    if (week1Played && week2Played && missed === 2) noShows.add(player);
   });
 
   return { noShows, changed: true };
