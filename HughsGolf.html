@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260926.6';
+const APP_VERSION = '20260926.7';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -11336,6 +11336,7 @@ async function saveDBToServer(successLabel, btnId, _retries = 1) {
   if (globalBtn) { globalBtn.textContent = '⏳ Saving…'; globalBtn.disabled = true; }
 
   try {
+    await SERVER_RUN_QUEUE;   // our own pending row writes bump the server mtime — wait for them first
     const token = await ensureSaveToken();
     const clientVersion = (document.getElementById('appVersionDisplay')?.textContent?.trim() || '').replace(/^v/,'');
     const data = db.export();
@@ -18412,6 +18413,10 @@ document.getElementById('sqlRun').addEventListener('click', async () => {
   const statements = rawSql.split(/;\s*/).map(s => s.trim()).filter(s => s.length > 0);
   let anyWrite = false, anyScoresHdcp = false, totalRows = 0;
   const resultsEl = document.getElementById('sqlResults');
+  // Writes go to the server statement-by-statement (like the rest of the app) instead of
+  // uploading the whole DB — a full upload is rejected whenever anyone else has saved
+  // since this page loaded, which caused the "saving… then auto-reload" loop.
+  const serverWrites = [];
 
   try {
     for (const sql of statements) {
@@ -18420,6 +18425,7 @@ document.getElementById('sqlRun').addEventListener('click', async () => {
       const rowsModified = isWrite ? (db.getRowsModified?.() ?? 0) : 0;
       if (isWrite) {
         anyWrite = true;
+        serverWrites.push(sql);
         totalRows += rowsModified;
         if (/\b(Scores|Handicaps)\b/i.test(sql)) anyScoresHdcp = true;
         const msg = document.createElement('div');
@@ -18469,7 +18475,26 @@ document.getElementById('sqlRun').addEventListener('click', async () => {
     } catch(_) {}
 
     if (anyWrite) {
-      await saveDBToServer();
+      const sessionToken = localStorage.getItem(`hg_session_${currentUser?.name}`) || window._mySessionToken || '';
+      const failed = [];
+      for (const w of serverWrites) {
+        await SERVER_RUN_QUEUE;
+        try { await sendServerSql(w, sessionToken); }
+        catch (e) { failed.push({ sql: w, error: String(e.message || e) }); }
+      }
+      if (failed.length) {
+        // Tables that only exist in the browser copy (e.g. SeasonSettings/LeagueSettings built
+        // from LeagueParms) can't be updated row-by-row on the server — fall back to a full save.
+        if (failed.every(f => /no such table/i.test(f.error))) {
+          await saveDBToServer();
+        } else {
+          const errDiv = document.createElement('div');
+          errDiv.style.cssText = 'font-size:12px;color:#c62828;font-weight:700;padding:4px 0';
+          errDiv.textContent = `⚠ Not saved on server: ${failed.map(f => f.error).join('; ')}`;
+          resultsEl.prepend(errDiv);
+          alert(`Your change ran in this browser but was NOT saved on the server:\n\n${failed.map(f => f.error).join('\n')}\n\nReload the page before trying again.`);
+        }
+      }
       // Auto-refresh the entry grid so changes show immediately (no page reload needed)
       if (Object.keys(entryState).length > 0) reRenderEntry();
       if (statements.length > 1) {
