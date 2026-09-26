@@ -1,5 +1,7 @@
 # Hugh's Golf on the QNAP
 
+Setting up a copy somewhere else (laptop, other server)? See [docs/SETUP.md](../docs/SETUP.md).
+
 Everything runs on the QNAP (192.168.1.176). The Mac is only for editing code and pushing to GitHub.
 
 | Site    | Port | Folder on QNAP                                        | VERSION        |
