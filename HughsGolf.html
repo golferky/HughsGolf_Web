@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260926.8';
+const APP_VERSION = '20260926.9';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4276,7 +4276,7 @@ function loadPrizeMoney(options = {}) {
 
   // ── Skin kitty = collected - paid out as of selected date ────────────────
   const skinCollected    = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Payment' AND Date >= ${season}0101 AND Date <= ${effectiveDate}`)[0]?.t || 0);
-  const skinPaidOut      = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail LIKE '#%' AND Player != 'Kitty' AND Date >= ${season}0101 AND Date <= ${effectiveDate}`)[0]?.t || 0);
+  const skinPaidOut      = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail LIKE '#%' AND Player != 'Kitty' AND Date >= ${season}0101 AND Date <= ${effectiveDate}${psKittyExclude(season)}`)[0]?.t || 0);
   const skinTransferOut  = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Pool Transfer' AND Date >= ${season}0101 AND Date <= ${effectiveDate}`)[0]?.t || 0);
   const skinKitty        = Math.round((skinCollected - skinPaidOut - skinTransferOut) * 100) / 100;
   const totalKitty    = skinKitty + ctpKitty;
@@ -4367,7 +4367,7 @@ function loadPrizeMoney(options = {}) {
   const champTotal = champ1 + champ2 + champ3;
 
   // ── Skin kitty detail ledger — weekly collected vs paid out ──────────────
-  const skinDates = query(`SELECT DISTINCT Date FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Date >= ${season}0101 ORDER BY Date ASC`);
+  const skinDates = query(`SELECT DISTINCT Date FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Date >= ${season}0101${psKittyExclude(season)} ORDER BY Date ASC`);
   let skinRunning = 0;
   const skinDetailRows = skinDates.map((d, i) => {
     const collected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Payment' AND Date=${d.Date}`)[0]?.t || 0);
@@ -11986,7 +11986,7 @@ function ptGetBalance(source, season) {
   const seasonEnd = `${parseInt(s)+1}0101`;
   if (source === 'Skin') {
     const collected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Payment' AND Date >= ${s}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
-    const paidOut   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND Date >= ${s}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
+    const paidOut   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND Date >= ${s}0101 AND Date < ${seasonEnd}${psKittyExclude(s)}`)[0]?.t || 0);
     const transferred = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Pool Transfer' AND Date >= ${s}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
     return Math.max(0, Math.round((collected - paidOut - transferred) * 100) / 100);
   }
@@ -12107,7 +12107,7 @@ async function clearKitty(season) {
   const league = "Hugh's";
   const sum = sql => parseFloat(query(sql)[0]?.t || 0);
   const collected = sum(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail='Payment' AND Date >= ${s}0101 AND Date < ${seasonEnd}`);
-  const paidOut   = sum(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND Date >= ${s}0101 AND Date < ${seasonEnd}`);
+  const paidOut   = sum(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND Date >= ${s}0101 AND Date < ${seasonEnd}${psKittyExclude(s)}`);
   const moved     = sum(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail='Pool Transfer' AND Date >= ${s}0101 AND Date < ${seasonEnd}`);
   const skin = Math.round((collected - paidOut - moved) * 100) / 100;
 
@@ -12128,8 +12128,10 @@ async function clearKitty(season) {
   const fmt = v => (v < 0 ? '-$' : '$') + Math.abs(v).toFixed(2);
   if (!confirm(`Clear the ${s} kitty to $0?\n\nSkin kitty: ${fmt(skin)} → $0.00\nCTP kitty: ${fmt(ctp)}${open.length ? ` (${open.length} open carryover${open.length > 1 ? 's' : ''})` : ''} → $0.00\n\nRecorded as a write-off. Past payouts are not changed.`)) return;
 
-  // Date the entry on the latest Skin/CTP week so it shows on the current Prize Money view
-  const lastDate = parseInt(query(`SELECT MAX(Date) as d FROM Payments WHERE League="Hugh's" AND "Desc" IN ('Skin','CTP') AND Date >= ${s}0101 AND Date < ${seasonEnd}`)[0]?.d) || parseInt(`${s}1231`);
+  // Date the entry on the latest regular-season Skin/CTP week (not post season / future test rows)
+  // so it shows on the current Prize Money view
+  const todayInt = (() => { const d = new Date(); return d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate(); })();
+  const lastDate = parseInt(query(`SELECT MAX(Date) as d FROM Payments WHERE League="Hugh's" AND "Desc" IN ('Skin','CTP') AND Date >= ${s}0101 AND Date < ${seasonEnd} AND Date <= ${todayInt}${psKittyExclude(s)}`)[0]?.d) || parseInt(`${s}1231`);
   const now = new Date().toLocaleString();
   const by = currentUser?.name || 'admin';
 
@@ -17611,7 +17613,7 @@ function loadAdminKitty() {
   const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
 
   const skinCollected = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail='Payment' AND Date >= ${season}0101`)[0]?.t || 0);
-  const skinPaidOut   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail LIKE '#%' AND Player != 'Kitty' AND Date >= ${season}0101`)[0]?.t || 0);
+  const skinPaidOut   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND Desc='Skin' AND Detail LIKE '#%' AND Player != 'Kitty' AND Date >= ${season}0101${psKittyExclude(season)}`)[0]?.t || 0);
   const skinKitty     = Math.round((skinCollected - skinPaidOut) * 100) / 100;
 
   const ctpKittyRows  = query(`SELECT Detail, Earned, Date as cDate FROM Payments WHERE League="Hugh's" AND Desc='CTP' AND Player='Kitty' AND Date >= ${season}0101 ORDER BY Date DESC`);
@@ -18599,6 +18601,15 @@ let entryManual9 = false;
 let selectedEntrySlotKey = null;
 let activeEntryPostSeasonContext = null;
 let _lastFocusedSlotKey = null;
+
+// Post-season skins are paid from the EOY Skins pool, not the weekly skin kitty.
+// SQL fragment that leaves the season's two post-season dates out of weekly kitty math.
+function psKittyExclude(season) {
+  try {
+    const ps = parsePostSeasonDates(getSeasonSettings(parseInt(season))?.PostSeasonDt);
+    return ps ? ` AND Date NOT IN (${ps.week1},${ps.week2})` : '';
+  } catch (e) { return ''; }
+}
 
 function parsePostSeasonDates(postSeasonDt) {
   if (!postSeasonDt) return null;
