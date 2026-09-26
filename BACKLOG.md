@@ -2,22 +2,18 @@
 
 Last updated: 2026-09-26
 
-## Enhancements
-- [ ] HTTPS on port 8445 — **top priority**
-- [ ] Rename LeagueParms → LeagueSettings
-- [ ] "Need a Sub" available to all users
-- [ ] Personal best celebration
-- [ ] Half-season prize funding model
-- [ ] Post-season Front/Back 9 toggle on Schedule view (recalculates scores when switched)
+## Open
+- [ ] HTTPS on port 8445
+- [ ] Lost request from Sep 26 chat — add when remembered
 
-## Bugs
-- [ ] #16 — SQL Explorer writes silently lost without a manual Save DB
-- [ ] #17 — Case-sensitive player name matching causes silent failures
-
-## Git / Deploy
-- [ ] Move refund commit off `main` (belongs in `sandbox-enhancements`)
-- [ ] `deploy-sandbox-full.sh` exits after Step 0 — must finish all steps or fail with a clear error
-- [ ] Re-establish SSH key auth for passwordless deploys
-
-## Lost / To Recall
-- [ ] Request from Sep 26 chat ("20260922-2-Hughs Golf") — lost; add here when remembered
+## Done
+- [x] Rename LeagueParms → LeagueSettings
+- [x] "Need a Sub" available to all users
+- [x] Personal best celebration
+- [x] Half-season prize funding model
+- [x] Post-season Front/Back 9 toggle
+- [x] Bug #16 — SQL Explorer writes lost without Save DB
+- [x] Bug #17 — case-sensitive player name matching
+- [x] Refund commit moved off main
+- [x] Deploy script Step 0 exit fixed
+- [x] SSH key auth set up
