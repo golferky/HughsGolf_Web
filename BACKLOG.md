@@ -26,6 +26,11 @@ Last updated: 2026-09-25
 ---
 
 ## 🔧 Housekeeping / Tech Debt *(target: October 2026 cutover)*
+- [ ] **Make the GitHub repo private** (after the current bugs/enhancements are done) — Settings → General → Danger Zone → Change visibility. Then:
+  - Change `SAVE_TOKEN` in app.py (it has been publicly visible), commit, deploy sandbox + live. Browsers pick up the new token on reload.
+    Note: the server also hands this token to any browser via /save-token, so it's a light speed bump, not real security. Real protection = tie writes to a logged-in admin session on the server (future enhancement).
+  - Add any outside developers as collaborators (Settings → Collaborators) so they can read docs/SETUP.md.
+  - Nothing else changes: deploy_qnap.sh uses Gary's own SSH login; the QNAP never pulls from GitHub.
 
 - [x] **End-of-season cutover** — Move all sandbox work to live. QNAP stays live, Mac becomes new sandbox.
 - [x] **AppChangelog entries** — Stats tab, Usage panel fixes, admin subnav tracking all documented.

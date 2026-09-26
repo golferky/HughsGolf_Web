@@ -143,5 +143,5 @@ Then `systemctl enable --now hughsgolf`.
 > A live-mode server updates `hughsgolf.duckdns.org` every 5 minutes to its own public IP. A second live copy would pull the league's address to someone else's house. Run copies as sandbox, or blank the token in the database first.
 
 - The browser downloads the whole `HughsGolf.db`, so anyone who can open the site can get the file, including the Gmail app password and DuckDNS token stored in it. Keep public copies behind your own network, or strip those values from the database you share.
-- Writes are protected only by a shared token built into `app.py`. Change it (`SAVE_TOKEN`) on any copy that is reachable from the internet.
+- Writes are protected only by a shared token built into `app.py` (`SAVE_TOKEN`), and the server hands that token to any browser that asks (`/save-token`). Treat any copy reachable from the internet as writable by anyone who can open it; keep test copies on your own network.
 - The server makes rolling backups in `backups/live` or `backups/sandbox` and a copy before every live deploy in `backups/predeploy`. Include that folder in your own backups.
