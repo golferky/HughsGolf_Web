@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260925.9';
+const APP_VERSION = '20260926.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -2633,7 +2633,8 @@ function postSeasonTestModeEnabled() {
 }
 
 function storedPostSeasonTestModeEnabled() {
-  if (!canUsePostSeasonTestMode()) return false;
+  // Not gated on test hosts any more: post-season mode follows the selected date on LIVE too.
+  if (!db) return false;
   if (localStorage.getItem('hg_post_season_default_version')) {
     localStorage.removeItem('hg_post_season_default_version');
     localStorage.setItem('hg_post_season_test_mode', 'N');
@@ -2803,10 +2804,9 @@ function refreshTestModeUi() {
   if (overrideGroup) overrideGroup.style.display = showOverride ? '' : 'none';
   if (overrideInput) overrideInput.checked = futureScoreOverrideEnabled();
   const psInput = document.getElementById('entryPostSeason');
-  if (!canUsePostSeasonTestMode()) {
-    if (psInput) psInput.checked = false;
-    localStorage.removeItem('hg_post_season_test_mode');
-  } else if (psInput) {
+  // Post-season mode follows the selected date everywhere (live, sandbox, local).
+  // (Previously only test hosts could be in post-season mode, which forced live back to 9 holes.)
+  if (psInput) {
     const shouldBeEnabled = storedPostSeasonTestModeEnabled();
     if (psInput.checked !== shouldBeEnabled) {
       psInput.checked = shouldBeEnabled;
