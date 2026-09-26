@@ -46,7 +46,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260926.5-sandbox'
+VERSION    = '20260926.6-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -570,6 +570,10 @@ def save_db():
                 reverse=True
             )
             # Only create a backup if none exists yet or the newest is older than the cooldown
+            # (imports here, not inside the 'if existing' branch — with no backups yet they were
+            #  never bound and the weekly-anchor code below crashed every save on a fresh server)
+            import re as _re
+            from datetime import datetime as _dt
             do_backup = True
             if existing:
                 import re as _re
