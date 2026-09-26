@@ -46,7 +46,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260926.10-sandbox'
+VERSION    = '20260926.11-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -251,14 +251,19 @@ def database():
 
 @app.route('/fetch-live-db')
 def fetch_live_db():
-    """Sandbox-only: proxy-fetch the live Mac Mini DB for in-browser comparison."""
+    """Sandbox-only: fetch the live DB for in-browser comparison (Compare Live).
+    Uses the live DB file on this server if HUGHSGOLF_LIVE_DB exists, else HUGHSGOLF_LIVE_URL."""
     if 'sandbox' not in VERSION:
         return jsonify({'error': 'Not available on live'}), 403
     import urllib.request as _req
-    live_url = 'http://192.168.1.190:8445/HughsGolf.db'
+    live_url = f'{LIVE_SERVER_URL.rstrip("/")}/HughsGolf.db'
     try:
-        with _req.urlopen(live_url, timeout=10) as resp:
-            data = resp.read()
+        if LIVE_DB_PATH and os.path.isfile(LIVE_DB_PATH):
+            with open(LIVE_DB_PATH, 'rb') as f:
+                data = f.read()
+        else:
+            with _req.urlopen(live_url, timeout=10) as resp:
+                data = resp.read()
         from flask import Response
         return Response(data, mimetype='application/octet-stream',
                         headers={'Content-Disposition': 'attachment; filename=HughsGolf_live.db'})
