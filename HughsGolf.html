@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260926.7';
+const APP_VERSION = '20260926.8';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4477,6 +4477,7 @@ function loadPrizeMoney(options = {}) {
         <div style="display:flex;flex-direction:column;gap:6px;align-self:center">
           ${totalKitty > 0.01 ? `<button onclick="showKittyPay()" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">💰 Pay from Kitty</button>` : ''}
           <button onclick="showPoolTransfer(${season})" style="padding:8px 16px;background:#37474f;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">🔄 Move Between Pools</button>
+          <button onclick="clearKitty(${season})" title="Zero out the Skin and CTP kitties (recorded as a write-off)" style="padding:8px 16px;background:#b71c1c;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">🧹 Clear Kitty</button>
         </div>` : ''}
     </div>
     <div id="skinKittyDetail" style="display:none;margin-bottom:12px;max-width:700px">
@@ -12095,6 +12096,58 @@ async function doPoolTransfer() {
   }, 2000);
 }
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Zero out the Skin kitty and any open CTP carryovers for a season. Recorded (not deleted):
+//  - Skin: one 'Pool Transfer' row for the exact balance (can be negative), so the kitty math nets to $0
+//  - CTP: open Carryover rows are renamed KittyCleared… so they stop counting but stay in history
+async function clearKitty(season) {
+  if (!(currentUser?.role === 'admin' || currentUser?.role === 'developer')) return;
+  const s = parseInt(season);
+  const seasonEnd = `${s + 1}0101`;
+  const league = "Hugh's";
+  const sum = sql => parseFloat(query(sql)[0]?.t || 0);
+  const collected = sum(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail='Payment' AND Date >= ${s}0101 AND Date < ${seasonEnd}`);
+  const paidOut   = sum(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND Date >= ${s}0101 AND Date < ${seasonEnd}`);
+  const moved     = sum(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail='Pool Transfer' AND Date >= ${s}0101 AND Date < ${seasonEnd}`);
+  const skin = Math.round((collected - paidOut - moved) * 100) / 100;
+
+  // Open CTP carryovers: most recent carryover per hole with no winner recorded after it
+  const open = [];
+  const seenHoles = new Set();
+  query(`SELECT Date, Detail, Earned FROM Payments WHERE League="Hugh's" AND "Desc"='CTP' AND Player='Kitty' AND Detail LIKE 'Carryover%' AND Date >= ${s}0101 AND Date < ${seasonEnd} ORDER BY Date DESC`)
+    .forEach(r => {
+      const m = r.Detail?.match(/Carryover(\d+)/);
+      if (!m || seenHoles.has(m[1])) return;
+      seenHoles.add(m[1]);
+      const won = query(`SELECT 1 FROM Payments WHERE "Desc"='CTP' AND Detail='#${m[1]}' AND Player!='Kitty' AND Date > ${r.Date} AND Date < ${seasonEnd} LIMIT 1`).length > 0;
+      if (!won) open.push(r);
+    });
+  const ctp = Math.round(open.reduce((a, r) => a + parseFloat(r.Earned || 0), 0) * 100) / 100;
+
+  if (Math.abs(skin) < 0.005 && !open.length) { alert(`The ${s} kitty is already $0.`); return; }
+  const fmt = v => (v < 0 ? '-$' : '$') + Math.abs(v).toFixed(2);
+  if (!confirm(`Clear the ${s} kitty to $0?\n\nSkin kitty: ${fmt(skin)} → $0.00\nCTP kitty: ${fmt(ctp)}${open.length ? ` (${open.length} open carryover${open.length > 1 ? 's' : ''})` : ''} → $0.00\n\nRecorded as a write-off. Past payouts are not changed.`)) return;
+
+  // Date the entry on the latest Skin/CTP week so it shows on the current Prize Money view
+  const lastDate = parseInt(query(`SELECT MAX(Date) as d FROM Payments WHERE League="Hugh's" AND "Desc" IN ('Skin','CTP') AND Date >= ${s}0101 AND Date < ${seasonEnd}`)[0]?.d) || parseInt(`${s}1231`);
+  const now = new Date().toLocaleString();
+  const by = currentUser?.name || 'admin';
+
+  if (Math.abs(skin) >= 0.005) {
+    serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,DatePaid,Comment) VALUES (?,?,?,?,?,?,?,?)`,
+      [league, 'Kitty', lastDate, 'Skin', 'Pool Transfer', skin, now, `Kitty cleared (write-off) by ${by} — was ${fmt(skin)}`]);
+  }
+  open.forEach(r => {
+    serverRun(`UPDATE Payments SET Detail=?, Comment=COALESCE(Comment,'') || ? WHERE League=? AND "Desc"='CTP' AND Player='Kitty' AND Date=? AND Detail=?`,
+      [r.Detail.replace('Carryover', 'KittyCleared'), ` [kitty cleared ${now} by ${by}]`, league, r.Date, r.Detail]);
+  });
+  const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
+  serverRun(`INSERT INTO LogTable (log_time,level,method,source,text,details,created_at) VALUES (?,?,?,?,?,?,?)`,
+    [logTime, 'INFO', 'clearKitty', 'HughsGolf', `Kitty cleared for ${s}: skin ${fmt(skin)}, ctp ${fmt(ctp)}`, `by=${by}`, logTime]);
+  await SERVER_RUN_QUEUE;   // row-level writes are already on the server — no full DB upload
+  showToast(`✓ ${s} kitty cleared`, '#2e7d32', 3000);
+  loadPrizeMoney();
+}
 
 function showKittyPay() {
   if (!(currentUser?.role === 'admin' || currentUser?.role === 'developer')) return;
@@ -20877,7 +20930,8 @@ function calcSkinWinnersForDate(date) {
   const lp = getSeasonSettings(season);
   const skinAmt = parseFloat(lp?.Skins || 2);
   const totalPot = skinPayers.size * skinAmt;
-  const potPerHole = Math.ceil(totalPot / winningHoles.length);
+  // Whole dollars, rounded DOWN — leftover stays in the kitty so it can never go negative
+  const potPerHole = Math.floor(totalPot / winningHoles.length);
 
   const winners = winningHoles.map(hi => ({
     hole: nine.nums[hi],
