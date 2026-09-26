@@ -84,9 +84,9 @@ do_start() {
     # After cutover (live/.is_live exists): sandbox "Refresh/Compare Live" uses the QNAP live DB.
     # Before cutover it keeps its defaults (the Mac mini live server).
     HUGHSGOLF_LIVE_DB="$BASE/live/HughsGolf.db" HUGHSGOLF_LIVE_URL="http://127.0.0.1:8445" \
-    HUGHSGOLF_PORT=$PORT "$PYTHON" app.py >> "$LOG" 2>&1 </dev/null &
+    HUGHSGOLF_PORT=$PORT "$PYTHON" -u app.py >> "$LOG" 2>&1 </dev/null &
   else
-    HUGHSGOLF_PORT=$PORT "$PYTHON" app.py >> "$LOG" 2>&1 </dev/null &
+    HUGHSGOLF_PORT=$PORT "$PYTHON" -u app.py >> "$LOG" 2>&1 </dev/null &
   fi
   i=0; while [ $i -lt 15 ] && ! port_up; do sleep 1; i=$((i+1)); done
   if port_up; then echo "[$SITE] started on port $PORT (PID $(site_pids))"; return 0; fi
