@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260926.9';
+const APP_VERSION = '20260926.10';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -5704,16 +5704,14 @@ function loadHome() {
     <div class="stat-box"><div class="val">${weekCount}</div><div class="lbl">Weeks Played</div></div>
   `;
 
-  // Recent scores — show one full round's worth (teams × 2 players)
-  const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
-  const teamCountForLimit = query(`SELECT COUNT(DISTINCT Team) as c FROM Teams WHERE League="Hugh's" AND Year=${currentSeason}`)[0]?.c || 12;
-  const recentLimit = teamCountForLimit * 2;
+  // Recent scores — the most recent round only (a fixed row limit spilled into the
+  // previous week whenever players were missing)
   const recentScores = query(`
     SELECT Player, Date, Gross, Net, FrontBack
     FROM Scores
     WHERE Gross IS NOT NULL AND Gross != 0
-    ORDER BY Date DESC, Net ASC
-    LIMIT ${recentLimit}
+      AND Date = (SELECT MAX(Date) FROM Scores WHERE Gross IS NOT NULL AND Gross != 0)
+    ORDER BY Net ASC, Gross ASC
   `);
   const tb = tbody('recentScores');
   recentScores.forEach(r => {
