@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260926.4';
+const APP_VERSION = '20260926.5';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -19583,6 +19583,8 @@ function buildEntryGrid() {
   // Post season banner
   const oldPsBanner = document.getElementById('postSeasonBanner');
   if (oldPsBanner) oldPsBanner.remove();
+  // Seed/Clear test-score tools: sandbox/local test copies only, never on live
+  const psTestTools = psTestMode && canUsePostSeasonTestMode();
   if (isPostSeason) {
     const banner = document.createElement('div');
     banner.id = 'postSeasonBanner';
@@ -19590,10 +19592,10 @@ function buildEntryGrid() {
     const btnStyle = 'font-size:11px;padding:3px 10px;border:1px solid rgba(255,255,255,.4);border-radius:4px;background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-weight:600';
     const clrStyle = 'font-size:11px;padding:3px 10px;border:1px solid rgba(255,255,255,.4);border-radius:4px;background:rgba(255,0,0,.3);color:white;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-weight:600';
     banner.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${psTestMode?'8px':'0'}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${psTestTools?'8px':'0'}">
         <span>⛳ POST SEASON ${season} — 18 Holes · Skins $${lp?.SkinsPS||7}/player · CTP $${lp?.ClosestPS||3}/player</span>
       </div>
-      ${psTestMode ? `
+      ${psTestTools ? `
       <div style="display:flex;gap:16px;align-items:center;padding-top:6px;border-top:1px solid rgba(255,255,255,.2);flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:11px;font-weight:700;color:rgba(255,255,255,.7);white-space:nowrap">Week 1</span>
