@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260926.2';
+const APP_VERSION = '20260926.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -19991,12 +19991,12 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
   if (oldCg) oldCg.remove();
   const cg = document.createElement('colgroup');
   if (isPostSeason) {
-    // Player | 9 front holes | F.Gross | 9 back holes | B.Gross | Net
+    // Player | 9 front holes | Out | 9 back holes | In | Gross | Net
     cg.innerHTML = '<col style="width:170px">' +
       Array(9).fill('<col style="width:38px">').join('') +
       '<col style="width:48px">' +
       Array(9).fill('<col style="width:38px">').join('') +
-      '<col style="width:48px"><col style="width:48px">';
+      '<col style="width:48px"><col style="width:52px"><col style="width:48px">';
   } else {
     cg.innerHTML = '<col style="width:200px">' +
       nine.nums.map(()=>'<col style="width:46px">').join('') +
@@ -20018,7 +20018,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       const isCTP = isEntryHeaderCtpHole(nine, i + 9);
       h1 += `<th class="eg-th${isCTP?' ctp-hole':''}" style="font-size:10px">${n}</th>`;
     });
-    h1 += '<th class="eg-th-label">In</th><th class="eg-th-label">Net</th></tr>';
+    h1 += '<th class="eg-th-label">In</th><th class="eg-th-label">Gross</th><th class="eg-th-label">Net</th></tr>';
   } else {
     nine.nums.forEach((n, i) => {
       const isCTP = isEntryHeaderCtpHole(nine, i);
@@ -20039,7 +20039,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       const isCTP = isEntryHeaderCtpHole(nine, i + 9);
       h2 += `<td class="eg-par${isCTP?' ctp-hole':''}">${p}</td>`;
     });
-    h2 += '<td class="eg-par">36</td><td class="eg-par">—</td></tr>';
+    h2 += '<td class="eg-par">36</td><td class="eg-par">72</td><td class="eg-par">—</td></tr>';
   } else {
     nine.pars.forEach((p,i) => {
       const isCTP = isEntryHeaderCtpHole(nine, i);
@@ -20058,7 +20058,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
     nine.hcps.slice(9,18).forEach((h,i) => {
       h3 += `<td class="eg-hdcp">${displayNineHoleStrokeIndex(h)}</td>`;
     });
-    h3 += '<td class="eg-hdcp">—</td><td class="eg-hdcp">—</td></tr>';
+    h3 += '<td class="eg-hdcp">—</td><td class="eg-hdcp">—</td><td class="eg-hdcp">—</td></tr>';
   } else {
     nine.hcps.forEach((h,i) => {
       h3 += `<td class="eg-hdcp">${displayNineHoleStrokeIndex(h)}</td>`;
@@ -20235,11 +20235,16 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       inTd.id = `in-${key}`;
       inTd.style.fontWeight='700';
       inTd.textContent = psTotals.backGross;
+      const tgTd = document.createElement('td');
+      tgTd.className = 'eg-gross';
+      tgTd.id = `gross-${key}`;
+      tgTd.style.fontWeight='700';
+      tgTd.textContent = psTotals.runGross;
       const tnTd = document.createElement('td');
-      tnTd.className = 'eg-net' + (psTotals.totalNet && psTotals.totalNet < 72 ? ' under' : '');
+      tnTd.className = 'eg-net' + (psTotals.runNet !== '' && psTotals.runNet < 72 ? ' under' : '');
       tnTd.id = `net-${key}`;
-      tnTd.textContent = psTotals.totalNet;
-      tr._outTd = outTd; tr._inTd = inTd; tr._tnTd = tnTd;
+      tnTd.textContent = psTotals.runNet;
+      tr._outTd = outTd; tr._inTd = inTd; tr._tgTd = tgTd; tr._tnTd = tnTd;
     }
     // Stroke count per hole - for post season applies full phdcp to each 9
     const strokeCount = hi => {
@@ -20337,7 +20342,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
 
       // Insert Out gross after hole 9 (index 8), In gross after hole 18 (index 17)
       if (isPostSeason && hi === 8 && tr._outTd) tr.appendChild(tr._outTd);
-      if (isPostSeason && hi === 17 && tr._inTd)  { tr.appendChild(tr._inTd); tr.appendChild(tr._tnTd); }
+      if (isPostSeason && hi === 17 && tr._inTd)  { tr.appendChild(tr._inTd); tr.appendChild(tr._tgTd); tr.appendChild(tr._tnTd); }
     });
 
     // ── Gross / Net / Hdcp ──
@@ -21304,7 +21309,10 @@ function getPostSeasonEntryTotals(st) {
   const totalGross = frontComplete && backComplete ? frontGross + backGross : '';
   const hdcp = parseInt(st.phdcp) || 0;
   const totalNet = totalGross ? (frontGross - hdcp) + (backGross - hdcp) : '';
-  return { frontGross, backGross, frontComplete, backComplete, totalGross, totalNet };
+  // Running totals shown on the score entry grid (update as each hole is entered)
+  const runGross = (frontGross === '' && backGross === '') ? '' : (frontGross || 0) + (backGross || 0);
+  const runNet = runGross === '' ? '' : runGross - (frontGross !== '' ? hdcp : 0) - (backGross !== '' ? hdcp : 0);
+  return { frontGross, backGross, frontComplete, backComplete, totalGross, totalNet, runGross, runNet };
 }
 
 function updateCompletedEntryHandicap(key, nine, writeDb = true) {
@@ -21414,9 +21422,11 @@ function onScoreInput(e) {
     const nEl = document.getElementById(`net-${key}`);
     if (outEl) outEl.textContent = psTotals.frontGross;
     if (inEl) inEl.textContent = psTotals.backGross;
+    const tgEl = document.getElementById(`gross-${key}`);
+    if (tgEl) tgEl.textContent = psTotals.runGross;
     if (nEl) {
-      nEl.textContent = psTotals.totalNet;
-      nEl.className = 'eg-net' + (psTotals.totalNet && psTotals.totalNet < par9 ? ' under' : '');
+      nEl.textContent = psTotals.runNet;
+      nEl.className = 'eg-net' + (psTotals.runNet !== '' && psTotals.runNet < 72 ? ' under' : '');
     }
   } else {
     const gEl = document.getElementById(`gross-${key}`);
@@ -21917,9 +21927,11 @@ function distributeScores(key, scoreDigits, firstInp) {
     const nEl = document.getElementById(`net-${key}`);
     if (outEl) outEl.textContent = psTotals.frontGross;
     if (inEl) inEl.textContent = psTotals.backGross;
+    const tgEl = document.getElementById(`gross-${key}`);
+    if (tgEl) tgEl.textContent = psTotals.runGross;
     if (nEl) {
-      nEl.textContent = psTotals.totalNet;
-      nEl.className = 'eg-net' + (psTotals.totalNet && psTotals.totalNet < par9 ? ' under' : '');
+      nEl.textContent = psTotals.runNet;
+      nEl.className = 'eg-net' + (psTotals.runNet !== '' && psTotals.runNet < 72 ? ' under' : '');
     }
   } else {
     const gEl = document.getElementById(`gross-${key}`);
