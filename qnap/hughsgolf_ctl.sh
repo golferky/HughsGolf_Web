@@ -102,6 +102,10 @@ do_status() {
 do_ensure() {
   [ -f "$DIR/app.py" ] || return 0            # site not set up yet
   port_up && return 0
+  # A deploy/restart is in progress (lock < 2 min old) — let it finish
+  if [ -f "$DIR/.restarting" ] && [ $(( $(date +%s) - $(cat "$DIR/.restarting" 2>/dev/null || echo 0) )) -lt 120 ]; then
+    return 0
+  fi
   echo "$(date '+%Y-%m-%d %H:%M:%S') [$SITE] was down; starting" >> "$BASE/watchdog.log"
   do_start >> "$BASE/watchdog.log" 2>&1
 }
@@ -111,7 +115,7 @@ run() {
   case "$2" in
     start)   do_start ;;
     stop)    do_stop ;;
-    restart) do_stop; sleep 1; do_start ;;
+    restart) date +%s > "$DIR/.restarting"; do_stop; sleep 1; do_start; rc=$?; rm -f "$DIR/.restarting"; return $rc ;;
     status)  do_status ;;
     ensure)  do_ensure ;;
     *) echo "usage: $0 {live|sandbox|all} {start|stop|restart|status|ensure}"; exit 1 ;;

@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260926.1';
+const APP_VERSION = '20260926.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3131,6 +3131,7 @@ async function refreshLiveDbSnapshotForReadOnlyView() {
     const oldDb = db;
     db = nextDb;
     try { oldDb?.close?.(); } catch(e) {}
+    try { applyInMemorySchema(); } catch(e) { console.warn('applyInMemorySchema after refresh failed:', e); }
     document.getElementById('dbStatus').textContent = 'HughsGolf.db';
     await loadDbInfo();
     DB_UPDATE_PENDING = false;
@@ -4141,16 +4142,12 @@ function tbody(tableId) {
 }
 
 // ── On DB Loaded ──
-function onDbLoaded() {
-  // Create PageViews table if not exists (also persisted to file via serverRun)
-  const pvExists = query(`SELECT name FROM sqlite_master WHERE type='table' AND name='PageViews'`).length > 0;
-  if (!pvExists) {
-    const pvSql = `CREATE TABLE IF NOT EXISTS PageViews (Id INTEGER PRIMARY KEY AUTOINCREMENT, Ts TEXT NOT NULL, Player TEXT, Tab TEXT, SubNav TEXT)`;
-    db.run(pvSql);
-    serverRun(pvSql);
-  }
-
-  // Create GallusSubmissions table if not exists
+// Tables/columns the app builds in the browser's copy of the DB after every load
+// (SeasonSettings/LeagueSettings from LeagueParms, changelog tables, etc.).
+// MUST run on every freshly loaded DB — initial load AND any server refresh — or
+// post-season dates, season settings, etc. disappear.
+function applyInMemorySchema() {
+  if (!db) return;
   db.run(`CREATE TABLE IF NOT EXISTS GallusSubmissions (
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
     Player TEXT,
@@ -4167,6 +4164,18 @@ function onDbLoaded() {
   ensureLeagueSettingsTables();
   // Rename legacy 'president' Officer value to 'admin'
   try { db.run(`UPDATE Players SET Officer='admin' WHERE Officer='president'`); } catch(e) {}
+}
+
+function onDbLoaded() {
+  // Create PageViews table if not exists (also persisted to file via serverRun)
+  const pvExists = query(`SELECT name FROM sqlite_master WHERE type='table' AND name='PageViews'`).length > 0;
+  if (!pvExists) {
+    const pvSql = `CREATE TABLE IF NOT EXISTS PageViews (Id INTEGER PRIMARY KEY AUTOINCREMENT, Ts TEXT NOT NULL, Player TEXT, Tab TEXT, SubNav TEXT)`;
+    db.run(pvSql);
+    serverRun(pvSql);
+  }
+
+  applyInMemorySchema();
   // globalSaveBtn visibility is controlled by applyRoleAccess after login
   populateSeasonDropdowns();
   snapshotDB();
