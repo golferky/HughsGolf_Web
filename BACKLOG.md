@@ -46,6 +46,7 @@ Last updated: 2026-09-25
 - [ ] **Post-season CTP hole designation in settings**
 - [ ] **Player dashboard / card management** — Players can show/hide and rearrange cards and grids on their own screen. Big task, offseason. More details TBD.
 - [ ] **2027 season setup** — New SeasonSettings entry, roster updates, new schedule, rule changes from proposals discussion.
+  - Gallus TournamentHost yearly setup (https://manager.gallusgolf.com/TournamentHost/7b446045) as a wizard step: event details (name, dates, 4:00 PM Boone Links, Individuals/Stroke, In App Scoring, logo) + Gallus checklist: 1 Rounds, 2 League Roster, 3 Groups, 4 Flights, 5 Leaderboards, 6 Materials. Idea: export schedule/roster from HughsGolf for Gallus. More details from Gary TBD.
 
 ---
 
