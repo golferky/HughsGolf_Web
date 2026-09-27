@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260927.6';
+const APP_VERSION = '20260927.7';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -2621,6 +2621,9 @@ function toggleFutureScoreOverride(enabled) {
     return;
   }
   localStorage.setItem('hg_future_score_override', enabled ? 'Y' : 'N');
+  logIt(`Allow future scores ${enabled ? 'CHECKED (future dates unlocked)' : 'UNCHECKED (future dates locked)'}`,
+    `by=${currentUser?.name || 'unknown'} role=${currentUser?.role || ''} date=${document.getElementById('entryDate')?.value || ''} device=${typeof detectDevice === 'function' ? detectDevice() : ''}`,
+    'INFO', 'futureScoreOverride');
   buildEntryGrid();
 }
 
@@ -19825,7 +19828,8 @@ function buildEntryGrid() {
   const isFuture = parseInt(date) > todayInt;
   const allowFutureScores = isFuture && futureScoreOverrideEnabled();
   // Post-season test mode bypasses future-date block for authorized users
-  const blockFutureScores = isPostSeason ? false : (isFuture && !allowFutureScores);
+  // Post season obeys the same rule: future date is locked unless the "allow future scores" box is checked
+  const blockFutureScores = isFuture && !allowFutureScores;
 
   // If scores exist for this date but no skin winners recorded yet, calculate now
   // (must happen before skinWinnerCells cache is built below)
@@ -20044,8 +20048,9 @@ function buildEntryGrid() {
       inp.style.cursor = 'not-allowed';
       inp.style.color = '#aaa';
     });
-    // For dates beyond next scheduled date, also disable Sub buttons
-    if (isLocked) {
+    // For dates beyond next scheduled date, also disable Sub buttons.
+    // Post season: keep Pay/Sub buttons usable so EOY buy-ins and subs can be set up ahead of time.
+    if (isLocked && !isPostSeason) {
       document.querySelectorAll('#entryGrid button').forEach(btn => btn.disabled = true);
     }
   }
