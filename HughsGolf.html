@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260927.10';
+const APP_VERSION = '20260927.11';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -6535,6 +6535,9 @@ function loadScores() {
   document.getElementById('scoresSubtitle').textContent = psCtx
     ? `${psCtx.season} Post Season - 18-hole net`
     : fmtDate(date);
+  // Post season has no matches — no Sort by Match/Net toggle (always sorted by 18-hole net)
+  const _sortBtn = document.getElementById('scoresSortByNetBtn');
+  if (_sortBtn) _sortBtn.style.display = psCtx ? 'none' : '';
 
   const last5Map = getPlayerLast5Map();
 
