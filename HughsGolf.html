@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260927.5';
+const APP_VERSION = '20260927.6';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -6156,12 +6156,16 @@ function getPlayerLast5Map(beforeDate) {
   const params = beforeDate ? [beforeDate] : [];
 
   // Prefer actual score history so stale PlayerLast5 rows do not make the hover incomplete.
+  // Post-season rounds never count toward handicaps
+  const _psSet = [...getPostSeasonDateSet()].map(d => parseInt(d)).filter(Boolean);
+  const psClause = _psSet.length ? `AND CAST(Date AS INTEGER) NOT IN (${_psSet.join(',')})` : '';
   query(`SELECT Player, Gross, Date
     FROM Scores
     WHERE League="Hugh's"
       AND Gross IS NOT NULL
       AND CAST(Gross AS INTEGER) > 0
       ${beforeClause}
+      ${psClause}
     ORDER BY Player, CAST(Date AS INTEGER) DESC, rowid DESC`, params)
     .forEach(r => {
       const gross = parseInt(r.Gross);
@@ -7108,6 +7112,8 @@ function calcMatchPoints(t1players, t2players, scores, t1, t2, subs={}) {
 
 async function calcMatchesForDate(date) {
   if (!db || !date) return;
+  // Post season has no matches/points — never create Matches rows for PS dates
+  if (isDatePostSeason(String(date))) return;
   const season = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   const league = "Hugh's";
   const sched  = query(`SELECT * FROM Schedule WHERE League="Hugh's" AND Date='${date}'`)[0];
@@ -8388,11 +8394,13 @@ function loadHandicaps() {
 
   // Build last-5-scores map directly from Scores, respecting the "as of" cutoff
   const last5Map = {};
+  const _psSetH = [...getPostSeasonDateSet()].map(d => parseInt(d)).filter(Boolean);
+  const _psClauseH = _psSetH.length ? `AND CAST(Date AS INTEGER) NOT IN (${_psSetH.join(',')})` : '';
   rows.forEach(r => {
     const cutoff = asOfDate || '99999999';
     const scoreRows = query(`
       SELECT Gross, Date FROM Scores
-      WHERE League="Hugh's" AND Player=? AND Gross IS NOT NULL AND Gross != 0 AND Date <= ?
+      WHERE League="Hugh's" AND Player=? AND Gross IS NOT NULL AND Gross != 0 AND Date <= ? ${_psClauseH}
       ORDER BY Date DESC LIMIT 5
     `, [r.Player, cutoff]);
     if (scoreRows.length) {
@@ -19108,7 +19116,7 @@ function calcEoySkins(season, silent=false) {
     }).filter(Boolean);
   }
 
-  const w1Fb = 'Front';
+  const w1Fb = getPostSeasonWeek1Nine(season);   // week 1 may be the Back 9 (club's call)
   const w1Hcps = w1Fb === 'Back' ? backHcps : frontHcps;
   const w1HoleNums = w1Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w1Scores = {};
@@ -19122,7 +19130,7 @@ function calcEoySkins(season, silent=false) {
   const w1Pot = Object.keys(w1Scores).length * skinPerPlayer;
 
   // Week 2 scores (second date)
-  const w2Fb = 'Back';
+  const w2Fb = w1Fb === 'Back' ? 'Front' : 'Back';
   const w2Hcps = w2Fb === 'Back' ? backHcps : frontHcps;
   const w2HoleNums = w2Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w2Scores = {};
@@ -19663,8 +19671,11 @@ async function clearAllPsScores() {
   if (!d1 && !d2) return alert('No post season dates found.');
   const dateClause = (d1 && d2) ? `Date IN (${d1},${d2})` : `Date=${d1||d2}`;
   const label = (d1 && d2) ? `dates ${d1} and ${d2}` : `date ${d1||d2}`;
-  if (!confirm(`⚠️ Clear ALL scores for post season (${label})?\nThis resets all Gallus import status too. Cannot be undone.`)) return;
+  if (!confirm(`⚠️ Clear ALL scores for post season (${label})?\nAlso removes skin/CTP winners and EOY refunds for those dates (buy-in payments are kept) and resets Gallus import status. Cannot be undone.`)) return;
   serverRun(`DELETE FROM Scores WHERE ${dateClause} AND League="Hugh's"`, []);
+  serverRun(`DELETE FROM Payments WHERE ${dateClause} AND League="Hugh's" AND "Desc" IN ('Skin','CTP') AND Detail LIKE '#%'`, []);
+  serverRun(`DELETE FROM Payments WHERE ${dateClause} AND League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund'`, []);
+  window.skinWinnerCells = {}; window.ctpWinnersByPlayer = {};
   serverRun(`UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE ${dateClause}`, []);
   Object.keys(entryState).forEach(k => { if (!k.startsWith('_ps')) delete entryState[k]; });
   entryStateDate = null;
@@ -20859,9 +20870,12 @@ function confirmSub() {
   const hdcp  = subHdcp.length ? subHdcp[0].Hdcp  : 0;
   const phdcp = subHdcp.length ? subHdcp[0].PHdcp : 0;
 
-  // Write sub's handicap record for this date (PHdcp = their current hdcp going in)
-  serverRun(`INSERT OR REPLACE INTO Handicaps (League, Player, Date, PHdcp, Hdcp) VALUES ("Hugh's", ?, ?, ?, ?)`,
-    [name, date, hdcp, hdcp]);
+  // Write sub's handicap record for this date (PHdcp = their current hdcp going in).
+  // Not in post season: PS never writes Handicaps (uses last regular-season Hdcp).
+  if (!isDatePostSeason(String(date))) {
+    serverRun(`INSERT OR REPLACE INTO Handicaps (League, Player, Date, PHdcp, Hdcp) VALUES ("Hugh's", ?, ?, ?, ?)`,
+      [name, date, hdcp, hdcp]);
+  }
 
   closeSubPicker();
   buildEntryGrid();
@@ -20874,8 +20888,8 @@ function clearSub(key) {
   // Remove from Subs table
   serverRun(`DELETE FROM Subs WHERE Date=? AND Team=? AND Grade=? AND League="Hugh's"`, [date, st.team, st.grade]);
 
-  // Remove sub's handicap record for this date if we added it
-  if (st.sub) {
+  // Remove sub's handicap record for this date if we added it (never added in post season)
+  if (st.sub && !isDatePostSeason(String(date))) {
     serverRun(`DELETE FROM Handicaps WHERE Player=? AND Date=? AND League="Hugh's"`, [st.sub, date]);
   }
 
@@ -20898,6 +20912,8 @@ async function clearEntryGroup(groupNum) {
   const _psD2 = entryState._psDate2;
   const _dateClause = (_psD1 && _psD2) ? `Date IN (${_psD1},${_psD2})` : `Date=${date}`;
   serverRun(`DELETE FROM Scores WHERE Player IN (${playerList}) AND ${_dateClause} AND League="Hugh's"`, []);
+  // Post season: skin winners depend on everyone's scores — drop them so they recalculate
+  if (_psD1 && _psD2) serverRun(`DELETE FROM Payments WHERE ${_dateClause} AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%'`, []);
   serverRun(`UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE ResolvedName IN (${playerList}) AND ${_dateClause}`, []);
   await SERVER_RUN_QUEUE;
   buildEntryGrid();
@@ -22286,6 +22302,8 @@ document.getElementById('entryClear')?.addEventListener('click', async ()=>{
     const backDate  = entryState._psBackDate  || entryState._psDate2 || date;
     serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Front' AND League=?`, [st.active, frontDate, league]);
     serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Back' AND League=?`, [st.active, backDate, league]);
+    // Skin winners depend on everyone's scores — drop them so they recalculate
+    serverRun(`DELETE FROM Payments WHERE Date IN (${parseInt(frontDate)},${parseInt(backDate)}) AND League=? AND "Desc"='Skin' AND Detail LIKE '#%'`, [league]);
   } else {
     serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [st.active, date, league]);
     serverRun(`DELETE FROM Handicaps WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [st.active, date, league]);
