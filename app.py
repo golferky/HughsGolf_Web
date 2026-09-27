@@ -46,7 +46,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260927.4-sandbox'
+VERSION    = '20260927.5-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -622,6 +622,12 @@ def save_db():
         with open(tmp, 'wb') as f:
             f.write(data)
         os.replace(tmp, DB_PATH)
+        try:
+            _ac = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            audit_data_change(_ac.cursor(), 'FULL DATABASE SAVE', None, action='SAVE_DB')
+            _ac.commit(); _ac.close()
+        except Exception as e:
+            print(f'[{now_local():%H:%M:%S}] audit (save) failed: {e}')
         modified_ms = db_modified_ms()
 
     print(f'[{now_local():%H:%M:%S}] DB saved — {len(data):,} bytes')
@@ -2108,6 +2114,49 @@ def help_content_restore():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
+# ── Data-change audit ───────────────────────────────────────────────────────
+# Every write that reaches the server DB is recorded in LogTable (source='DataChange')
+# with who made it, so admins can see it under Admin → Logging → Server Log.
+import re as _audit_re
+_AUDIT_TABLE_RE = _audit_re.compile(
+    r'^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|REPLACE\s+INTO|UPDATE(?:\s+OR\s+\w+)?|DELETE\s+FROM|ALTER\s+TABLE|CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|DROP\s+TABLE(?:\s+IF\s+EXISTS)?)\s+[\"`\[]?(\w+)',
+    _audit_re.I)
+_AUDIT_SKIP_TABLES = {'logtable', 'dbchangelog', 'pageviews', 'pageview', 'usagelog'}
+
+def _audit_ip():
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr) or ''
+    return ip.split(',')[0].strip()
+
+def _audit_actor():
+    from urllib.parse import unquote
+    actor = unquote(request.headers.get('X-Actor', '') or '').strip() or 'unknown'
+    role  = (request.headers.get('X-Actor-Role', '') or '').strip() or 'unknown'
+    return actor, role
+
+def audit_data_change(cur, sql, rowcount=None, action=None):
+    """Write one audit row using the caller's open cursor (same transaction)."""
+    try:
+        m = _AUDIT_TABLE_RE.match(sql or '')
+        table = m.group(1) if m else ''
+        if action is None:
+            if not m:
+                return
+            if table.lower() in _AUDIT_SKIP_TABLES:
+                return
+            # Session heartbeats are not data changes
+            if table.lower() == 'players' and _audit_re.search(r'SET\s+\"?(ActiveSession|LastSeen)', sql, _audit_re.I) \
+               and not _audit_re.search(r',\s*\"?(Name|Officer|Phone|Email|Hdcp)', sql, _audit_re.I):
+                return
+            action = (sql.strip().split(None, 1)[0] or '').upper()
+        actor, role = _audit_actor()
+        now = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        text = f'{actor} {action} {table}'.strip()
+        details = f'role={role} ip={_audit_ip()} rows={rowcount if rowcount is not None else ""} sql={(sql or "")[:1500]}'
+        cur.execute('INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)',
+                    (now, 'AUDIT', 'data_change', 'DataChange', text, details, now))
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] audit log failed: {e}')
+
 @app.route('/run-sql', methods=['POST'])
 def run_sql():
     """Execute a SQL statement against HughsGolf.db (Developer only — token required)."""
@@ -2133,8 +2182,9 @@ def run_sql():
                 conn.close()
                 return jsonify({'ok': True, 'rows': rows, 'columns': cols, 'rowcount': len(rows)})
             else:
-                conn.commit()
                 rc = cur.rowcount
+                audit_data_change(cur, sql, rc)
+                conn.commit()
                 conn.close()
                 modified_ms = db_modified_ms()
                 print(f'[{now_local():%H:%M:%S}] run-sql: {sql[:80]} — {rc} row(s) affected')
