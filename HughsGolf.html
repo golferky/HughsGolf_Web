@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260927.12';
+const APP_VERSION = '20260927.13';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3673,6 +3673,10 @@ function ensureAppChangelogTable() {
     ['enhancement', 'Post-season Scores card: Sort by Match button hidden', 'PS has no matches; the card is always sorted by 18-hole net.', 1],
   ]);
   ensureVersion('20260927.12', _s27, [
+    ['summary', 'Post season scoring is ready: it handles starting on the back 9, a Week 2 rainout, and the leaderboard now shows everyone playing for the League Championship.', '', 0],
+    ['adminsummary', 'New Swap Nines button for the club\'s front/back call, test scores that clean themselves up, and a full log of who changed what.', '', 0],
+    ['developer', 'Changelog shows a daily recap to players/admins; full detail only for developers',
+     'New categories summary / adminsummary. renderChangelogDay() + groupChangelogByDate() shared by the What\'s New popup and Changelog tab. Days without a recap fall back to item titles (no details) for non-developers.', 2],
     ['developer', 'Changelog entries now save to the server', 'Built-in changelog entries were written only to the browser copy of the DB; they now go through serverRun.', 1],
   ]);
 
@@ -4058,12 +4062,14 @@ function loadChangelogFromDb() {
   const rows = query(`SELECT ID, Version, ReleaseDate, Category, Item, Notes FROM AppChangelog ORDER BY Version DESC, SortOrder ASC, ID ASC`);
   const map = {};
   rows.forEach(r => {
-    if (!map[r.Version]) map[r.Version] = { version: r.Version, date: r.ReleaseDate, enhancements: [], adminEnhancements: [], bugFixes: [], developerNotes: [] };
+    if (!map[r.Version]) map[r.Version] = { version: r.Version, date: r.ReleaseDate, enhancements: [], adminEnhancements: [], bugFixes: [], developerNotes: [], summaries: [], adminSummaries: [] };
     const entry = { id: r.ID, text: r.Item, notes: r.Notes || '' };
     if (r.Category === 'enhancement') map[r.Version].enhancements.push(entry);
     else if (r.Category === 'admin')  map[r.Version].adminEnhancements.push(entry);
     else if (r.Category === 'bugfix') map[r.Version].bugFixes.push(entry);
     else if (r.Category === 'developer') map[r.Version].developerNotes.push(entry);
+    else if (r.Category === 'summary') map[r.Version].summaries.push(entry);          // daily recap, everyone
+    else if (r.Category === 'adminsummary') map[r.Version].adminSummaries.push(entry); // daily recap, admins
   });
   return Object.values(map).sort((a, b) => b.version.localeCompare(a.version));
 }
@@ -8790,6 +8796,38 @@ function loadCtps() {
   document.getElementById('ctpsContent').innerHTML = html;
 }
 
+// One day of changelog. Non-developers see the plain-English daily recap (if written) instead of
+// every item; developers see the recap plus the full itemized list with details.
+function renderChangelogDay(g, role, ul, sh) {
+  const isOfficer   = role === 'admin' || role === 'developer';
+  const isDeveloper = role === 'developer';
+  const hasRecap = g.summaries.length || (isOfficer && g.adminSummaries.length);
+  let html = '';
+  if (hasRecap) {
+    if (g.summaries.length)                      html += sh('📣', 'What\'s new', '#1a6a1a')   + ul(g.summaries, false);
+    if (isOfficer && g.adminSummaries.length)    html += sh('🏌️', 'For admins', '#1a3a8a')     + ul(g.adminSummaries, false);
+    if (!isDeveloper) return html;
+    html += `<div style="font-size:10px;color:#999;text-transform:uppercase;letter-spacing:.7px;margin:10px 0 2px;border-top:1px dashed #ddd;padding-top:8px">Developer detail</div>`;
+  }
+  const notes = isDeveloper;
+  if (g.enhancements.length)                    html += sh('✨', 'Enhancements', '#1a6a1a')     + ul(g.enhancements, notes);
+  if (isOfficer && g.adminEnhancements.length)  html += sh('🏌️', 'Admin Updates', '#1a3a8a')   + ul(g.adminEnhancements, notes);
+  if (g.bugFixes.length)                        html += sh('🔧', 'Bug Fixes', '#b71c1c')        + ul(g.bugFixes, notes);
+  if (isDeveloper && g.developerNotes.length)   html += sh('🛠️', 'Developer Notes', '#5d4037') + ul(g.developerNotes, notes);
+  return html;
+}
+function groupChangelogByDate(changelog, unseenVersions) {
+  const order = [], byDate = {};
+  changelog.forEach(e => {
+    if (!byDate[e.date]) { byDate[e.date] = { enhancements:[], adminEnhancements:[], bugFixes:[], developerNotes:[], summaries:[], adminSummaries:[], hasNew:false }; order.push(e.date); }
+    const g = byDate[e.date];
+    if (unseenVersions && unseenVersions.has(e.version)) g.hasNew = true;
+    ['enhancements','adminEnhancements','bugFixes','developerNotes','summaries','adminSummaries']
+      .forEach(k => { if (e[k]?.length) g[k] = g[k].concat(e[k]); });
+  });
+  return { order, byDate };
+}
+
 function showWhatsNewIfNeeded(playerName) {
   const changelog = (db ? loadChangelogFromDb() : null) || CHANGELOG;
   if (!changelog.length) return;
@@ -8820,27 +8858,14 @@ function showWhatsNewIfNeeded(playerName) {
   // Group all entries by date, then render one block per date with merged bullet lists.
   // All enhancements for a date go under a single "✨ Enhancements" header, etc.
   const unseenVersions = new Set(unseen.map(e => e.version));
-  const dateOrder = [];
-  const byDate = {};
-  changelog.forEach(e => {
-    if (!byDate[e.date]) { byDate[e.date] = { enhancements:[], adminEnhancements:[], bugFixes:[], developerNotes:[], hasNew: false }; dateOrder.push(e.date); }
-    const g = byDate[e.date];
-    if (unseenVersions.has(e.version)) g.hasNew = true;
-    if (e.enhancements?.length)       g.enhancements       = g.enhancements.concat(e.enhancements);
-    if (e.adminEnhancements?.length)  g.adminEnhancements  = g.adminEnhancements.concat(e.adminEnhancements);
-    if (e.bugFixes?.length)           g.bugFixes           = g.bugFixes.concat(e.bugFixes);
-    if (e.developerNotes?.length)     g.developerNotes     = g.developerNotes.concat(e.developerNotes);
-  });
+  const { order: dateOrder, byDate } = groupChangelogByDate(changelog, unseenVersions);
   body.innerHTML = dateOrder.map((date, idx) => {
     const g = byDate[date];
     let html = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px${idx>0?';margin-top:4px':''}">
       <span style="background:#1a3a1a;color:#d4a843;font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:.5px">${date.toUpperCase()}</span>
       ${g.hasNew ? '<span style="background:#c62828;color:white;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;letter-spacing:.5px">NEW</span>' : ''}
     </div>`;
-    if (g.enhancements.length)                    html += sh('✨','Enhancements','#1a6a1a')       + ul(g.enhancements);
-    if (isOfficer && g.adminEnhancements.length)  html += sh('🏌️','Admin Updates','#1a3a8a')     + ul(g.adminEnhancements);
-    if (g.bugFixes.length)                        html += sh('🔧','Bug Fixes','#b71c1c')          + ul(g.bugFixes);
-    if (isDeveloper && g.developerNotes.length)   html += sh('🛠️','Developer Notes','#5d4037')   + ul(g.developerNotes);
+    html += renderChangelogDay(g, role, ul, sh);
     if (idx < dateOrder.length - 1) html += `<div style="border-top:1px solid #eee;margin:10px 0"></div>`;
     return html;
   }).join('');
@@ -8882,11 +8907,11 @@ function loadWhatsNewTab() {
     localStorage.setItem(`hg_whats_new_${playerName}`, changelog[0].version);
   }
 
-  function ul(items) {
+  function ul(items, showNotes = true) {
     if (!items?.length) return '';
     return `<ul style="margin:4px 0 10px;padding-left:20px;font-size:13px;color:#333;line-height:1.7">${items.map(i => {
       const text  = typeof i === 'string' ? i : i.text;
-      const notes = typeof i === 'object' ? (i.notes || '') : '';
+      const notes = (showNotes && typeof i === 'object') ? (i.notes || '') : '';
       const noteId = typeof i === 'object' ? `clnote_${i.id}` : '';
       const noteToggle = notes
         ? `<span onclick="var el=document.getElementById('${noteId}');el.style.display=el.style.display==='none'?'block':'none'"
@@ -8901,26 +8926,11 @@ function loadWhatsNewTab() {
   }
 
   // Group all version entries by date, merge bullets under one header per category per date.
-  const _tabDateOrder = [];
-  const _tabByDate = {};
-  changelog.forEach(e => {
-    if (!_tabByDate[e.date]) { _tabByDate[e.date] = { enhancements:[], adminEnhancements:[], bugFixes:[], developerNotes:[], hasNew:false }; _tabDateOrder.push(e.date); }
-    const g = _tabByDate[e.date];
-    if (unseenVersions.has(e.version)) g.hasNew = true;
-    if (e.enhancements?.length)      g.enhancements      = g.enhancements.concat(e.enhancements);
-    if (e.adminEnhancements?.length) g.adminEnhancements = g.adminEnhancements.concat(e.adminEnhancements);
-    if (e.bugFixes?.length)          g.bugFixes          = g.bugFixes.concat(e.bugFixes);
-    if (e.developerNotes?.length)    g.developerNotes    = g.developerNotes.concat(e.developerNotes);
-  });
+  const { order: _tabDateOrder, byDate: _tabByDate } = groupChangelogByDate(changelog, unseenVersions);
   const entries = _tabDateOrder.map(date => {
     const g = _tabByDate[date];
-    const hasContent = g.enhancements.length || (isOfficer && g.adminEnhancements.length) || g.bugFixes.length || (isDeveloper && g.developerNotes.length);
-    if (!hasContent) return '';
-    let inner = '';
-    if (g.enhancements.length)                    inner += sh('✨', 'Enhancements', '#1a6a1a')     + ul(g.enhancements);
-    if (isOfficer && g.adminEnhancements.length)  inner += sh('🏌️', 'Admin Updates', '#1a3a8a')   + ul(g.adminEnhancements);
-    if (g.bugFixes.length)                        inner += sh('🔧', 'Bug Fixes', '#b71c1c')        + ul(g.bugFixes);
-    if (isDeveloper && g.developerNotes.length)   inner += sh('🛠️', 'Developer Notes', '#5d4037') + ul(g.developerNotes);
+    const inner = renderChangelogDay(g, role, ul, sh);
+    if (!inner) return '';
     return `
       <div style="border:1px solid #dce8d4;border-radius:10px;margin-bottom:12px;overflow:hidden">
         <div style="background:#f7faf4;padding:10px 16px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #dce8d4">
