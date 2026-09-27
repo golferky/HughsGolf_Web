@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260926.12';
+const APP_VERSION = '20260927.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3554,6 +3554,9 @@ function ensureAppChangelogTable() {
   // Byes — in LS_MID_SEASON_OK so must exist in SeasonSettings
   try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN Byes INTEGER DEFAULT 0`); } catch(e) {}
   serverRun(`ALTER TABLE SeasonSettings ADD COLUMN Byes INTEGER DEFAULT 0`, [], {silent:true});
+  // Post season: which nine is played in Week 1 ('Front' or 'Back'); club decides, can swap for rain
+  try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek1Nine TEXT DEFAULT 'Front'`); } catch(e) {}
+  serverRun(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek1Nine TEXT DEFAULT 'Front'`, [], {silent:true});
   // Backfill from LeagueParms if available and StandPlace1 is still null
   try {
     const lpRows = query(`SELECT Season, Place1, Place2, Place3 FROM LeagueParms WHERE Name="Hugh's"`);
@@ -18831,17 +18834,46 @@ function getPostSeasonContextForDate(date) {
   return null;
 }
 
+function getPostSeasonWeek1Nine(season) {
+  try {
+    const v = String(getSeasonSettings(season)?.PSWeek1Nine || '').trim().toUpperCase();
+    return (v === 'BACK' || v === 'B') ? 'Back' : 'Front';
+  } catch(e) { return 'Front'; }
+}
+
 function getPostSeasonFrontBackMap(psDate1, psDate2, league = "Hugh's") {
-  // Post season entry is always course order: 1-9 first, 10-18 second.
-  // Do not infer this from Scores rows; test rows can be partial or mixed while entry is in progress.
-  const week1Fb = 'Front';
-  const week2Fb = 'Back';
+  // Which nine is played in Week 1 comes from SeasonSettings.PSWeek1Nine (default Front).
+  // Front 9 scores are always saved on the date the front was played, back 9 likewise.
+  const season = parseInt(String(psDate1).substring(0, 4));
+  const week1Fb = getPostSeasonWeek1Nine(season);
+  const week2Fb = week1Fb === 'Back' ? 'Front' : 'Back';
   return {
     week1Fb,
     week2Fb,
-    frontDate: psDate1,
-    backDate: psDate2
+    frontDate: week1Fb === 'Front' ? psDate1 : psDate2,
+    backDate:  week1Fb === 'Front' ? psDate2 : psDate1
   };
+}
+
+// Admin: swap which nine is played in Week 1 (club's call, e.g. rain). Only allowed before any PS scores exist.
+function swapPostSeasonNines() {
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'developer';
+  if (!isAdmin) { alert('Only admins can swap nines.'); return; }
+  const ctx = getActivePostSeasonScoreContext() || forcePostSeasonContextFromVisibleEntry();
+  if (!ctx) { alert('Post season dates are not set up.'); return; }
+  const cnt = query(`SELECT COUNT(*) as c FROM Scores WHERE League="Hugh's" AND CAST(Date AS INTEGER) IN (${ctx.week1},${ctx.week2})`)[0]?.c || 0;
+  if (cnt > 0) {
+    alert(`Can't swap nines: ${cnt} post-season score row(s) already entered.\n\nClear post-season scores first, then swap.`);
+    return;
+  }
+  const cur = getPostSeasonWeek1Nine(ctx.season);
+  const next = cur === 'Front' ? 'Back' : 'Front';
+  const other = next === 'Front' ? 'Back' : 'Front';
+  if (!confirm(`Swap post-season nines?\n\nWeek 1 (${fmtDate(String(ctx.week1))}): ${next} 9\nWeek 2 (${fmtDate(String(ctx.week2))}): ${other} 9`)) return;
+  serverRun(`UPDATE SeasonSettings SET PSWeek1Nine=? WHERE League="Hugh's" AND Season=?`, [next, ctx.season]);
+  SERVER_RUN_QUEUE.then(() => saveDBToServer());
+  activeEntryPostSeasonContext = null;
+  buildEntryGrid();
 }
 
 function getPostSeasonPaymentStatus(player, date) {
@@ -19698,6 +19730,10 @@ function buildEntryGrid() {
     banner.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${psTestTools?'8px':'0'}">
         <span>⛳ POST SEASON ${season} — 18 Holes · Skins $${lp?.SkinsPS||7}/player · CTP $${lp?.ClosestPS||3}/player</span>
+        <span style="display:flex;align-items:center;gap:8px;font-size:12px">
+          <span>Week 1: ${window.psBackFirst ? 'Back' : 'Front'} 9 · Week 2: ${window.psBackFirst ? 'Front' : 'Back'} 9</span>
+          ${_isAdmin ? `<button onclick="swapPostSeasonNines()" style="${btnStyle}" title="Swap which nine is played in Week 1 (only before scores are entered)">⇄ Swap Nines</button>` : ''}
+        </span>
       </div>
       ${psTestTools ? `
       <div style="display:flex;gap:16px;align-items:center;padding-top:6px;border-top:1px solid rgba(255,255,255,.2);flex-wrap:wrap">
@@ -20112,19 +20148,19 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
 
   // Header: hole numbers
   let h1 = '<tr><th class="eg-th" style="position:sticky;left:0;z-index:3;min-width:160px;text-align:left;padding-left:8px">Player <span style="color:#ffb3c1;font-size:10px;font-weight:700">(X No Show)</span></th>';
+  // Post season column order: nine played first is shown first (Week 1 on the left)
+  const psOrder = window.psBackFirst
+    ? [9,10,11,12,13,14,15,16,17,0,1,2,3,4,5,6,7,8]
+    : [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17];
+  const psLbl1 = window.psBackFirst ? 'In' : 'Out';
+  const psLbl2 = window.psBackFirst ? 'Out' : 'In';
   if (isPostSeason) {
-    // Front 9 holes
-    nine.nums.slice(0,9).forEach((n, i) => {
+    psOrder.forEach((i, pos) => {
       const isCTP = isEntryHeaderCtpHole(nine, i);
-      h1 += `<th class="eg-th${isCTP?' ctp-hole':''}" style="font-size:10px">${n}</th>`;
+      h1 += `<th class="eg-th${isCTP?' ctp-hole':''}" style="font-size:10px">${nine.nums[i]}</th>`;
+      if (pos === 8) h1 += `<th class="eg-th-label">${psLbl1}</th>`;
     });
-    h1 += '<th class="eg-th-label">Out</th>';
-    // Back 9 holes
-    nine.nums.slice(9,18).forEach((n, i) => {
-      const isCTP = isEntryHeaderCtpHole(nine, i + 9);
-      h1 += `<th class="eg-th${isCTP?' ctp-hole':''}" style="font-size:10px">${n}</th>`;
-    });
-    h1 += '<th class="eg-th-label">In</th><th class="eg-th-label">Gross</th><th class="eg-th-label">Net</th><th class="eg-th-label" title="9-hole handicap, taken off each nine">Hdcp</th></tr>';
+    h1 += `<th class="eg-th-label">${psLbl2}</th><th class="eg-th-label">Gross</th><th class="eg-th-label">Net</th><th class="eg-th-label" title="9-hole handicap, taken off each nine">Hdcp</th></tr>`;
   } else {
     nine.nums.forEach((n, i) => {
       const isCTP = isEntryHeaderCtpHole(nine, i);
@@ -20136,14 +20172,10 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
   // Header: par row
   let h2 = '<tr><td class="eg-par" style="position:sticky;left:0;z-index:3;background:#1a3a1a;text-align:left;padding-left:8px;font-size:10px;color:#aaa">Par</td>';
   if (isPostSeason) {
-    nine.pars.slice(0,9).forEach((p,i) => {
+    psOrder.forEach((i, pos) => {
       const isCTP = isEntryHeaderCtpHole(nine, i);
-      h2 += `<td class="eg-par${isCTP?' ctp-hole':''}">${p}</td>`;
-    });
-    h2 += '<td class="eg-par">36</td>';
-    nine.pars.slice(9,18).forEach((p,i) => {
-      const isCTP = isEntryHeaderCtpHole(nine, i + 9);
-      h2 += `<td class="eg-par${isCTP?' ctp-hole':''}">${p}</td>`;
+      h2 += `<td class="eg-par${isCTP?' ctp-hole':''}">${nine.pars[i]}</td>`;
+      if (pos === 8) h2 += '<td class="eg-par">36</td>';
     });
     h2 += '<td class="eg-par">36</td><td class="eg-par">72</td><td class="eg-par">—</td><td class="eg-par">—</td></tr>';
   } else {
@@ -20157,12 +20189,9 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
   // Header: league 9-hole stroke index, derived from the 18-hole course SI.
   let h3 = '<tr><td class="eg-hdcp" style="position:sticky;left:0;z-index:3;background:#153116;text-align:left;padding-left:8px;font-size:10px">Stroke Index</td>';
   if (isPostSeason) {
-    nine.hcps.slice(0,9).forEach((h,i) => {
-      h3 += `<td class="eg-hdcp">${displayNineHoleStrokeIndex(h)}</td>`;
-    });
-    h3 += '<td class="eg-hdcp">—</td>';
-    nine.hcps.slice(9,18).forEach((h,i) => {
-      h3 += `<td class="eg-hdcp">${displayNineHoleStrokeIndex(h)}</td>`;
+    psOrder.forEach((i, pos) => {
+      h3 += `<td class="eg-hdcp">${displayNineHoleStrokeIndex(nine.hcps[i])}</td>`;
+      if (pos === 8) h3 += '<td class="eg-hdcp">—</td>';
     });
     h3 += '<td class="eg-hdcp">—</td><td class="eg-hdcp">—</td><td class="eg-hdcp">—</td><td class="eg-hdcp">—</td></tr>';
   } else {
@@ -20377,7 +20406,9 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
 
     // ── Hole inputs ──
     // For post season stroke dots: front 9 uses min(phdcp,9), back 9 uses max(0,phdcp-9)
-    nine.nums.forEach((holeNum, hi) => {
+    const cellOrder = isPostSeason ? psOrder : nine.nums.map((_, i) => i);
+    cellOrder.forEach((hi, pos) => {
+      const holeNum = nine.nums[hi];
       const par = nine.pars[hi];
       const val = st.holes[hi];
       const isStroke = strokeCount(hi);
@@ -20451,9 +20482,9 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       }
       tr.appendChild(td);
 
-      // Insert Out gross after hole 9 (index 8), In gross after hole 18 (index 17)
-      if (isPostSeason && hi === 8 && tr._outTd) tr.appendChild(tr._outTd);
-      if (isPostSeason && hi === 17 && tr._inTd)  { tr.appendChild(tr._inTd); tr.appendChild(tr._tgTd); tr.appendChild(tr._tnTd); tr.appendChild(tr._thTd); }
+      // Insert first-nine total after the 9th visible cell, second-nine total + totals after the 18th
+      if (isPostSeason && pos === 8 && tr._outTd) tr.appendChild(window.psBackFirst ? tr._inTd : tr._outTd);
+      if (isPostSeason && pos === 17 && tr._inTd) { tr.appendChild(window.psBackFirst ? tr._outTd : tr._inTd); tr.appendChild(tr._tgTd); tr.appendChild(tr._tnTd); tr.appendChild(tr._thTd); }
     });
 
     // ── Gross / Net / Hdcp ──
@@ -22011,7 +22042,7 @@ function onScorePaste(e) {
     e.preventDefault();
     const isPS = isPostSeasonEntryMode();
     const maxCells = isPS ? 18 : 9;
-    distributeScores(key, text.slice(0, maxCells - hi), e.target);
+    distributeScores(key, text.slice(0, maxCells), e.target);
   }
 }
 
@@ -22020,11 +22051,11 @@ function distributeScores(key, scoreDigits, firstInp) {
   const nine = isPS ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front);
   const par9 = nine.pars.reduce((a,b)=>a+b,0);
   const digits = scoreDigits.split('');
-  const inputs = document.querySelectorAll(`input[data-slotkey="${key}"]`);
-  const startIdx = firstInp ? (parseInt(firstInp.dataset.hi) || 0) : 0;
+  const inputs = [...document.querySelectorAll(`input[data-slotkey="${key}"]`)];  // visible order
+  const startIdx = firstInp ? Math.max(0, inputs.indexOf(firstInp)) : 0;
   digits.forEach((d, i) => {
-    const idx = startIdx + i;
-    if (inputs[idx]) { inputs[idx].value = d; entryState[key].holes[idx] = d; }
+    const inp = inputs[startIdx + i];
+    if (inp) { inp.value = d; entryState[key].holes[parseInt(inp.dataset.hi)] = d; }
   });
   entryDirty = true;
   if (firstInp && digits.length) firstInp.value = digits[0];
@@ -22093,9 +22124,9 @@ async function saveEntryToDB() {
       // Post season display is always 1-9 then 10-18. Save each half to that side's date.
       const frontDate = entryState._psFrontDate || entryState._psDate1 || date;
       const backDate  = entryState._psBackDate  || entryState._psDate2 || date;
-      // Use monthly rotation to determine which nine is played each PS week
-      const frontFb = getScheduledFrontBack(frontDate) || 'Front';
-      const backFb  = getScheduledFrontBack(backDate)  || 'Back';
+      // Holes 1-9 are always the Front, 10-18 the Back; dates come from the PS week-1 nine setting
+      const frontFb = 'Front';
+      const backFb  = 'Back';
       const frontNine = frontFb === 'Back' ? courseData.back : courseData.front;
       const backNine  = backFb  === 'Back' ? courseData.back : courseData.front;
       const front9H = h.slice(0,9);
