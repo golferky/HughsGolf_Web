@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260927.1';
+const APP_VERSION = '20260927.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -2650,9 +2650,7 @@ function getPostSeasonDateSet() {
   query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`).forEach(r => {
     const p = r.PostSeasonDt.split('/');
     const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
-    const d2obj = new Date(r.PostSeasonDt);
-    d2obj.setDate(d2obj.getDate()+7);
-    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
+    const d2 = String(parsePostSeasonDates(r.PostSeasonDt).week2);
     psDates.add(d1);
     psDates.add(d2);
   });
@@ -3557,6 +3555,9 @@ function ensureAppChangelogTable() {
   // Post season: which nine is played in Week 1 ('Front' or 'Back'); club decides, can swap for rain
   try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek1Nine TEXT DEFAULT 'Front'`); } catch(e) {}
   serverRun(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek1Nine TEXT DEFAULT 'Front'`, [], {silent:true});
+  // Post season Week 2 date override (m/d/yyyy). NULL = Week 1 + 7 days. Set when Week 2 alone is rained out.
+  try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek2Dt TEXT`); } catch(e) {}
+  serverRun(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek2Dt TEXT`, [], {silent:true});
   // Backfill from LeagueParms if available and StandPlace1 is still null
   try {
     const lpRows = query(`SELECT Season, Place1, Place2, Place3 FROM LeagueParms WHERE Name="Hugh's"`);
@@ -7435,8 +7436,7 @@ function loadLeaders() {
     if (psRow?.PostSeasonDt) {
       const p = psRow.PostSeasonDt.split('/');
       psExclude.add(`${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`);
-      const d2 = new Date(psRow.PostSeasonDt); d2.setDate(d2.getDate()+7);
-      psExclude.add(`${d2.getFullYear()}${String(d2.getMonth()+1).padStart(2,'0')}${String(d2.getDate()).padStart(2,'0')}`);
+      psExclude.add(String(parsePostSeasonDates(psRow.PostSeasonDt).week2));
     }
 
     playedDates.filter(date => !psExclude.has(String(date))).forEach(date => {
@@ -17306,17 +17306,19 @@ async function rainOutPsDate(week, season) {
   if (!lp?.PostSeasonDt) return alert('No post season date set for this season.');
   const psDates = parsePostSeasonDates(lp.PostSeasonDt);
   const oldDate = week === 1 ? psDates.week1 : psDates.week2;
-  // Bump PostSeasonDt by +7 days (week2 auto-follows since it's always week1+7)
-  const oldDtObj = new Date(lp.PostSeasonDt);
-  oldDtObj.setDate(oldDtObj.getDate() + 7);
-  const newDtStr = `${oldDtObj.getMonth()+1}/${oldDtObj.getDate()}/${oldDtObj.getFullYear()}`;
-  const newPsDates = parsePostSeasonDates(newDtStr);
-  if (!confirm(`Rain out Post Season Week ${week} (${fmtDate(oldDate)})?\n\nBoth PS dates shift +1 week:\n  Week 1: ${fmtDate(newPsDates.week1)}\n  Week 2: ${fmtDate(newPsDates.week2)}\n\nAny scores on ${fmtDate(oldDate)} will be cleared.`)) return;
+  const wk2Mdy = `${String(psDates.week2).substring(4,6)*1}/${String(psDates.week2).substring(6,8)*1}/${String(psDates.week2).substring(0,4)}`;
+  // Week 1 rainout: both weeks shift +1 week. Week 2 rainout: only Week 2 moves; Week 1 (already played) stays put.
+  const newDtStr  = week === 1 ? psAddDaysMdy(lp.PostSeasonDt, 7) : lp.PostSeasonDt;
+  const newWk2Str = psAddDaysMdy(wk2Mdy, 7);
+  const newPsDates = parsePostSeasonDates(newDtStr, newWk2Str);
+  const shiftMsg = week === 1 ? 'Both PS dates shift +1 week' : 'Week 2 moves +1 week (Week 1 unchanged)';
+  if (!confirm(`Rain out Post Season Week ${week} (${fmtDate(oldDate)})?\n\n${shiftMsg}:\n  Week 1: ${fmtDate(newPsDates.week1)}\n  Week 2: ${fmtDate(newPsDates.week2)}\n\nAny scores on ${fmtDate(oldDate)} will be cleared.`)) return;
   // Clear scores on the old date being rained out
   serverRun(`DELETE FROM Scores WHERE Date=${oldDate} AND League="Hugh's"`, []);
   serverRun(`UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE Date=${oldDate}`, []);
-  // Update PostSeasonDt
-  serverRun(`UPDATE SeasonSettings SET PostSeasonDt=? WHERE Season=? AND League="Hugh's"`, [newDtStr, season]);
+  // Update PostSeasonDt / PSWeek2Dt
+  serverRun(`UPDATE SeasonSettings SET PostSeasonDt=?, PSWeek2Dt=? WHERE Season=? AND League="Hugh's"`, [newDtStr, newWk2Str, season]);
+  activeEntryPostSeasonContext = null;
   await SERVER_RUN_QUEUE;
   loadScheduleBuilder();
   buildEntryGrid();
@@ -17422,6 +17424,7 @@ function extendSchedule(date, season) {
     const pdt = new Date(parseInt(pp[2]), parseInt(pp[0])-1, parseInt(pp[1]));
     pdt.setDate(pdt.getDate()+7);
     serverRun(`UPDATE SeasonSettings SET PostSeasonDt=? WHERE Season=?`, [`${pdt.getMonth()+1}/${pdt.getDate()}/${pdt.getFullYear()}`, season]);
+    if (lp.PSWeek2Dt) serverRun(`UPDATE SeasonSettings SET PSWeek2Dt=? WHERE Season=?`, [psAddDaysMdy(lp.PSWeek2Dt, 7), season]);
   }
   if (lp?.EndDate) {
     const ep = lp.EndDate.split('/');
@@ -18613,13 +18616,30 @@ function psKittyExclude(season) {
   } catch (e) { return ''; }
 }
 
-function parsePostSeasonDates(postSeasonDt) {
+function psMdyToInt(mdy) {
+  const p = String(mdy || '').split('/');
+  if (p.length !== 3) return null;
+  const n = parseInt(`${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`);
+  return isNaN(n) ? null : n;
+}
+function psAddDaysMdy(mdy, days) {
+  const p = String(mdy).split('/');
+  const d = new Date(parseInt(p[2]), parseInt(p[0]) - 1, parseInt(p[1]));
+  d.setDate(d.getDate() + days);
+  return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
+}
+// Week 1 = PostSeasonDt. Week 2 = SeasonSettings.PSWeek2Dt if set (Week 2 rainout), else Week 1 + 7.
+// Every post-season date lookup goes through here so a Week 2 rainout is honored everywhere.
+function parsePostSeasonDates(postSeasonDt, week2Dt) {
   if (!postSeasonDt) return null;
-  const p = postSeasonDt.split('/');
-  const d1 = parseInt(`${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`);
-  const d2obj = new Date(postSeasonDt);
-  d2obj.setDate(d2obj.getDate() + 7);
-  const d2 = parseInt(`${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`);
+  const d1 = psMdyToInt(postSeasonDt);
+  if (!d1) return null;
+  if (week2Dt === undefined) {
+    try { week2Dt = query(`SELECT PSWeek2Dt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt=? LIMIT 1`, [postSeasonDt])[0]?.PSWeek2Dt; }
+    catch(e) { week2Dt = null; }
+  }
+  const override = psMdyToInt(week2Dt);
+  const d2 = (override && override > d1) ? override : psMdyToInt(psAddDaysMdy(postSeasonDt, 7));
   return { week1: d1, week2: d2 };
 }
 
@@ -19148,8 +19168,7 @@ function isDatePostSeason(dateStr) {
   for (const r of psRows) {
     const p = r.PostSeasonDt.split('/');
     const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
-    const d2obj = new Date(r.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
-    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
+    const d2 = String(parsePostSeasonDates(r.PostSeasonDt).week2);
     if (dateStr === d1 || dateStr === d2) return true;
   }
   return false;
@@ -19173,8 +19192,7 @@ function populateEntryDates() {
   psRows.forEach(r => {
     const p = r.PostSeasonDt.split('/');
     const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
-    const d2obj = new Date(r.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
-    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
+    const d2 = String(parsePostSeasonDates(r.PostSeasonDt).week2);
     psDateSet.add(d1); psDateSet.add(d2);
     psLabels.set(d1, 'Post Season');   // one entry: the grid covers Wk 1 (holes 1-9) and Wk 2 (holes 10-18)
   });
@@ -19643,8 +19661,7 @@ function buildEntryGrid() {
   for (const r of psRows) {
     const p = r.PostSeasonDt.split('/');
     const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
-    const d2obj = new Date(r.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
-    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
+    const d2 = String(parsePostSeasonDates(r.PostSeasonDt).week2);
     if (date === d1 || date === d2) { isPostSeason = true; lp = r; break; }
   }
   const psTestMode = !!document.getElementById('entryPostSeason')?.checked;
@@ -19691,8 +19708,7 @@ function buildEntryGrid() {
   // For post season, week order may be Back then Front, but screen order is always holes 1-18.
   if (isPostSeason) {
     const psD1 = parseInt((() => { const p=lp.PostSeasonDt.split('/'); return `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`; })());
-    const psD2obj = new Date(lp.PostSeasonDt); psD2obj.setDate(psD2obj.getDate()+7);
-    const psD2 = parseInt(`${psD2obj.getFullYear()}${String(psD2obj.getMonth()+1).padStart(2,'0')}${String(psD2obj.getDate()).padStart(2,'0')}`);
+    const psD2 = parsePostSeasonDates(lp.PostSeasonDt).week2;
     const psMap = getPostSeasonFrontBackMap(psD1, psD2, league);
     window.psBackFirst = psMap.week1Fb === 'Back';
   }
@@ -19828,8 +19844,7 @@ function buildEntryGrid() {
   const skinWinDateFilter = isPostSeason && lp?.PostSeasonDt ? (() => {
     const p = lp.PostSeasonDt.split('/');
     const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
-    const d2obj = new Date(lp.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
-    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
+    const d2 = String(parsePostSeasonDates(lp.PostSeasonDt).week2);
     return `Date IN (${d1},${d2})`;
   })() : `Date=${date}`;
   query(`SELECT Player, Detail FROM Payments WHERE ${skinWinDateFilter} AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`)
@@ -19839,8 +19854,7 @@ function buildEntryGrid() {
   const skinDateFilter = isPostSeason && lp?.PostSeasonDt ? (() => {
     const p = lp.PostSeasonDt.split('/');
     const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
-    const d2obj = new Date(lp.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
-    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
+    const d2 = String(parsePostSeasonDates(lp.PostSeasonDt).week2);
     return `Date IN (${d1},${d2})`;
   })() : `Date=${date}`;
   const skinPlayers = new Set(
@@ -19863,7 +19877,7 @@ function buildEntryGrid() {
   if (isPostSeason) {
     // Load scores from both post season dates (could be played on different dates)
     const psDate1 = parseInt((() => { const p=lp.PostSeasonDt.split('/'); return `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`; })());
-    const psDate2 = parseInt((() => { const d=new Date(lp.PostSeasonDt); d.setDate(d.getDate()+7); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`; })());
+    const psDate2 = parsePostSeasonDates(lp.PostSeasonDt).week2;
 
     const psMap = getPostSeasonFrontBackMap(psDate1, psDate2, league);
     window.psBackFirst = psMap.week1Fb === 'Back';
@@ -22104,8 +22118,7 @@ async function saveEntryToDB() {
   for (const r of psRows2) {
     const p = r.PostSeasonDt.split('/');
     const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
-    const d2obj = new Date(r.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
-    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
+    const d2 = String(parsePostSeasonDates(r.PostSeasonDt).week2);
     if (date === d1 || date === d2) { isPS = true; break; }
   }
   const nine = fb === 'Back' ? courseData.back : courseData.front;
@@ -22233,8 +22246,7 @@ document.getElementById('entryClear')?.addEventListener('click', async ()=>{
   for (const r of psRows3) {
     const p = r.PostSeasonDt.split('/');
     const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
-    const d2obj = new Date(r.PostSeasonDt); d2obj.setDate(d2obj.getDate()+7);
-    const d2 = `${d2obj.getFullYear()}${String(d2obj.getMonth()+1).padStart(2,'0')}${String(d2obj.getDate()).padStart(2,'0')}`;
+    const d2 = String(parsePostSeasonDates(r.PostSeasonDt).week2);
     if (date === d1 || date === d2) { isPS2 = true; break; }
   }
   const nine2 = fb === 'Back' ? courseData.back : courseData.front;
