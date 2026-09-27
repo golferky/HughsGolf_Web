@@ -46,7 +46,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260927.2-sandbox'
+VERSION    = '20260927.3-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -2231,6 +2231,16 @@ def ensure_schema():
             cur.execute("ALTER TABLE LeagueParms ADD COLUMN AnthropicApiKey TEXT")
             print(f'[{now_local():%H:%M:%S}] Schema check: added missing LeagueParms.AnthropicApiKey column')
         conn.commit()
+        # Post season: PSWeek1Nine (which nine Week 1 plays) and PSWeek2Dt (Week 2 rainout override)
+        ss_cols = _table_cols(cur, 'SeasonSettings')
+        if ss_cols:
+            if 'PSWeek1Nine' not in ss_cols:
+                cur.execute("ALTER TABLE SeasonSettings ADD COLUMN PSWeek1Nine TEXT DEFAULT 'Front'")
+                print(f'[{now_local():%H:%M:%S}] Schema check: added SeasonSettings.PSWeek1Nine')
+            if 'PSWeek2Dt' not in ss_cols:
+                cur.execute("ALTER TABLE SeasonSettings ADD COLUMN PSWeek2Dt TEXT")
+                print(f'[{now_local():%H:%M:%S}] Schema check: added SeasonSettings.PSWeek2Dt')
+            conn.commit()
         # Create HelpContent tables if missing
         cur.execute("""CREATE TABLE IF NOT EXISTS HelpContent (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,

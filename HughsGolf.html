@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260927.2';
+const APP_VERSION = '20260927.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3552,12 +3552,6 @@ function ensureAppChangelogTable() {
   // Byes — in LS_MID_SEASON_OK so must exist in SeasonSettings
   try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN Byes INTEGER DEFAULT 0`); } catch(e) {}
   serverRun(`ALTER TABLE SeasonSettings ADD COLUMN Byes INTEGER DEFAULT 0`, [], {silent:true});
-  // Post season: which nine is played in Week 1 ('Front' or 'Back'); club decides, can swap for rain
-  try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek1Nine TEXT DEFAULT 'Front'`); } catch(e) {}
-  serverRun(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek1Nine TEXT DEFAULT 'Front'`, [], {silent:true});
-  // Post season Week 2 date override (m/d/yyyy). NULL = Week 1 + 7 days. Set when Week 2 alone is rained out.
-  try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek2Dt TEXT`); } catch(e) {}
-  serverRun(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek2Dt TEXT`, [], {silent:true});
   // Backfill from LeagueParms if available and StandPlace1 is still null
   try {
     const lpRows = query(`SELECT Season, Place1, Place2, Place3 FROM LeagueParms WHERE Name="Hugh's"`);
@@ -4166,6 +4160,8 @@ function applyInMemorySchema() {
   ensureDbChangeLogTable();
   ensureAppChangelogTable();
   ensureLeagueSettingsTables();
+  try { if (!hasDbColumn('SeasonSettings','PSWeek1Nine')) db.run(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek1Nine TEXT DEFAULT 'Front'`); } catch(e) {}
+  try { if (!hasDbColumn('SeasonSettings','PSWeek2Dt')) db.run(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek2Dt TEXT`); } catch(e) {}
   // Rename legacy 'president' Officer value to 'admin'
   try { db.run(`UPDATE Players SET Officer='admin' WHERE Officer='president'`); } catch(e) {}
 }
@@ -17317,6 +17313,7 @@ async function rainOutPsDate(week, season) {
   serverRun(`DELETE FROM Scores WHERE Date=${oldDate} AND League="Hugh's"`, []);
   serverRun(`UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE Date=${oldDate}`, []);
   // Update PostSeasonDt / PSWeek2Dt
+  await ensurePostSeasonColumns();
   serverRun(`UPDATE SeasonSettings SET PostSeasonDt=?, PSWeek2Dt=? WHERE Season=? AND League="Hugh's"`, [newDtStr, newWk2Str, season]);
   activeEntryPostSeasonContext = null;
   await SERVER_RUN_QUEUE;
@@ -18854,6 +18851,25 @@ function getPostSeasonContextForDate(date) {
   return null;
 }
 
+// Post-season columns on SeasonSettings: PSWeek1Nine ('Front'/'Back', which nine Week 1 plays)
+// and PSWeek2Dt (m/d/yyyy Week 2 override after a Week 2 rainout; NULL = Week 1 + 7).
+// Added locally and on the server; awaited before any write that uses them.
+async function ensurePostSeasonColumns() {
+  if (!db) return;
+  const adds = [];
+  if (!hasDbColumn('SeasonSettings', 'PSWeek1Nine')) {
+    try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek1Nine TEXT DEFAULT 'Front'`); } catch(e) {}
+  }
+  if (!hasDbColumn('SeasonSettings', 'PSWeek2Dt')) {
+    try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek2Dt TEXT`); } catch(e) {}
+  }
+  // Server copy: harmless "duplicate column" error if already there
+  for (const sql of [`ALTER TABLE SeasonSettings ADD COLUMN PSWeek1Nine TEXT DEFAULT 'Front'`,
+                     `ALTER TABLE SeasonSettings ADD COLUMN PSWeek2Dt TEXT`]) {
+    try { await sendServerSql(sql, window._mySessionToken || ''); } catch(e) { /* already exists */ }
+  }
+}
+
 function getPostSeasonWeek1Nine(season) {
   try {
     const v = String(getSeasonSettings(season)?.PSWeek1Nine || '').trim().toUpperCase();
@@ -18876,7 +18892,7 @@ function getPostSeasonFrontBackMap(psDate1, psDate2, league = "Hugh's") {
 }
 
 // Admin: swap which nine is played in Week 1 (club's call, e.g. rain). Only allowed before any PS scores exist.
-function swapPostSeasonNines() {
+async function swapPostSeasonNines() {
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'developer';
   if (!isAdmin) { alert('Only admins can swap nines.'); return; }
   const ctx = getActivePostSeasonScoreContext() || forcePostSeasonContextFromVisibleEntry();
@@ -18890,8 +18906,9 @@ function swapPostSeasonNines() {
   const next = cur === 'Front' ? 'Back' : 'Front';
   const other = next === 'Front' ? 'Back' : 'Front';
   if (!confirm(`Swap post-season nines?\n\nWeek 1 (${fmtDate(String(ctx.week1))}): ${next} 9\nWeek 2 (${fmtDate(String(ctx.week2))}): ${other} 9`)) return;
-  serverRun(`UPDATE SeasonSettings SET PSWeek1Nine=? WHERE League="Hugh's" AND Season=?`, [next, ctx.season]);
-  SERVER_RUN_QUEUE.then(() => saveDBToServer());
+  await ensurePostSeasonColumns();
+  await serverRun(`UPDATE SeasonSettings SET PSWeek1Nine=? WHERE League="Hugh's" AND Season=?`, [next, ctx.season]);
+  if (getPostSeasonWeek1Nine(ctx.season) !== next) { alert('Swap did not save — please tell Gary/Claude.'); return; }
   activeEntryPostSeasonContext = null;
   buildEntryGrid();
 }
