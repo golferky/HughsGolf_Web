@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260927.3';
+const APP_VERSION = '20260927.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -17315,6 +17315,9 @@ async function rainOutPsDate(week, season) {
   // Update PostSeasonDt / PSWeek2Dt
   await ensurePostSeasonColumns();
   serverRun(`UPDATE SeasonSettings SET PostSeasonDt=?, PSWeek2Dt=? WHERE Season=? AND League="Hugh's"`, [newDtStr, newWk2Str, season]);
+  logIt(`Post season Week ${week} rained out`,
+    `by=${currentUser?.name || 'unknown'} season=${season} rained=${fmtDate(String(oldDate))} → week1=${fmtDate(String(newPsDates.week1))} week2=${fmtDate(String(newPsDates.week2))} (scores on ${fmtDate(String(oldDate))} cleared)`,
+    'INFO', 'rainOutPsDate');
   activeEntryPostSeasonContext = null;
   await SERVER_RUN_QUEUE;
   loadScheduleBuilder();
@@ -18909,6 +18912,9 @@ async function swapPostSeasonNines() {
   await ensurePostSeasonColumns();
   await serverRun(`UPDATE SeasonSettings SET PSWeek1Nine=? WHERE League="Hugh's" AND Season=?`, [next, ctx.season]);
   if (getPostSeasonWeek1Nine(ctx.season) !== next) { alert('Swap did not save — please tell Gary/Claude.'); return; }
+  logIt('Post season nines swapped',
+    `by=${currentUser?.name || 'unknown'} season=${ctx.season} week1=${fmtDate(String(ctx.week1))} ${next} 9, week2=${fmtDate(String(ctx.week2))} ${other} 9 (was week1 ${cur} 9)`,
+    'INFO', 'swapPostSeasonNines');
   activeEntryPostSeasonContext = null;
   buildEntryGrid();
 }
