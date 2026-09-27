@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260927.11';
+const APP_VERSION = '20260927.12';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3620,10 +3620,61 @@ function ensureAppChangelogTable() {
     const exists = query(`SELECT COUNT(*) as c FROM AppChangelog WHERE Version=?`, [ver])[0]?.c || 0;
     if (exists > 0) return;
     entries.forEach(([cat, item, notes, ord]) => {
-      db.run(`INSERT INTO AppChangelog (Version,ReleaseDate,Category,Item,Notes,SortOrder) VALUES (?,?,?,?,?,?)`,
-        [ver, date, cat, item, notes, ord]);
+      // serverRun (not db.run) so the entry reaches the server DB too — row writes no longer
+      // piggyback on a full-DB upload
+      serverRun(`INSERT INTO AppChangelog (Version,ReleaseDate,Category,Item,Notes,SortOrder) VALUES (?,?,?,?,?,?)`,
+        [ver, date, cat, item, notes, ord], {silent:true});
     });
   };
+
+  // ── Post-season fixes, Sep 27 2026 ──
+  const _s27 = 'September 27, 2026';
+  ensureVersion('20260927.1', _s27, [
+    ['enhancement', 'Post season: choose which nine is played in Week 1 (Swap Nines)',
+     'Admins get a ⇄ Swap Nines button in the post-season banner. If the club starts on the back 9, back-9 scores now save on the Week 1 date (they always went to Week 2 before). The grid shows the nine played first on the left (10-18, In, 1-9, Out). Swap is blocked once PS scores exist.', 1],
+  ]);
+  ensureVersion('20260927.2', _s27, [
+    ['bugfix', 'Post season: Week 2 rainout moves only Week 2',
+     'Rain Out on PS Week 2 used to push BOTH weeks forward, orphaning Week 1 scores. Now only Week 2 moves (new SeasonSettings.PSWeek2Dt); a Week 1 rainout still moves both. Every screen uses the new Week 2 date.', 1],
+  ]);
+  ensureVersion('20260927.3', _s27, [
+    ['bugfix', 'Swap Nines did nothing — new columns were never created',
+     'PSWeek1Nine/PSWeek2Dt are now added on Flask start, on every DB load, and right before Swap/Rainout writes. Swap verifies it saved.', 1],
+  ]);
+  ensureVersion('20260927.4', _s27, [
+    ['admin', 'Swap Nines and PS rainouts are logged with the admin\'s name', 'Shown under Logging → Server Log.', 1],
+  ]);
+  ensureVersion('20260927.5', _s27, [
+    ['admin', 'Every data change is audited (who, role, IP, rows, SQL)',
+     'Server logs each INSERT/UPDATE/DELETE and full DB save to LogTable (Source = DataChange). Log tables and session heartbeats are skipped.', 1],
+  ]);
+  ensureVersion('20260927.6', _s27, [
+    ['bugfix', 'Post season kept out of Matches and Handicaps',
+     'PS dates never build Matches; subs on PS dates no longer write Handicaps; last-5 handicap score lists exclude PS rounds (protects 2027 handicaps); EOY skins use the configured Week 1 nine.', 1],
+    ['bugfix', 'Clearing PS scores also clears what was derived from them',
+     'Clear All PS Scores removes PS skin/CTP winners and EOY refunds (buy-ins kept). Group/player clear drops skin winners so they recalc.', 2],
+  ]);
+  ensureVersion('20260927.7', _s27, [
+    ['bugfix', 'Post season obeys the future-date lock',
+     'A future PS date is locked unless "Allow future scores" is checked. Pay/Sub buttons stay usable. Checking/unchecking is logged.', 1],
+  ]);
+  ensureVersion('20260927.8', _s27, [
+    ['enhancement', 'Future test scores are backed out automatically',
+     'The override is session-only. Unchecking, logout or timeout backs out future-dated scores + winners, refunds, matches and Gallus status (buy-ins/subs kept); a server sweep does it 20 min after the last override activity. The server refuses future scores without the override. All logged.', 1],
+  ]);
+  ensureVersion('20260927.9', _s27, [
+    ['enhancement', 'Warning before setting up / clearing test scores', 'Checking or unchecking "Allow future scores" asks for confirmation; Cancel puts the box back.', 1],
+  ]);
+  ensureVersion('20260927.10', _s27, [
+    ['bugfix', 'PS leaderboard includes players not in EOY Skins',
+     'Every League Championship eligible (roster) player is listed; non-buy-ins are tagged NO SKINS. Skins pot/winners still use buy-ins only.', 1],
+  ]);
+  ensureVersion('20260927.11', _s27, [
+    ['enhancement', 'Post-season Scores card: Sort by Match button hidden', 'PS has no matches; the card is always sorted by 18-hole net.', 1],
+  ]);
+  ensureVersion('20260927.12', _s27, [
+    ['developer', 'Changelog entries now save to the server', 'Built-in changelog entries were written only to the browser copy of the DB; they now go through serverRun.', 1],
+  ]);
 
   ensureVersion('20260811', 'August 11, 2026', [
     ['bugfix',
