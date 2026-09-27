@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260927.7';
+const APP_VERSION = '20260927.8';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -2612,19 +2612,61 @@ function canUseFutureScoreOverride() {
 }
 
 function futureScoreOverrideEnabled() {
-  return canUseFutureScoreOverride() && localStorage.getItem('hg_future_score_override') === 'Y';
+  // Session-only: closing the browser, logging out, or timing out re-locks future dates
+  try { return canUseFutureScoreOverride() && sessionStorage.getItem('hg_future_score_override') === 'Y'; }
+  catch (e) { return false; }
 }
 
 function toggleFutureScoreOverride(enabled) {
   if (!canUseFutureScoreOverride()) {
-    localStorage.removeItem('hg_future_score_override');
+    try { sessionStorage.removeItem('hg_future_score_override'); } catch (e) {}
     return;
   }
-  localStorage.setItem('hg_future_score_override', enabled ? 'Y' : 'N');
+  try { localStorage.removeItem('hg_future_score_override'); } catch (e) {}   // old persistent setting
+  try { sessionStorage.setItem('hg_future_score_override', enabled ? 'Y' : 'N'); } catch (e) {}
   logIt(`Allow future scores ${enabled ? 'CHECKED (future dates unlocked)' : 'UNCHECKED (future dates locked)'}`,
     `by=${currentUser?.name || 'unknown'} role=${currentUser?.role || ''} date=${document.getElementById('entryDate')?.value || ''} device=${typeof detectDevice === 'function' ? detectDevice() : ''}`,
     'INFO', 'futureScoreOverride');
+  if (enabled) pingFutureOverride();
+  else releaseFutureScores('unchecked').then(() => buildEntryGrid());
   buildEntryGrid();
+}
+
+// Future test scores only live while an admin has "Allow future scores" on.
+// Unchecking, logout or timeout backs them out on the server (plus winners/refunds/matches);
+// the server also sweeps them 20 min after the last override activity (closed browser).
+async function pingFutureOverride() {
+  try {
+    const token = await ensureSaveToken();
+    await fetch('/future-override-ping', { method: 'POST', headers: { 'X-Save-Token': token,
+      'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Future-Override': 'Y' } });
+  } catch (e) {}
+}
+setInterval(() => { if (futureScoreOverrideEnabled()) pingFutureOverride(); }, 5 * 60 * 1000);
+
+async function releaseFutureScores(reason) {
+  try {
+    await SERVER_RUN_QUEUE;
+    const token = await ensureSaveToken();
+    const resp = await fetch('/release-future-scores', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Save-Token': token,
+                 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '' },
+      body: JSON.stringify({ reason }) });
+    const json = await resp.json();
+    if (json.ok && !json.skipped && db) {
+      // Mirror the server back-out in this browser's copy
+      const t = (() => { const d = new Date(); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); })();
+      [`DELETE FROM Scores WHERE CAST(Date AS INTEGER) > ${t}`,
+       `DELETE FROM Matches WHERE CAST(Date AS INTEGER) > ${t}`,
+       `DELETE FROM Payments WHERE CAST(Date AS INTEGER) > ${t} AND "Desc" IN ('Skin','CTP') AND Detail LIKE '#%'`,
+       `DELETE FROM Payments WHERE CAST(Date AS INTEGER) > ${t} AND "Desc"='EOY Skins' AND Detail='Refund'`,
+       `UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE CAST(Date AS INTEGER) > ${t} AND ImportedToScores=1`
+      ].forEach(q => { try { db.run(q); } catch (e) {} });
+      if (json.modifiedMs) { SERVER_DB_MODIFIED_MS = json.modifiedMs; SERVER_DB_MODIFIED = json.modifiedMs / 1000; }
+      window.skinWinnerCells = {}; window.ctpWinnersByPlayer = {};
+    }
+    return json;
+  } catch (e) { console.warn('releaseFutureScores failed', e); return null; }
 }
 
 function canUsePostSeasonTestMode() {
@@ -3423,7 +3465,8 @@ async function sendServerSql(serverSql, sessionToken) {
     const resp = await fetch('/run-sql', {
       method: 'POST',
       headers: {'Content-Type':'application/json','X-Save-Token':token,
-                'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || ''},
+                'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '',
+                'X-Future-Override': futureScoreOverrideEnabled() ? 'Y' : ''},
       body: JSON.stringify({ sql: serverSql, sessionToken })
     });
     const json = await resp.json();
@@ -11361,6 +11404,7 @@ async function saveDBToServer(successLabel, btnId, _retries = 1) {
         'X-Save-Token': token,
         'X-Actor': encodeURIComponent(currentUser?.name || ''),
         'X-Actor-Role': currentUser?.role || '',
+        'X-Future-Override': futureScoreOverrideEnabled() ? 'Y' : '',
         'X-DB-Modified-Ms': SERVER_DB_MODIFIED_MS ? String(SERVER_DB_MODIFIED_MS) : '',
         'X-Client-Version': _isAnyTestMode ? '' : clientVersion
       },
@@ -17071,6 +17115,12 @@ async function doChangePw() {
 
 async function logoutUser(reason) {
   document.title = "Hugh's Golf League";
+  if (currentUser && futureScoreOverrideEnabled()) {
+    logIt('Allow future scores RELEASED (future dates locked)',
+      `by=${currentUser.name} reason=${reason || 'logout'}`, 'INFO', 'futureScoreOverride');
+    await releaseFutureScores(reason || 'logout');
+  }
+  try { sessionStorage.removeItem('hg_future_score_override'); localStorage.removeItem('hg_future_score_override'); } catch (e) {}
   const logoutBtn = document.getElementById('logoutBtn');
   if (logoutBtn) { logoutBtn.textContent = 'Saving...'; logoutBtn.disabled = true; }
   // Log the logout/timeout event before clearing currentUser

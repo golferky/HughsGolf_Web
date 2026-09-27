@@ -46,7 +46,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260927.7-sandbox'
+VERSION    = '20260927.8-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -621,6 +621,22 @@ def save_db():
         tmp = DB_PATH + '.tmp'
         with open(tmp, 'wb') as f:
             f.write(data)
+        if not _future_override():
+            try:
+                _cc = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+                _existing = _future_score_keys(_cc.cursor()); _cc.close()
+                _tc = sqlite3.connect(tmp); _tcur = _tc.cursor()
+                _new = _future_score_keys(_tcur) - _existing
+                for k in _new:
+                    _tcur.execute('DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=? AND COALESCE(FrontBack,\'\')=?', (k[0], k[1], k[2]))
+                if _new:
+                    _tc.commit()
+                    print(f'[{now_local():%H:%M:%S}] save: stripped {len(_new)} future-dated score row(s)')
+                    audit_data_change(_tcur, f'FULL SAVE stripped {len(_new)} future-dated score row(s)', len(_new), action='BLOCKED_FUTURE_SCORE')
+                    _tc.commit()
+                _tc.close()
+            except Exception as e:
+                print(f'[{now_local():%H:%M:%S}] future-score strip failed: {e}')
         os.replace(tmp, DB_PATH)
         try:
             _ac = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
@@ -2133,6 +2149,99 @@ def _audit_actor():
     role  = (request.headers.get('X-Actor-Role', '') or '').strip() or 'unknown'
     return actor, role
 
+# ── Future-dated scores guard ───────────────────────────────────────────────
+# No score may be saved for a date after today (Eastern) unless the admin has
+# "allow future scores" checked (browser sends X-Future-Override: Y).
+def _today_int():
+    return int(now_local().strftime('%Y%m%d'))
+
+def _future_score_keys(cur):
+    try:
+        cur.execute('SELECT Player, CAST(Date AS INTEGER), COALESCE(FrontBack,\'\'), "1","2","3","4","5","6","7","8","9", Gross '
+                    'FROM Scores WHERE CAST(Date AS INTEGER) > ?', (_today_int(),))
+        return set(tuple(r) for r in cur.fetchall())
+    except Exception:
+        return set()
+
+_OVERRIDE_LAST_SEEN = {}          # actor -> epoch seconds of last request made with the override on
+_OVERRIDE_IDLE_SECONDS = 20 * 60  # future test scores are backed out after this long with no override activity
+
+def _future_override():
+    on = (request.headers.get('X-Future-Override', '') or '').upper() == 'Y'
+    if on:
+        _OVERRIDE_LAST_SEEN[_audit_actor()[0]] = time.time()
+    return on
+
+def _other_override_active(except_actor=None):
+    now = time.time()
+    return any(a != except_actor and now - t < _OVERRIDE_IDLE_SECONDS for a, t in _OVERRIDE_LAST_SEEN.items())
+
+def purge_future_scores(cur):
+    """Back out every future-dated score and the rows derived from it. Buy-ins and subs are kept."""
+    t = _today_int()
+    counts = {}
+    for label, sql in [
+        ('Scores',   'DELETE FROM Scores WHERE CAST(Date AS INTEGER) > ?'),
+        ('Matches',  'DELETE FROM Matches WHERE CAST(Date AS INTEGER) > ?'),
+        ('Winners',  'DELETE FROM Payments WHERE CAST(Date AS INTEGER) > ? AND "Desc" IN (\'Skin\',\'CTP\') AND Detail LIKE \'#%\''),
+        ('Refunds',  'DELETE FROM Payments WHERE CAST(Date AS INTEGER) > ? AND "Desc"=\'EOY Skins\' AND Detail=\'Refund\''),
+        ('Gallus',   'UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE CAST(Date AS INTEGER) > ? AND ImportedToScores=1'),
+    ]:
+        try:
+            cur.execute(sql, (t,)); counts[label] = cur.rowcount
+        except Exception:
+            counts[label] = 0
+    return counts
+
+def _purge_and_log(actor, reason):
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
+        counts = purge_future_scores(cur)
+        total = sum(counts.values())
+        if total:
+            now = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            detail = ' '.join(f'{k}={v}' for k, v in counts.items())
+            cur.execute('INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)',
+                        (now, 'AUDIT', 'future_scores_backed_out', 'DataChange',
+                         f'Future test scores backed out ({reason})', f'by={actor} {detail}', now))
+        conn.commit(); conn.close()
+    if total:
+        print(f'[{now_local():%H:%M:%S}] future test scores backed out ({reason}) by {actor}: {counts}')
+    return counts
+
+def sweep_future_scores():
+    """Safety net for closed/crashed browsers: back out future scores once nobody has the override on."""
+    while True:
+        time.sleep(300)
+        try:
+            if not _other_override_active():
+                _purge_and_log('system', 'no admin override active for 20 min')
+        except Exception as e:
+            print(f'[{now_local():%H:%M:%S}] future-score sweep error: {e}')
+
+
+@app.route('/future-override-ping', methods=['POST'])
+def future_override_ping():
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    _future_override()
+    return jsonify({'ok': True})
+
+
+@app.route('/release-future-scores', methods=['POST'])
+def release_future_scores():
+    """Called when an admin unchecks the box, logs out, or times out."""
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    actor, _ = _audit_actor()
+    reason = (request.get_json(silent=True) or {}).get('reason', 'released')
+    _OVERRIDE_LAST_SEEN.pop(actor, None)
+    if _other_override_active(except_actor=actor):
+        return jsonify({'ok': True, 'skipped': 'another admin still has the override on', 'counts': {}})
+    counts = _purge_and_log(actor, reason)
+    return jsonify({'ok': True, 'counts': counts, 'modifiedMs': db_modified_ms()})
+
 def audit_data_change(cur, sql, rowcount=None, action=None):
     """Write one audit row using the caller's open cursor (same transaction)."""
     try:
@@ -2175,14 +2284,30 @@ def run_sql():
             conn.row_factory = sqlite3.Row
             cur  = conn.cursor()
             cur.execute(f'PRAGMA busy_timeout={DB_TIMEOUT_SECONDS * 1000}')
+            _m = _AUDIT_TABLE_RE.match(sql)
+            _guard = bool(_m and _m.group(1).lower() == 'scores' and not _future_override()
+                          and not sql.lstrip().upper().startswith('DELETE'))
+            _before = _future_score_keys(cur) if _guard else None
             cur.execute(sql)
+            _rc = cur.rowcount
+            if _guard and (_future_score_keys(cur) - _before):
+                conn.rollback(); conn.close()
+                actor, role = _audit_actor()
+                print(f'[{now_local():%H:%M:%S}] BLOCKED future-dated score by {actor}: {sql[:120]}')
+                try:
+                    _lc = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+                    audit_data_change(_lc.cursor(), sql, 0, action='BLOCKED_FUTURE_SCORE')
+                    _lc.commit(); _lc.close()
+                except Exception:
+                    pass
+                return jsonify({'ok': False, 'error': 'Future-dated scores are not allowed (check "Allow future scores" to override).'}), 403
             if sql.upper().startswith('SELECT'):
                 rows = [dict(r) for r in cur.fetchall()]
                 cols = [d[0] for d in cur.description] if cur.description else []
                 conn.close()
                 return jsonify({'ok': True, 'rows': rows, 'columns': cols, 'rowcount': len(rows)})
             else:
-                rc = cur.rowcount
+                rc = _rc
                 audit_data_change(cur, sql, rc)
                 conn.commit()
                 conn.close()
@@ -2353,6 +2478,7 @@ def run_server():
     if 'sandbox' not in VERSION.lower():
         threading.Thread(target=update_duckdns, daemon=True).start()
     threading.Thread(target=clear_stale_sessions, daemon=True).start()
+    threading.Thread(target=sweep_future_scores, daemon=True).start()
     app.run(host='0.0.0.0', port=PORT, debug=False)
 
 
