@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260927.9';
+const APP_VERSION = '20260927.10';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -20682,8 +20682,10 @@ function renderPostSeasonBreakdown(nine) {
   const skinsAmt = parseFloat(lp?.SkinsPS || 7);
   const ctpAmt   = parseFloat(lp?.ClosestPS || 3);
 
-  // Collect active players from entryState
-  const players = Object.values(entryState).filter(st => st.inSkins);
+  // Skins players = EOY Skins buy-ins. Leaderboard = everyone eligible for the League
+  // Championship (roster players), whether or not they bought into skins.
+  const allSlots = Object.values(entryState).filter(st => st && Array.isArray(st.holes) && (st.sub || st.regular));
+  const players = allSlots.filter(st => st.inSkins);
   const pot = players.length * skinsAmt;
   const ctpPot = players.length * ctpAmt;
 
@@ -20702,7 +20704,7 @@ function renderPostSeasonBreakdown(nine) {
   }
 
   // Build per-hole gross and net arrays per player
-  const playerNets = players.map(st => {
+  const buildNets = st => {
     const phdcp = parseInt(st.phdcp) || 0;
     const gross18 = nine.nums.map((_, hi) => parseInt(st.holes[hi]) || 0);
     const nets18 = nine.nums.map((_, hi) => {
@@ -20711,8 +20713,12 @@ function renderPostSeasonBreakdown(nine) {
       return raw - strokesAt(hi, phdcp);
     });
     const totals = getPostSeasonEntryTotals(st);
-    return { name: st.sub || st.regular, phdcp, gross18, nets18, totals };
-  });
+    return { name: st.sub || st.regular, phdcp, gross18, nets18, totals, inSkins: !!st.inSkins };
+  };
+  const playerNets = players.map(buildNets);
+  const lbPlayers = allSlots
+    .filter(st => st.inSkins || (season && ccRosterEligible(st.sub || st.regular, season)))
+    .map(buildNets);
 
   // Skins: per hole, find min net; winner only if unique
   const skinWins = [];
@@ -20735,8 +20741,8 @@ function renderPostSeasonBreakdown(nine) {
   const perSkinValue = skinsWonCount > 0 ? pot / skinsWonCount : 0;
 
   // Leaderboard — sort by totalNet ascending (blanks last)
-  const leaderboard = [...playerNets]
-    .map(p => ({ name: p.name, phdcp: p.phdcp, ...p.totals }))
+  const leaderboard = [...lbPlayers]
+    .map(p => ({ name: p.name, phdcp: p.phdcp, inSkins: p.inSkins, ...p.totals }))
     .sort((a, b) => {
       if (a.totalNet === '' && b.totalNet === '') return 0;
       if (a.totalNet === '') return 1;
@@ -20822,7 +20828,7 @@ function renderPostSeasonBreakdown(nine) {
       const medal = pos === null ? '—' : pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : `${pos}.`;
       return `<div style="${rowStyle};background:${bg}">
         <span style="font-weight:700;text-align:center">${medal}</span>
-        <span style="font-weight:600">${p.name} <span style="color:#aaa;font-size:11px">(hdcp ${p.phdcp})</span>${isSubLb ? ' <span style="color:#999;font-size:10px;font-weight:600" title="Subs can\'t compete for the League Championship">SUB · not CC</span>' : ''}</span>
+        <span style="font-weight:600">${p.name} <span style="color:#aaa;font-size:11px">(hdcp ${p.phdcp})</span>${!p.inSkins ? ' <span style="color:#1565c0;font-size:10px;font-weight:600" title="Plays for the League Championship but did not buy into EOY Skins">NO SKINS</span>' : ''}${isSubLb ? ' <span style="color:#999;font-size:10px;font-weight:600" title="Subs can\'t compete for the League Championship">SUB · not CC</span>' : ''}</span>
         <span style="font-family:'DM Mono',monospace;font-weight:700;color:#1a4d1a">Net ${net} <span style="color:#aaa;font-size:11px">/ ${gross}</span></span>
       </div>`;
     }).join('');
