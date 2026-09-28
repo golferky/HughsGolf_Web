@@ -1314,6 +1314,10 @@
         <div class="card-header" id="h2hCardHeader">⚔️ Head to Head Record</div>
         <div id="h2hBody" class="table-wrap" style="padding:8px 0"></div>
       </div>
+      <div class="card" id="h2hAllCard" style="display:none;margin-top:16px">
+        <div class="card-header" id="h2hAllHeader">📊 All Players — Overall Record</div>
+        <div id="h2hAllBody" class="table-wrap" style="padding:8px 0"></div>
+      </div>
     </div>
 
   </div><!-- end tab-stats -->
@@ -2578,7 +2582,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260928.2';
+const APP_VERSION = '20260928.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3629,6 +3633,9 @@ function ensureAppChangelogTable() {
 
   ensureVersion('20260928.1', 'September 28, 2026', [
     ['enhancement', 'Head to Head: Total row shows the combined record', 'The Record column on the Total row now shows W-L-T.', 1],
+  ]);
+  ensureVersion('20260928.3', 'September 28, 2026', [
+    ['enhancement', 'Head to Head: All Players table moved to its own card', 'Shown as a separate card below the player\'s head-to-head grid so both are visible (it was inside the first grid\'s scroll box).', 1],
   ]);
   ensureVersion('20260928.2', 'September 28, 2026', [
     ['summary', 'Stats → Head to Head now ends with every player\'s overall win-loss record for the season.', '', 0],
@@ -10145,6 +10152,7 @@ function loadH2H() {
   const opponents = Object.keys(record);
   if (!opponents.length) {
     body.innerHTML = '<p style="padding:16px;color:#888;font-size:13px">No head-to-head data found for this player/season.</p>';
+    const _ac = document.getElementById('h2hAllCard'); if (_ac) _ac.style.display = 'none';
     return;
   }
 
@@ -10228,8 +10236,7 @@ function loadH2H() {
     const _allRows = body._h2hAll || [];
     if (_allRows.length) {
       const _f = body._h2hFocus;
-      html += `<div style="margin:16px 0 6px;padding:0 12px;font-family:'Bebas Neue',cursive;font-size:18px;color:var(--green);letter-spacing:.5px">All Players — Overall Record</div>
-      <table style="width:100%;border-collapse:collapse"><thead><tr>
+      let allHtml = `<table style="width:100%;border-collapse:collapse"><thead><tr>
         <th style="${thBase}center;cursor:default">#</th>
         <th style="${thBase}left;cursor:default">Player</th>
         <th style="${thBase}center;cursor:default">W</th>
@@ -10242,7 +10249,7 @@ function loadH2H() {
       _allRows.forEach((r, i) => {
         const pc = r.pct >= 60 ? '#2e7d32' : r.pct >= 40 ? '#666' : '#c62828';
         const me = r.player === _f;
-        html += `<tr style="${me ? 'background:#fff8e1;' : ''}">
+        allHtml += `<tr style="${me ? 'background:#fff8e1;' : ''}">
           <td style="${tdS('center')};color:#888">${i + 1}</td>
           <td style="${tdS('left')};${me ? 'font-weight:700;' : ''}cursor:pointer;color:var(--green)" title="Show ${escapeHtml(r.player)}'s head-to-head"
               data-p="${escapeHtml(r.player)}" onclick="var s=document.getElementById('h2hPlayer');s.value=this.dataset.p;loadH2H();s.scrollIntoView({behavior:'smooth',block:'center'})">${escapeHtml(r.player)}</td>
@@ -10254,7 +10261,16 @@ function loadH2H() {
           <td style="${tdS('left')};font-family:'DM Mono',monospace;font-size:12px">${r.w}-${r.l}${r.t ? '-' + r.t : ''}</td>
         </tr>`;
       });
-      html += `</tbody></table>`;
+      allHtml += `</tbody></table>`;
+      // Own card below the player's table (not inside its scroll box) so both grids are visible
+      const allCard = document.getElementById('h2hAllCard');
+      const allBody = document.getElementById('h2hAllBody');
+      const allHdr  = document.getElementById('h2hAllHeader');
+      if (allCard && allBody) {
+        allBody.innerHTML = allHtml;
+        allCard.style.display = '';
+        if (allHdr) allHdr.textContent = `📊 All Players — Overall Record${season ? ' · ' + season : ' · All Seasons'}`;
+      }
     }
     body.innerHTML = html;
     // Re-attach renderH2HTable to window scope so onclick can reach it
