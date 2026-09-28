@@ -1311,11 +1311,20 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-header" id="h2hCardHeader">⚔️ Head to Head Record</div>
+        <div class="card-header" style="display:flex;align-items:center;gap:10px">
+          <span id="h2hCardHeader">⚔️ Head to Head Record</span>
+          <button onclick="toggleStatsCard('h2hBody','h2hToggleBtn')" id="h2hToggleBtn" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer">Collapse</button>
+        </div>
         <div id="h2hBody" class="table-wrap" style="padding:8px 0"></div>
       </div>
       <div class="card" id="h2hAllCard" style="display:none;margin-top:16px">
-        <div class="card-header" id="h2hAllHeader">📊 All Players — Overall Record</div>
+        <div class="card-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span id="h2hAllHeader">📊 All Players — Overall Record</span>
+          <label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;letter-spacing:0;cursor:pointer">
+            <input type="checkbox" id="h2hShowSubs" onchange="loadH2H()" style="width:15px;height:15px;cursor:pointer"> Include subs
+          </label>
+          <button onclick="toggleStatsCard('h2hAllBody','h2hAllToggleBtn')" id="h2hAllToggleBtn" style="padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer">Collapse</button>
+        </div>
         <div id="h2hAllBody" class="table-wrap" style="padding:8px 0"></div>
       </div>
     </div>
@@ -2582,7 +2591,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260928.3';
+const APP_VERSION = '20260928.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3633,6 +3642,10 @@ function ensureAppChangelogTable() {
 
   ensureVersion('20260928.1', 'September 28, 2026', [
     ['enhancement', 'Head to Head: Total row shows the combined record', 'The Record column on the Total row now shows W-L-T.', 1],
+  ]);
+  ensureVersion('20260928.4', 'September 28, 2026', [
+    ['enhancement', 'Head to Head: "Include subs" checkbox and Collapse/Expand on both grids',
+     'All Players shows regulars (Teams roster for the season; any season for All Seasons) by default; checking Include subs adds subs, tagged SUB. Both Head to Head cards have a Collapse/Expand button.', 1],
   ]);
   ensureVersion('20260928.3', 'September 28, 2026', [
     ['enhancement', 'Head to Head: All Players table moved to its own card', 'Shown as a separate card below the player\'s head-to-head grid so both are visible (it was inside the first grid\'s scroll box).', 1],
@@ -10233,7 +10246,12 @@ function loadH2H() {
       <td style="${tdS('left')};font-family:'DM Mono',monospace;font-size:12px">${totW}-${totL}${totT ? '-' + totT : ''}</td>
     </tr></tbody></table>`;
     // Every player's overall record for the selected season
-    const _allRows = body._h2hAll || [];
+    // Regulars = on a Teams roster for the season (any season when "All Seasons"); others are subs
+    const _showSubs = !!document.getElementById('h2hShowSubs')?.checked;
+    const _regulars = new Set(Object.values(teamMap).flatMap(t => Object.values(t).flatMap(g => Object.values(g))));
+    const _allRows = (body._h2hAll || [])
+      .map(r => ({ ...r, isSub: !_regulars.has(r.player) }))
+      .filter(r => _showSubs || !r.isSub);
     if (_allRows.length) {
       const _f = body._h2hFocus;
       let allHtml = `<table style="width:100%;border-collapse:collapse"><thead><tr>
@@ -10252,7 +10270,7 @@ function loadH2H() {
         allHtml += `<tr style="${me ? 'background:#fff8e1;' : ''}">
           <td style="${tdS('center')};color:#888">${i + 1}</td>
           <td style="${tdS('left')};${me ? 'font-weight:700;' : ''}cursor:pointer;color:var(--green)" title="Show ${escapeHtml(r.player)}'s head-to-head"
-              data-p="${escapeHtml(r.player)}" onclick="var s=document.getElementById('h2hPlayer');s.value=this.dataset.p;loadH2H();s.scrollIntoView({behavior:'smooth',block:'center'})">${escapeHtml(r.player)}</td>
+              data-p="${escapeHtml(r.player)}" onclick="var s=document.getElementById('h2hPlayer');s.value=this.dataset.p;loadH2H();s.scrollIntoView({behavior:'smooth',block:'center'})">${escapeHtml(r.player)}${r.isSub ? ' <span style="font-size:10px;background:#b3e5fc;color:#01579b;padding:1px 5px;border-radius:3px;font-weight:600">SUB</span>' : ''}</td>
           <td style="${tdS('center')};color:#2e7d32;font-weight:700">${r.w}</td>
           <td style="${tdS('center')};color:#c62828;font-weight:700">${r.l}</td>
           <td style="${tdS('center')};color:#666">${r.t}</td>
