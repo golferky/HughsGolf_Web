@@ -18,6 +18,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 import urllib.request
 from zoneinfo import ZoneInfo
 from email.mime.text import MIMEText
@@ -46,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260928.4-sandbox'
+VERSION    = '20260928.5-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1157,6 +1158,201 @@ def restart_server():
     return jsonify({'ok': True, 'message': 'Restarting Flask'})
 
 
+# ── Player-added players + contact permission ────────────────────────────────
+# Players (not just admins) may add someone to the Players file. The new player is
+# Pending until an admin approves; on approval he gets ONE message asking permission
+# to contact him. He receives no sub requests until he answers "OK to contact".
+NEED_SUB_MAX_RECIPIENTS = 5
+NEED_SUB_RESEND_HOURS   = 24
+
+def _digits(s):
+    return ''.join(ch for ch in str(s or '') if ch.isdigit())[-10:]
+
+def _log_row(cur, method, text, details, level='INFO'):
+    now = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    cur.execute('INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)',
+                (now, level, method, 'HughsGolf', text, details, now))
+
+def _officer_emails(cur):
+    try:
+        cur.execute("SELECT Email FROM Players WHERE LOWER(COALESCE(Officer,'')) IN ('admin','president','secretary','developer') "
+                    "AND Email IS NOT NULL AND Email != ''")
+        return [r[0] for r in cur.fetchall()]
+    except Exception:
+        return []
+
+def _send_mail(to_addrs, subject, body):
+    gmail_user, gmail_pw = get_gmail_creds()
+    if not gmail_user or not gmail_pw or not to_addrs:
+        return False
+    try:
+        msg = MIMEText(body, 'plain')
+        msg['From'] = gmail_user
+        msg['To'] = ', '.join(to_addrs)
+        msg['Subject'] = subject
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(gmail_user, gmail_pw)
+            server.sendmail(gmail_user, to_addrs, msg.as_string())
+        return True
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] mail failed: {e}')
+        return False
+
+
+@app.route('/add-player', methods=['POST'])
+def add_player():
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    b = request.get_json() or {}
+    first = ' '.join(str(b.get('first', '')).split()).title()
+    last  = ' '.join(str(b.get('last', '')).split()).title()
+    email = str(b.get('email', '')).strip().lower()
+    phone = _digits(b.get('phone', ''))
+    carrier = str(b.get('carrier', '')).strip()
+    actor, role = _audit_actor()
+    is_admin = role in ('admin', 'developer')
+    if not first or not last:
+        return jsonify({'ok': False, 'error': 'First and last name are required.'}), 400
+    if not email and not phone:
+        return jsonify({'ok': False, 'error': 'A cell number or an email is required so we can contact him.'}), 400
+    if email and ('@' not in email or '.' not in email.split('@')[-1]):
+        return jsonify({'ok': False, 'error': 'That email address does not look right.'}), 400
+    if b.get('phone') and len(phone) != 10:
+        return jsonify({'ok': False, 'error': 'Cell number must be 10 digits.'}), 400
+    name = f'{first} {last}'
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
+        cur.execute("SELECT Player, Email, Phone, COALESCE(Status,'') FROM Players")
+        for pl, em, ph, st in cur.fetchall():
+            if (pl or '').lower() == name.lower() or (email and (em or '').lower() == email) or (phone and _digits(ph) == phone):
+                conn.close()
+                why = 'name' if (pl or '').lower() == name.lower() else ('email' if email and (em or '').lower() == email else 'cell number')
+                return jsonify({'ok': False, 'duplicate': pl, 'error': f'{pl} is already in the player file (same {why}){" — waiting for admin approval" if st == "Pending" else ""}.'}), 409
+        now = now_local().strftime('%Y-%m-%d %H:%M')
+        fmt_phone = f'{phone[:3]}-{phone[3:6]}-{phone[6:]}' if phone else ''
+        # Added by an admin → approved right away (permission request goes out now). By a player → Pending.
+        token = uuid.uuid4().hex if is_admin else None
+        cur.execute("""INSERT INTO Players (FirstName, LastName, Player, Email, Phone, CellCarrier, EmailStats, TextStats,
+                       Login, BlockSubs, Status, AddedBy, AddedAt, ConsentToken) VALUES (?,?,?,?,?,?,'N','N','N','N',?,?,?,?)""",
+                    (first, last, name, email, fmt_phone, carrier if phone else '', 'Approved' if is_admin else 'Pending', actor, now, token))
+        _log_row(cur, 'player_added', f'{actor} added {name} ({"approved by admin; permission request sent" if is_admin else "pending approval"})',
+                 f'email={email} phone={fmt_phone} carrier={carrier}')
+        officers = _officer_emails(cur)
+        conn.commit(); conn.close()
+    if is_admin:
+        link, sent_email, sent_text = _send_permission_request(name, email, fmt_phone, carrier, actor, token)
+        return jsonify({'ok': True, 'player': name, 'approved': True, 'link': link, 'sentEmail': sent_email,
+                        'sentText': sent_text, 'modifiedMs': db_modified_ms()})
+    _send_mail(officers, f"Hugh's Golf — {actor} added a new player",
+               f"{actor} added {name} to the player file.\n\nEmail: {email or '-'}\nCell: {fmt_phone or '-'} {carrier}\n\n"
+               f"He is PENDING. Approve or reject him in Admin > Players.")
+    return jsonify({'ok': True, 'player': name, 'modifiedMs': db_modified_ms()})
+
+
+def _send_permission_request(name, email, phone, carrier, added_by, token):
+    link = f"{request.host_url.rstrip('/')}/sub-preferences?t={token}"
+    body = (f"Hi {name.split()[0]},\n\n{added_by} added you to the Hugh's Golf League (Boone Links) list of possible subs.\n\n"
+            f"Before anyone contacts you, please tell us if that's OK and how to reach you:\n{link}\n\n"
+            f"If you'd rather not be contacted, use the same link and choose \"Do not contact me\". You won't hear from us again.")
+    sent_email = _send_mail([email], "Hugh's Golf League — OK to contact you about subbing?", body) if email else False
+    sent_text = False
+    if phone and carrier:
+        addr, _err = sms_address(phone, carrier)
+        if addr:
+            sent_text = _send_mail([addr], "Hugh's Golf", f"{added_by} added you as a possible sub for Hugh's Golf League. OK to contact you? {link}")
+    return link, sent_email, sent_text
+
+
+@app.route('/review-player', methods=['POST'])
+def review_player():
+    """Admin approves or rejects a pending player. Approval sends the one-time permission request."""
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    b = request.get_json() or {}
+    name, decision = str(b.get('player', '')), str(b.get('decision', ''))
+    actor, role = _audit_actor()
+    if role not in ('admin', 'developer'):
+        return jsonify({'ok': False, 'error': 'Admins only.'}), 403
+    if decision not in ('approve', 'reject'):
+        return jsonify({'ok': False, 'error': 'Bad decision.'}), 400
+    token = uuid.uuid4().hex if decision == 'approve' else None
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
+        cur.execute("SELECT Email, Phone, CellCarrier, AddedBy FROM Players WHERE Player=? AND Status='Pending'", (name,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'ok': False, 'error': 'Player is not pending.'}), 404
+        email, phone, carrier, added_by = row
+        if decision == 'reject':
+            cur.execute("UPDATE Players SET Status='Rejected' WHERE Player=?", (name,))
+            _log_row(cur, 'player_rejected', f'{actor} rejected {name}', f'added_by={added_by}')
+            conn.commit(); conn.close()
+            return jsonify({'ok': True, 'modifiedMs': db_modified_ms()})
+        cur.execute("UPDATE Players SET Status='Approved', ConsentToken=? WHERE Player=?", (token, name))
+        _log_row(cur, 'player_approved', f'{actor} approved {name}; permission request sent', f'added_by={added_by}')
+        conn.commit(); conn.close()
+    link, sent_email, sent_text = _send_permission_request(name, email, phone, carrier, added_by, token)
+    return jsonify({'ok': True, 'link': link, 'sentEmail': sent_email, 'sentText': sent_text, 'modifiedMs': db_modified_ms()})
+
+
+_PREF_PAGE = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hugh's Golf — Contact preferences</title>
+<style>body{font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#f4f1ea;margin:0;padding:24px;color:#222}
+.card{max-width:440px;margin:auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 4px 16px rgba(0,0,0,.1)}
+h1{font-size:20px;color:#1b4d2e;margin:0 0 8px}label{display:block;padding:10px;border:1px solid #ddd;border-radius:8px;margin:8px 0;cursor:pointer}
+button{margin-top:12px;width:100%;padding:12px;background:#1b4d2e;color:#fff;border:0;border-radius:8px;font-size:15px;font-weight:600}
+.ok{color:#2e7d32;font-weight:600}</style></head><body><div class="card">%BODY%</div></body></html>"""
+
+
+@app.route('/sub-preferences', methods=['GET', 'POST'])
+def sub_preferences():
+    """Public page (link in the permission message): new player says if/how we may contact him."""
+    import html as _html
+    token = (request.values.get('t') or '').strip()
+    if not token or len(token) != 32:
+        return _PREF_PAGE.replace('%BODY%', '<h1>Link not valid</h1><p>Please ask the league admin for a new link.</p>'), 404
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
+        cur.execute("SELECT Player, Email, Phone, ContactOK, ContactMethod FROM Players WHERE ConsentToken=?", (token,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return _PREF_PAGE.replace('%BODY%', '<h1>Link not valid</h1><p>Please ask the league admin for a new link.</p>'), 404
+        name, email, phone, ok, method = row
+        if request.method == 'POST':
+            choice = request.form.get('choice', '')
+            if choice not in ('email', 'text', 'both', 'none'):
+                conn.close()
+                return _PREF_PAGE.replace('%BODY%', '<h1>Please pick an option</h1><p><a href="?t=' + token + '">Back</a></p>'), 400
+            now = now_local().strftime('%Y-%m-%d %H:%M')
+            if choice == 'none':
+                cur.execute("UPDATE Players SET ContactOK='N', ContactMethod='', BlockSubs='Y', ConsentAt=? WHERE ConsentToken=?", (now, token))
+            else:
+                cur.execute("UPDATE Players SET ContactOK='Y', ContactMethod=?, BlockSubs='N', ConsentAt=? WHERE ConsentToken=?", (choice, now, token))
+            _log_row(cur, 'contact_preference', f'{name} set contact preference: {choice}', f'ip={_audit_ip()}')
+            conn.commit(); conn.close()
+            msg = ("You won't be contacted. Thanks!" if choice == 'none'
+                   else f"Thanks! We may contact you by {'email and text' if choice == 'both' else choice} when a sub is needed.")
+            return _PREF_PAGE.replace('%BODY%', f'<h1>Saved</h1><p class="ok">{_html.escape(msg)}</p><p>You can change this anytime with the same link.</p>')
+        conn.close()
+    def opt(v, label, disabled=False):
+        chk = 'checked' if (v == 'none' and ok == 'N') or (ok == 'Y' and v == method) else ''
+        return (f'<label style="{"opacity:.5" if disabled else ""}"><input type="radio" name="choice" value="{v}" {chk} '
+                f'{"disabled" if disabled else ""}> {label}</label>')
+    body = (f'<h1>Hi {_html.escape(name.split()[0])} 👋</h1><p>You were added as a possible sub for <b>Hugh\'s Golf League</b> at Boone Links. '
+            f'May we contact you when a sub is needed?</p><form method="post"><input type="hidden" name="t" value="{token}">'
+            + opt('email', f'✅ Yes — email me ({_html.escape(email or "no email on file")})', not email)
+            + opt('text', f'✅ Yes — text me ({_html.escape(phone or "no cell on file")})', not phone)
+            + opt('both', '✅ Yes — email and text', not (email and phone))
+            + opt('none', '🚫 Do not contact me')
+            + '<button type="submit">Save</button></form>')
+    return _PREF_PAGE.replace('%BODY%', body)
+
+
 @app.route('/need-sub', methods=['POST'])
 def need_sub():
     """Send a sub request to selected players, CC'ing the secretary."""
@@ -1169,6 +1365,74 @@ def need_sub():
 
     if not player or not date or not message or not recipients:
         return jsonify({'ok': False, 'error': 'Missing required fields'}), 400
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+
+    # ── Sub request rules ── ("Ask an admin to help" goes to officers and skips the sub rules)
+    recipients = list(dict.fromkeys(recipients))
+    ask_officers = bool(body.get('askOfficers'))
+    if ask_officers:
+        try:
+            _c = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            _ok = {r[0] for r in _c.execute("SELECT Player FROM Players WHERE LOWER(COALESCE(Officer,'')) IN ('admin','president','secretary','developer')")}
+            _c.close()
+        except Exception:
+            _ok = set()
+        if any(r not in _ok for r in recipients):
+            return jsonify({'ok': False, 'error': 'Help requests can only go to officers.'}), 400
+    elif len(recipients) > NEED_SUB_MAX_RECIPIENTS and _audit_actor()[1] not in ('admin', 'developer'):
+        return jsonify({'ok': False, 'error': f'Pick at most {NEED_SUB_MAX_RECIPIENTS} people per request.'}), 400
+    try:
+        if ask_officers:
+            raise StopIteration
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
+        season = str(date)[:4]
+        # Sub already confirmed for this player's slot?
+        cur.execute("SELECT Team, Grade FROM Teams WHERE League=\"Hugh's\" AND Year=? AND Player=?", (season, player))
+        slot = cur.fetchone()
+        if slot:
+            cur.execute("SELECT Player FROM Subs WHERE League=\"Hugh's\" AND CAST(Date AS INTEGER)=? AND Team=? AND Grade=?", (int(date), slot[0], slot[1]))
+            got = cur.fetchone()
+            if got:
+                conn.close()
+                return jsonify({'ok': False, 'error': f'{got[0]} is already subbing for {player} that day — no more requests needed.'}), 409
+        # One request per player per date; resend (to new people only) after 24h
+        cur.execute("SELECT log_time, details FROM LogTable WHERE method='needSubSent' AND details LIKE ? ORDER BY log_time DESC",
+                    (f'for={player}|date={date}|%',))
+        prior = cur.fetchall()
+        asked = set()
+        for lt, det in prior:
+            for part in (det or '').split('|'):
+                if part.startswith('to='):
+                    asked.update(x for x in part[3:].split(',') if x)
+        if prior:
+            last = datetime.datetime.strptime(prior[0][0], '%Y-%m-%d %H:%M:%S')
+            hrs = (datetime.datetime.utcnow() - last).total_seconds() / 3600
+            if hrs < NEED_SUB_RESEND_HOURS:
+                conn.close()
+                return jsonify({'ok': False, 'error': f'A request for {player} on this date went out {int(hrs)}h ago. You can ask different people after {NEED_SUB_RESEND_HOURS} hours.'}), 429
+        again = [r for r in recipients if r in asked]
+        if again:
+            conn.close()
+            return jsonify({'ok': False, 'error': f'Already asked for this date: {", ".join(again)}. Pick different people.'}), 409
+        # Each recipient must be eligible
+        cur.execute("SELECT Player FROM Teams WHERE League=\"Hugh's\" AND Year=?", (season,))
+        roster = {r[0] for r in cur.fetchall()}
+        bad = []
+        for r in recipients:
+            cur.execute("SELECT COALESCE(Status,''), COALESCE(ContactOK,''), COALESCE(BlockSubs,'N') FROM Players WHERE Player=?", (r,))
+            row = cur.fetchone()
+            if (not row or r in roster or row[2] == 'Y' or row[0] in ('Pending', 'Rejected')
+                    or (row[0] == 'Approved' and row[1] != 'Y')):
+                bad.append(r)
+        conn.close()
+        if bad:
+            return jsonify({'ok': False, 'error': f'Not eligible to be asked: {", ".join(bad)}.'}), 400
+    except StopIteration:
+        pass
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Rule check failed: {e}'}), 500
 
     gmail_user, gmail_pw = get_gmail_creds()
     if not gmail_user or not gmail_pw:
@@ -1215,8 +1479,10 @@ def need_sub():
                 email_count += 1
                 continue
 
-            # Email
-            if r['Email']:
+            cur.execute("SELECT COALESCE(ContactMethod,'') FROM Players WHERE Player=?", (recipient,))
+            _cm = (cur.fetchone() or [''])[0]
+            # Email (skipped if the player asked for text only)
+            if r['Email'] and _cm != 'text':
                 try:
                     msg = MIMEMultipart()
                     msg['From']    = gmail_user
@@ -1239,8 +1505,8 @@ def need_sub():
                     errors.append(error)
                     print(f'need_sub {error}')
 
-            # SMS
-            if r['Phone'] and r['CellCarrier']:
+            # SMS (skipped if the player asked for email only)
+            if r['Phone'] and r['CellCarrier'] and _cm != 'email':
                 addr, err = sms_address(r['Phone'], r['CellCarrier'])
                 if addr:
                     try:
@@ -1265,6 +1531,9 @@ def need_sub():
             else:
                 failed.append(recipient)
 
+        _log_row(cur, 'needSubAskAdmin' if ask_officers else 'needSubSent', f'Sub request for {player} on {date} sent to {sent_count}',
+                 f'for={player}|date={date}|to={",".join(recipients)}|by={_audit_actor()[0]}')
+        conn.commit()
         conn.close()
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
@@ -2405,6 +2674,14 @@ def ensure_schema():
         elif lp_cols and 'AnthropicApiKey' not in lp_cols:
             cur.execute("ALTER TABLE LeagueParms ADD COLUMN AnthropicApiKey TEXT")
             print(f'[{now_local():%H:%M:%S}] Schema check: added missing LeagueParms.AnthropicApiKey column')
+        conn.commit()
+        # Player-added players: approval + contact permission
+        p_cols = _table_cols(cur, 'Players')
+        for col, ddl in (('Status', 'TEXT'), ('AddedBy', 'TEXT'), ('AddedAt', 'TEXT'),
+                         ('ContactOK', 'TEXT'), ('ContactMethod', 'TEXT'), ('ConsentToken', 'TEXT'), ('ConsentAt', 'TEXT')):
+            if p_cols and col not in p_cols:
+                cur.execute(f'ALTER TABLE Players ADD COLUMN {col} {ddl}')
+                print(f'[{now_local():%H:%M:%S}] Schema check: added Players.{col}')
         conn.commit()
         # Post season: PSWeek1Nine (which nine Week 1 plays) and PSWeek2Dt (Week 2 rainout override)
         ss_cols = _table_cols(cur, 'SeasonSettings')

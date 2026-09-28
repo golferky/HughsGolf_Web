@@ -1420,6 +1420,7 @@
     <!-- PLAYERS SECTION -->
     <div id="adminPlayers">
       <div id="adminKittyCards" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap"></div>
+      <div id="adminPendingPlayers" class="card" style="display:none;margin-bottom:14px"></div>
       <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
         <input id="playerSearch" type="text" placeholder="Search name, email, or phone..." style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:260px">
         <button onclick="openPlayerModal()" style="padding:8px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">+ Add Player</button>
@@ -2251,6 +2252,27 @@
 
   <!-- Sub Modal -->
   <!-- Need a Sub Modal -->
+  <div id="addPlayerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9100;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:12px;padding:24px;width:420px;max-width:92vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+      <div style="font-size:16px;font-weight:700;margin-bottom:6px;color:#1b4d2e">➕ Add a Player</div>
+      <div style="font-size:12px;color:#666;margin-bottom:12px">Adds him to the player file as a possible sub. An admin approves him first, then he's asked once for permission before anyone contacts him.</div>
+      <div style="display:flex;gap:8px">
+        <input id="apFirst" placeholder="First name" style="flex:1;min-width:0;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+        <input id="apLast" placeholder="Last name" style="flex:1;min-width:0;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+      </div>
+      <div style="font-size:11px;color:#888;margin:10px 0 4px">Cell and/or email — at least one is required</div>
+      <input id="apPhone" placeholder="Cell (e.g. 859-555-1234)" inputmode="tel" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:6px">
+      <select id="apCarrier" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:6px"></select>
+      <input id="apEmail" placeholder="Email" type="email" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+      <div id="apError" style="color:#c62828;font-size:12px;margin-top:8px;display:none"></div>
+      <div id="apOk" style="color:#2e7d32;font-size:12px;margin-top:8px;display:none"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button onclick="submitAddPlayer()" style="flex:2;padding:10px;background:#1b4d2e;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Add Player</button>
+        <button onclick="document.getElementById('addPlayerModal').style.display='none'" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <div id="needSubModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;align-items:center;justify-content:center">
     <div style="background:white;border-radius:12px;padding:28px;width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
       <div style="font-size:16px;font-weight:700;margin-bottom:8px;color:#6a1b9a">🔄 Need a Sub</div>
@@ -2264,9 +2286,10 @@
 
       <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Send to</div>
       <div style="margin-bottom:8px">
-        <label id="needSubSelectAllWrap" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <label id="needSubSelectAllWrap" style="display:none;align-items:center;gap:6px;font-size:12px;cursor:pointer">
           <input type="checkbox" id="needSubSelectAll" onchange="toggleAllSubs()"> Select all eligible subs
         </label>
+        <div id="needSubPickCount" style="font-size:11px;color:#6a1b9a;font-weight:600">Pick up to 5 people</div>
         <label id="needSubIncludePastWrap" style="display:none;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:5px;color:#555">
           <input type="checkbox" id="needSubIncludePast" onchange="renderNeedSubList()"> Include past-year subs
         </label>
@@ -2275,6 +2298,7 @@
       <div id="needSubGroupSuggestion" style="display:none;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:8px 10px;font-size:12px;color:#5d4037;margin-bottom:6px;gap:6px;align-items:flex-start"></div>
       <div id="needSubList" style="max-height:160px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:8px;margin-bottom:6px;font-size:12px"></div>
       <div style="text-align:right;margin-bottom:10px">
+        <a href="#" onclick="openAddPlayerModal();return false;" style="font-size:11px;color:#1b4d2e;text-decoration:none;font-weight:600;margin-right:12px">➕ Add someone who isn't listed</a>
         <a href="#" onclick="doAskOfficerForSub();return false;" style="font-size:11px;color:#6a1b9a;text-decoration:none;font-weight:600">Can't find who you need? Ask an admin to help →</a>
       </div>
 
@@ -2591,7 +2615,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260928.4';
+const APP_VERSION = '20260928.5';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3643,6 +3667,16 @@ function ensureAppChangelogTable() {
   ensureVersion('20260928.1', 'September 28, 2026', [
     ['enhancement', 'Head to Head: Total row shows the combined record', 'The Record column on the Total row now shows W-L-T.', 1],
   ]);
+  ensureVersion('20260928.5', 'September 28, 2026', [
+    ['summary', 'You can now add a player to the sub list from Need a Sub. He is asked for permission before anyone contacts him, and each sub request goes to up to 5 people you pick.', '', 0],
+    ['adminsummary', 'New players added by members wait for your approval in Admin → Players.', '', 0],
+    ['enhancement', 'Need a Sub: add a player (cell and/or email required)',
+     '"➕ Add someone who isn\'t listed" in Need a Sub. Duplicate check on name/email/cell. Saved as Pending; officers are emailed. New players are opted out of stats emails/texts and cannot log in.', 1],
+    ['admin', 'Approve / reject player-added players; permission request',
+     'Players added by an admin are approved right away. Admin → Players shows "Players added by members". Approve sends ONE email/text with a link where he picks: email, text, both, or Do not contact me (sets Don\'t ask to sub). He gets no sub requests until he answers.', 2],
+    ['enhancement', 'Need a Sub rules',
+     'No select-all; players pick up to 5 (admins may pick more after a warning). One request per player per date; after 24h you can ask different people. No requests once a sub is confirmed. Players already subbing that date or already asked are shown flagged. Enforced on the server; every send is logged. "Ask an admin" still goes to officers.', 3],
+  ]);
   ensureVersion('20260928.4', 'September 28, 2026', [
     ['enhancement', 'Head to Head: "Include subs" checkbox and Collapse/Expand on both grids',
      'All Players shows regulars (Teams roster for the season; any season for All Seasons) by default; checking Include subs adds subs, tagged SUB. Both Head to Head cards have a Collapse/Expand button.', 1],
@@ -4302,6 +4336,9 @@ function applyInMemorySchema() {
   ensureLeagueSettingsTables();
   try { if (!hasDbColumn('SeasonSettings','PSWeek1Nine')) db.run(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek1Nine TEXT DEFAULT 'Front'`); } catch(e) {}
   try { if (!hasDbColumn('SeasonSettings','PSWeek2Dt')) db.run(`ALTER TABLE SeasonSettings ADD COLUMN PSWeek2Dt TEXT`); } catch(e) {}
+  ['Status','AddedBy','AddedAt','ContactOK','ContactMethod','ConsentToken','ConsentAt'].forEach(c => {
+    try { if (!hasDbColumn('Players', c)) db.run(`ALTER TABLE Players ADD COLUMN ${c} TEXT`); } catch(e) {}
+  });
   // Rename legacy 'president' Officer value to 'admin'
   try { db.run(`UPDATE Players SET Officer='admin' WHERE Officer='president'`); } catch(e) {}
 }
@@ -11886,7 +11923,9 @@ function showNeedSub() {
   const canSelectAllSubs = currentUser?.role === 'admin' || currentUser?.role === 'developer';
   const selectAllWrap = document.getElementById('needSubSelectAllWrap');
   const selectAllCb = document.getElementById('needSubSelectAll');
-  if (selectAllWrap) selectAllWrap.style.display = 'flex';
+  if (selectAllWrap) selectAllWrap.style.display = 'none';   // rule: no blanket requests — pick up to 5
+  const _pc = document.getElementById('needSubPickCount');
+  if (_pc) { _pc.textContent = (currentUser?.role === 'admin' || currentUser?.role === 'developer') ? 'Pick who to ask (more than 5 will ask you to confirm)' : 'Pick up to 5 people'; _pc.style.color = '#6a1b9a'; }
   if (selectAllCb) {
     selectAllCb.checked = false;
     selectAllCb.disabled = false;
@@ -11921,20 +11960,25 @@ function showNeedSub() {
 
   // Eligible sub candidates = non-roster players who have subbed now or in prior years.
   needSubCandidates = query(`
-    SELECT p.Player, p.Email, p.Phone, p.CellCarrier,
+    SELECT p.Player, p.Email, p.Phone, p.CellCarrier, p.Status, p.ContactOK,
       (SELECT COUNT(*) FROM Subs su WHERE su.Player = p.Player AND su.League="Hugh's" AND su.Date >= ${season}0101 AND su.Date < ${parseInt(season)+1}0101) as SubCount,
       (SELECT COUNT(*) FROM Scores s WHERE s.Player = p.Player AND s.League="Hugh's" AND s.Date >= ${season}0101 AND s.Date < ${parseInt(season)+1}0101) as PlayedCount,
       (SELECT MAX(CAST(su2.Date AS INTEGER)) FROM Subs su2 WHERE su2.Player = p.Player AND su2.League="Hugh's" AND CAST(su2.Date AS INTEGER) < ${season}0101) as LastSubDate
     FROM Players p
     WHERE p.Player NOT IN (SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season})
       AND COALESCE(p.BlockSubs,'N') != 'Y'
+      AND COALESCE(p.Status,'') NOT IN ('Pending','Rejected')
+      AND NOT (COALESCE(p.Status,'')='Approved' AND COALESCE(p.ContactOK,'')!='Y')
       AND (
-        EXISTS (SELECT 1 FROM Subs su WHERE su.Player = p.Player AND su.League="Hugh's" AND su.Date >= ${season}0101 AND su.Date < ${parseInt(season)+1}0101)
+        (COALESCE(p.Status,'')='Approved' AND p.ContactOK='Y')
+        OR EXISTS (SELECT 1 FROM Subs su WHERE su.Player = p.Player AND su.League="Hugh's" AND su.Date >= ${season}0101 AND su.Date < ${parseInt(season)+1}0101)
         OR EXISTS (SELECT 1 FROM Subs su2 WHERE su2.Player = p.Player AND su2.League="Hugh's" AND CAST(su2.Date AS INTEGER) < ${season}0101)
       )
     ORDER BY SubCount DESC, PlayedCount DESC, LastSubDate DESC, p.Player
   `);
   renderNeedSubList();
+  dateSel.addEventListener('change', renderNeedSubList);
+  forSel.addEventListener('change', renderNeedSubList);
 
   // Pre-fill message
   const updateMsg = () => {
@@ -11984,10 +12028,21 @@ function renderNeedSubList() {
   const selectAllCb = document.getElementById('needSubSelectAll');
   if (selectAllCb) selectAllCb.checked = false;
 
+  // Rule 9: someone already subbing that date is shown flagged (not hidden).
+  // Rule 10: people already asked for this player/date are flagged too.
+  const _nsDate = document.getElementById('needSubDate')?.value;
+  const _nsFor  = document.getElementById('needSubFor')?.value;
+  const subbingThatDay = new Set(_nsDate ? query(`SELECT Player FROM Subs WHERE League="Hugh's" AND CAST(Date AS INTEGER)=CAST(? AS INTEGER)`, [_nsDate]).map(r => r.Player) : []);
+  const alreadyAsked = new Set();
+  if (_nsDate && _nsFor) {
+    query(`SELECT details FROM LogTable WHERE method='needSubSent' AND details LIKE ?`, [`for=${_nsFor}|date=${_nsDate}|%`])
+      .forEach(r => (String(r.details).split('|').find(x => x.startsWith('to=')) || 'to=').slice(3).split(',').filter(Boolean).forEach(n => alreadyAsked.add(n)));
+  }
   const visible = needSubCandidates.filter(p => {
     const currentYearSub = parseInt(p.SubCount || 0) > 0;
     const contactable = !!p.Email || hasValidTextContact(p);
-    if (!currentYearSub && !includePast) return false;
+    const isNewApproved = p.Status === 'Approved' && p.ContactOK === 'Y';
+    if (!currentYearSub && !includePast && !isNewApproved) return false;
     if (!contactable) return false;
     if (search && !String(p.Player || '').toLowerCase().includes(search)) return false;
     return true;
@@ -12014,16 +12069,134 @@ function renderNeedSubList() {
       ? `subbed ${p.SubCount}x this season${playedCount && playedCount !== parseInt(p.SubCount || 0) ? `, played ${playedCount}x` : ''}`
       : `last subbed ${fmtDate(p.LastSubDate)}`;
     const contactBadge = subContactBadge(p);
-    const dimStyle = contactable ? '' : 'opacity:0.6;';
-    const cursor = contactable ? 'pointer' : 'not-allowed';
+    const busy  = subbingThatDay.has(p.Player);
+    const asked = alreadyAsked.has(p.Player);
+    const pickable = contactable && !busy && !asked;
+    const dimStyle = pickable ? '' : 'opacity:0.55;';
+    const cursor = pickable ? 'pointer' : 'not-allowed';
+    const flag = busy ? ` <span style="font-size:10px;background:#eceff1;color:#455a64;padding:1px 6px;border-radius:3px;font-weight:600">already subbing ${escapeHtml(fmtDate(_nsDate))}</span>`
+               : asked ? ` <span style="font-size:10px;background:#f3e5f5;color:#6a1b9a;padding:1px 6px;border-radius:3px;font-weight:600">already asked</span>` : '';
     html += `
       <label data-sub-name="${escapeHtml(p.Player || '')}" style="display:flex;align-items:center;gap:6px;padding:2px 0;cursor:${cursor};${dimStyle}">
-        <input type="checkbox" class="needSubCheck" value="${escapeHtml(p.Player || '')}" ${contactable ? '' : 'disabled'}>
-        <span>${escapeHtml(p.Player || '')} <span style="color:#888;font-size:10px">(${escapeHtml(meta)})</span></span>
+        <input type="checkbox" class="needSubCheck" value="${escapeHtml(p.Player || '')}" ${pickable ? '' : 'disabled'} onchange="limitNeedSubPicks(this)">
+        <span>${escapeHtml(p.Player || '')} <span style="color:#888;font-size:10px">(${escapeHtml(meta)})</span>${flag}</span>
         ${contactBadge}
       </label>`;
   });
   listEl.innerHTML = html;
+}
+
+// Rule 8: at most 5 people per request
+const NEED_SUB_MAX = 5;
+const isAdminUser = () => currentUser?.role === 'admin' || currentUser?.role === 'developer';
+function limitNeedSubPicks(cb) {
+  // Players: hard limit of 5. Admins: no limit, but warned when they send to more than 5.
+  if (!isAdminUser() && document.querySelectorAll('.needSubCheck:checked').length > NEED_SUB_MAX) {
+    cb.checked = false; alert(`You can ask up to ${NEED_SUB_MAX} people per request.`);
+  }
+  const n = document.querySelectorAll('.needSubCheck:checked').length;
+  const el = document.getElementById('needSubPickCount');
+  if (el) {
+    el.textContent = isAdminUser() ? `${n} picked${n > NEED_SUB_MAX ? ` — more than ${NEED_SUB_MAX} (admin)` : ''}` : `${n} of ${NEED_SUB_MAX} picked`;
+    el.style.color = n > NEED_SUB_MAX ? '#c62828' : '#6a1b9a';
+  }
+}
+
+function openAddPlayerModal() {
+  const m = document.getElementById('addPlayerModal');
+  ['apFirst','apLast','apPhone','apEmail'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const car = document.getElementById('apCarrier'), src = document.getElementById('pmCarrier');
+  if (car && src) { car.innerHTML = src.innerHTML; car.value = ''; }
+  document.getElementById('apError').style.display = 'none';
+  document.getElementById('apOk').style.display = 'none';
+  m.style.display = 'flex';
+  document.getElementById('apFirst').focus();
+}
+
+async function submitAddPlayer() {
+  const err = document.getElementById('apError'), ok = document.getElementById('apOk');
+  err.style.display = 'none'; ok.style.display = 'none';
+  const body = {
+    first: document.getElementById('apFirst').value.trim(),
+    last: document.getElementById('apLast').value.trim(),
+    phone: document.getElementById('apPhone').value.trim(),
+    email: document.getElementById('apEmail').value.trim(),
+    carrier: document.getElementById('apCarrier').value
+  };
+  if (!body.first || !body.last) { err.textContent = 'First and last name are required.'; err.style.display = 'block'; return; }
+  if (!body.phone && !body.email) { err.textContent = 'Enter a cell number or an email so we can contact him.'; err.style.display = 'block'; return; }
+  try {
+    const resp = await fetch('/add-player', { method: 'POST', headers: { 'Content-Type': 'application/json',
+      'X-Save-Token': await ensureSaveToken(), 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '' },
+      body: JSON.stringify(body) });
+    const json = await resp.json();
+    if (!json.ok) { err.textContent = json.error || 'Could not add player.'; err.style.display = 'block'; return; }
+    if (json.modifiedMs) { SERVER_DB_MODIFIED_MS = json.modifiedMs; SERVER_DB_MODIFIED = json.modifiedMs / 1000; }
+    try {
+      const ph = body.phone.replace(/\D/g,'').slice(-10);
+      db.run(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login,BlockSubs,Status,AddedBy)
+              VALUES (?,?,?,?,?,?,'N','N','N','N','Pending',?)`,
+        [body.first, body.last, json.player, body.email.toLowerCase(), ph ? `${ph.slice(0,3)}-${ph.slice(3,6)}-${ph.slice(6)}` : '', ph ? body.carrier : '', currentUser?.name || '']);
+    } catch (e) {}
+    if (json.approved) {
+      try { db.run(`UPDATE Players SET Status='Approved' WHERE Player=?`, [json.player]); } catch (e) {}
+      const how = [json.sentEmail && 'email', json.sentText && 'text'].filter(Boolean).join(' and ');
+      ok.textContent = how ? `Added ${json.player}. Permission request sent by ${how}; he can be asked once he says OK.`
+                           : `Added ${json.player}, but the permission message could not be sent. Share this link with him: ${json.link}`;
+    } else {
+      ok.textContent = `Added ${json.player}. An admin will approve him, then he'll be asked for permission to be contacted.`;
+    }
+    ok.style.display = 'block';
+    setTimeout(() => { document.getElementById('addPlayerModal').style.display = 'none'; }, 2500);
+  } catch (e) { err.textContent = 'Server error: ' + e.message; err.style.display = 'block'; }
+}
+
+// Admin review of player-added players
+async function reviewPendingPlayer(name, decision) {
+  const verb = decision === 'approve' ? 'Approve' : 'Reject';
+  const extra = decision === 'approve' ? '\n\nHe will be sent ONE message asking permission to contact him. No sub requests until he says OK.' : '';
+  if (!confirm(`${verb} ${name}?${extra}`)) return;
+  const resp = await fetch('/review-player', { method: 'POST', headers: { 'Content-Type': 'application/json',
+    'X-Save-Token': await ensureSaveToken(), 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '' },
+    body: JSON.stringify({ player: name, decision }) });
+  const json = await resp.json();
+  if (!json.ok) { alert(json.error || 'Failed'); return; }
+  try { db.run(`UPDATE Players SET Status=? WHERE Player=?`, [decision === 'approve' ? 'Approved' : 'Rejected', name]); } catch (e) {}
+  if (json.modifiedMs) { SERVER_DB_MODIFIED_MS = json.modifiedMs; SERVER_DB_MODIFIED = json.modifiedMs / 1000; }
+  if (decision === 'approve') {
+    const how = [json.sentEmail && 'email', json.sentText && 'text'].filter(Boolean).join(' and ');
+    alert(how ? `${name} approved. Permission request sent by ${how}.` : `${name} approved, but the message could NOT be sent. Share this link with him:\n${json.link}`);
+  }
+  loadAdminPlayers();
+}
+
+function renderPendingPlayers() {
+  const box = document.getElementById('adminPendingPlayers');
+  if (!box) return;
+  let rows = [];
+  try { rows = query(`SELECT Player, Email, Phone, CellCarrier, AddedBy, AddedAt, Status, ContactOK FROM Players WHERE Status IN ('Pending','Approved') ORDER BY AddedAt DESC`); } catch (e) {}
+  const pending = rows.filter(r => r.Status === 'Pending');
+  const waiting = rows.filter(r => r.Status === 'Approved' && !r.ContactOK);
+  if (!pending.length && !waiting.length) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  const esc = v => escapeHtml(String(v || ''));
+  const btn = (bg, fg) => `padding:4px 10px;font-size:11px;font-weight:700;border-radius:4px;cursor:pointer;background:${bg};color:${fg};border:1px solid ${fg}`;
+  box.innerHTML = `
+    <div class="card-header" style="display:flex;align-items:center;gap:10px">
+      <span>🆕 Players added by members</span>
+      <button onclick="toggleStatsCard('adminPendingBody','adminPendingBtn')" id="adminPendingBtn" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer">Collapse</button>
+    </div>
+    <div id="adminPendingBody" style="padding:10px 14px;font-size:13px">
+      ${pending.map(r => `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid #eee">
+        <b>${esc(r.Player)}</b><span style="color:#666">${esc(r.Phone)} ${esc(r.CellCarrier)} ${esc(r.Email)}</span>
+        <span style="color:#999;font-size:11px">added by ${esc(r.AddedBy)} ${esc(r.AddedAt)}</span>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <button data-p="${esc(r.Player)}" onclick="reviewPendingPlayer(this.dataset.p,'approve')" style="${btn('#e8f5e9','#2e7d32')}">✓ Approve</button>
+          <button data-p="${esc(r.Player)}" onclick="reviewPendingPlayer(this.dataset.p,'reject')" style="${btn('#ffebee','#c62828')}">✕ Reject</button>
+        </span></div>`).join('')}
+      ${waiting.length ? `<div style="margin-top:8px;color:#6a1b9a;font-size:12px;font-weight:600">Approved — waiting for his permission reply:</div>` +
+        waiting.map(r => `<div style="padding:3px 0;color:#555">${esc(r.Player)} <span style="color:#999;font-size:11px">(added by ${esc(r.AddedBy)})</span></div>`).join('') : ''}
+    </div>`;
 }
 
 function toggleAllSubs() {
@@ -12052,16 +12225,24 @@ async function doNeedSub() {
   if (!selected.length) { errEl.textContent = 'Please select at least one sub to notify.'; errEl.style.display = 'block'; return; }
 
   const forPlayer = document.getElementById('needSubFor').value;
+  if (selected.length > NEED_SUB_MAX && isAdminUser() &&
+      !confirm(`⚠️ You're sending this to ${selected.length} people — more than the usual ${NEED_SUB_MAX}.\n\nPlayers are limited to ${NEED_SUB_MAX} so the list doesn't get blanket requests. Send to all ${selected.length} anyway?`)) return;
   if (!confirm(`Send sub request for ${forPlayer} to ${selected.length} player(s) for ${fmtDate(date)}?\n\nA copy will be sent to the league admins.`)) return;
 
   try {
     const resp = await fetch('/need-sub', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Save-Token': await ensureSaveToken(),
+                 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '' },
       body: JSON.stringify({ player: forPlayer, date, message, recipients: selected, skipEmail: document.getElementById('needSubSkipEmail')?.checked || false })
     });
     const json = await resp.json();
     if (json.ok) {
+      try {
+        const _t = new Date().toISOString().replace('T',' ').substring(0,19);
+        db.run(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+          [_t, 'INFO', 'needSubSent', 'HughsGolf', `Sub request for ${forPlayer} on ${date}`, `for=${forPlayer}|date=${date}|to=${selected.join(',')}|by=${currentUser?.name||''}`, _t]);
+      } catch (e) {}
       okEl.textContent = `Sent to ${json.sent_count} player(s): ${json.email_count || 0} email, ${json.sms_count || 0} text${json.failed?.length ? ` (${json.failed.length} failed)` : ''}.`;
       okEl.style.display = 'block';
 
@@ -12157,8 +12338,9 @@ async function doAskOfficerForSub() {
   try {
     const resp = await fetch('/need-sub', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ player: forPlayer, date: dateVal, message: msg, recipients: officerNames, skipEmail: document.getElementById('needSubSkipEmail')?.checked || false })
+      headers: { 'Content-Type': 'application/json', 'X-Save-Token': await ensureSaveToken(),
+                 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '' },
+      body: JSON.stringify({ player: forPlayer, date: dateVal, message: msg, recipients: officerNames, askOfficers: true, skipEmail: document.getElementById('needSubSkipEmail')?.checked || false })
     });
     const json = await resp.json();
     if (json.ok) {
@@ -17891,6 +18073,7 @@ function loadAdminKitty() {
 
 function loadAdminPlayers() {
   loadAdminKitty();
+  try { renderPendingPlayers(); } catch (e) { console.warn('pending players', e); }
   const search = (document.getElementById('playerSearch').value || '').trim().toLowerCase();
   const searchDigits = search.replace(/\D/g, '');
   const rows = query(`SELECT * FROM Players ORDER BY LastName, FirstName`);
