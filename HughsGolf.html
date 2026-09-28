@@ -1882,8 +1882,14 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
             <select id="emaillogType" onchange="loadEmailLog()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
               <option value="">All Types</option>
-              <option value="needSub">Sub Requests</option>
-              <option value="pdfEmail">PDF Reports</option>
+              <option value="Sub Request">Sub Requests</option>
+              <option value="PDF Report">PDF Reports</option>
+              <option value="Payout Notice">Payout Notices</option>
+              <option value="Permission Request">Permission Requests</option>
+              <option value="New Player Notice">New Player Notices</option>
+              <option value="Login Alert">Login Alerts</option>
+              <option value="Password Reset">Password Resets</option>
+              <option value="League Board">League Board</option>
             </select>
             <select id="emaillogLimit" onchange="loadEmailLog()" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
               <option value="50">Last 50</option>
@@ -2615,7 +2621,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260928.5';
+const APP_VERSION = '20260928.6';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3666,6 +3672,10 @@ function ensureAppChangelogTable() {
 
   ensureVersion('20260928.1', 'September 28, 2026', [
     ['enhancement', 'Head to Head: Total row shows the combined record', 'The Record column on the Total row now shows W-L-T.', 1],
+  ]);
+  ensureVersion('20260928.6', 'September 28, 2026', [
+    ['bugfix', 'Emails Sent now shows every email and text the app sends',
+     'Only sub requests and PDF reports were ever recorded. The server now logs every outgoing email/text (payout notices, permission requests, new-player notices, login alerts, password resets, board notices, sub requests, PDFs) with who sent it and to whom. Older payout notices are shown from the payment log.', 1],
   ]);
   ensureVersion('20260928.5', 'September 28, 2026', [
     ['summary', 'You can now add a player to the sub list from Need a Sub. He is asked for permission before anyone contacts him, and each sub request goes to up to 5 people you pick.', '', 0],
@@ -12770,60 +12780,49 @@ function loadEmailLog() {
   const tbody      = document.getElementById('emaillogBody');
   if (!tbody) return;
 
-  const methods = typeFilter ? [typeFilter] : ['needSub','pdfEmail'];
-  const placeholders = methods.map(() => '?').join(',');
-  const rows = query(
-    `SELECT log_time, method, source, text, details, COALESCE(source,'') as sentBy
-     FROM LogTable
-     WHERE method IN (${placeholders})
-     ORDER BY log_time DESC LIMIT ?`,
-    [...methods, limit]
-  );
+  // New: every email/text the server sends is logged as 'email_sent' (kind=… in details).
+  // Older history: sub requests (needSub), PDF reports (pdfEmail) and payout notices (markPaid with notified=…)
+  // that happened before server-side email logging existed.
+  const firstAudit = query(`SELECT MIN(log_time) as t FROM LogTable WHERE method='email_sent'`)[0]?.t || '9999';
+  const raw = query(`SELECT log_time, method, source, text, details FROM LogTable
+     WHERE method='email_sent'
+        OR (method IN ('needSub','pdfEmail') AND log_time < ?)
+        OR (method='markPaid' AND details LIKE '%notified=%' AND details NOT LIKE '%notified=none%' AND log_time < ?)
+     ORDER BY log_time DESC LIMIT 2000`, [firstAudit, firstAudit]);
+  const kindOf = r => r.method === 'email_sent' ? ((String(r.details).match(/kind=([^|]+)/) || [])[1] || 'Email')
+                    : r.method === 'needSub' ? 'Sub Request' : r.method === 'pdfEmail' ? 'PDF Report' : 'Payout Notice';
+  const colors = { 'Sub Request':'#6a1b9a', 'PDF Report':'#1565c0', 'Payout Notice':'#2e7d32', 'Permission Request':'#ef6c00',
+                   'New Player Notice':'#00838f', 'Login Alert':'#5d4037', 'Password Reset':'#c62828', 'League Board':'#37474f' };
+  const rows = raw.filter(r => !typeFilter || kindOf(r) === typeFilter).slice(0, limit);
 
   document.getElementById('emaillogCount').textContent = `${rows.length} record${rows.length !== 1 ? 's' : ''}`;
-
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="5" style="padding:12px;color:#999;text-align:center">No email records found</td></tr>`;
     return;
   }
-
   tbody.innerHTML = rows.map(r => {
-    const dt  = r.log_time ? r.log_time.replace('T',' ').substring(0,16) : '—';
-    const typ = r.method === 'needSub'   ? '<span style="color:#6a1b9a;font-weight:600">Sub Request</span>'
-              : r.method === 'pdfEmail'  ? '<span style="color:#1565c0;font-weight:600">PDF Report</span>'
-              : `<span style="color:#555">${escapeHtml(r.method)}</span>`;
-
-    // Parse sent-to from text or details
-    let sentTo = '';
-    let detail = '';
-    if (r.method === 'needSub') {
-      // text: "Gary Scudder requested a sub for X on YYYYMMDD"
-      // details: "recipients=A,B,C sent=2"
-      const recMatch = (r.details || '').match(/recipients=([^ ]+)/);
-      const cntMatch = (r.details || '').match(/sent=(\d+)/);
-      if (recMatch) sentTo = recMatch[1].split(',').join(', ');
-      const cnt = cntMatch ? cntMatch[1] : '';
-      const forMatch = (r.text || '').match(/for (.+) on /);
-      detail = forMatch ? `For ${forMatch[1]}${cnt ? ` · ${cnt} sent` : ''}` : (r.text || '');
-    } else if (r.method === 'pdfEmail') {
-      // details: "recipients=A,B,C sent=N report=X"
-      const recMatch = (r.details || '').match(/recipients=([^ ]+)/);
-      const rptMatch = (r.details || '').match(/report=(.+)/);
-      if (recMatch) sentTo = recMatch[1].split(',').join(', ');
-      detail = rptMatch ? rptMatch[1] : (r.text || '');
+    const dt = r.log_time ? r.log_time.replace('T',' ').substring(0,16) : '—';
+    const kind = kindOf(r);
+    let sentBy = r.source || '', sentTo = '', detail = '';
+    if (r.method === 'email_sent') {
+      const tos = ((String(r.details).match(/to=([^|]*)/) || [])[1] || '').split(',').filter(Boolean);
+      const nTxt = tos.filter(t => /^\d+@/.test(t)).length;
+      sentTo = tos.map(t => /^\d+@/.test(t) ? `📱 ${t.split('@')[0]}` : t).join(', ');
+      detail = String(r.text || '').replace(/^[^:]+:\s*/, '') + (nTxt ? ` · ${nTxt} text` : '');
+    } else if (r.method === 'markPaid') {
+      sentBy = (String(r.details).match(/by=([^ ]+(?: [^ =]+)*?)(?= \w+=|$)/) || [])[1] || '';
+      sentTo = (String(r.text).match(/paid to (.+)$/) || [])[1] || '';
+      detail = `${r.text} · notified ${(String(r.details).match(/notified=(\S+)/) || [])[1] || ''}`;
     } else {
-      sentTo = r.sentBy || '';
+      sentTo = ((String(r.details).match(/recipients=([^ ]+)/) || [])[1] || '').split(',').join(', ');
       detail = r.text || '';
     }
-
-    const sentBy = r.source || '—';
-
-    return `<tr style="border-bottom:1px solid #eee">
-      <td style="padding:6px 8px;color:#555;white-space:nowrap">${dt}</td>
-      <td style="padding:6px 8px">${typ}</td>
-      <td style="padding:6px 8px">${escapeHtml(sentBy)}</td>
-      <td style="padding:6px 8px;color:#333">${escapeHtml(sentTo || '—')}</td>
-      <td style="padding:6px 8px;color:#666;font-size:12px">${escapeHtml(detail)}</td>
+    return `<tr>
+      <td style="padding:6px 10px;font-size:12px;white-space:nowrap">${escapeHtml(dt)}</td>
+      <td style="padding:6px 10px;font-size:12px"><span style="color:${colors[kind] || '#555'};font-weight:600">${escapeHtml(kind)}</span></td>
+      <td style="padding:6px 10px;font-size:12px">${escapeHtml(sentBy)}</td>
+      <td style="padding:6px 10px;font-size:12px">${escapeHtml(sentTo)}</td>
+      <td style="padding:6px 10px;font-size:12px;color:#555">${escapeHtml(detail)}</td>
     </tr>`;
   }).join('');
 }

@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20260928.5-sandbox'
+VERSION    = '20260928.6-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -116,6 +116,37 @@ CARRIER_GATEWAYS = {
     'uscellular': 'email.uscc.net',
     'us cellular': 'email.uscc.net',
 }
+
+
+# ── Outgoing mail audit ─────────────────────────────────────────────────────
+# Every email/text the server sends goes through this SMTP class, which records it in
+# LogTable (method 'email_sent') so Admin > Logging > Emails Sent shows everything.
+_EMAIL_KIND = {'/need-sub': 'Sub Request', '/send-report-pdf': 'PDF Report', '/notify-payout': 'Payout Notice',
+               '/notify-login': 'Login Alert', '/send-reset': 'Password Reset', '/add-player': 'New Player Notice',
+               '/review-player': 'Permission Request', '/board-post': 'League Board', '/board-comment': 'League Board'}
+
+class _AuditSMTP(smtplib.SMTP_SSL):
+    def sendmail(self, from_addr, to_addrs, msg, *args, **kwargs):
+        result = super().sendmail(from_addr, to_addrs, msg, *args, **kwargs)
+        try:
+            from flask import has_request_context
+            import email as _email
+            raw = msg.decode('utf-8', 'replace') if isinstance(msg, (bytes, bytearray)) else str(msg)
+            subject = str(_email.message_from_string(raw).get('Subject', '') or '')
+            path = request.path if has_request_context() else ''
+            actor = _audit_actor()[0] if has_request_context() else 'system'
+            tos = [to_addrs] if isinstance(to_addrs, str) else list(to_addrs or [])
+            texts = [t for t in tos if '@' in t and t.split('@')[0].isdigit()]
+            kind = _EMAIL_KIND.get(path, path or 'Email')
+            now = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            _c = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            _c.execute('INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)',
+                       (now, 'INFO', 'email_sent', actor, f'{kind}: {subject}'[:300],
+                        f'kind={kind}|to={",".join(tos)}|texts={len(texts)}|route={path}', now))
+            _c.commit(); _c.close()
+        except Exception as e:
+            print(f'[{now_local():%H:%M:%S}] email audit failed: {e}')
+        return result
 
 
 def sms_address(phone, carrier):
@@ -976,7 +1007,7 @@ If you did not request this, please ignore this email.
 — Hugh's Golf League
 """
         msg.attach(MIMEText(body_text, 'plain'))
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        with _AuditSMTP('smtp.gmail.com', 465) as server:
             server.login(gmail_user, gmail_pw)
             server.send_message(msg)
 
@@ -1069,7 +1100,7 @@ def notify_login():
         msg['From'] = gmail_user
         msg['To'] = dev_email
         msg['Subject'] = subject
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        with _AuditSMTP('smtp.gmail.com', 465) as server:
             server.login(gmail_user, gmail_pw)
             server.send_message(msg)
         sent_to.append('email')
@@ -1099,7 +1130,7 @@ def notify_login():
                     sms_msg['From'] = gmail_user
                     sms_msg['To'] = addr
                     sms_msg['Subject'] = "HughsGolf"
-                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                    with _AuditSMTP('smtp.gmail.com', 465) as server:
                         server.login(gmail_user, gmail_pw)
                         server.send_message(sms_msg)
                     sent_to.append('sms')
@@ -1190,7 +1221,7 @@ def _send_mail(to_addrs, subject, body):
         msg['From'] = gmail_user
         msg['To'] = ', '.join(to_addrs)
         msg['Subject'] = subject
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        with _AuditSMTP('smtp.gmail.com', 465) as server:
             server.login(gmail_user, gmail_pw)
             server.sendmail(gmail_user, to_addrs, msg.as_string())
         return True
@@ -1492,7 +1523,7 @@ def need_sub():
                         msg['Cc'] = ', '.join(cc_list)
                     msg['Subject'] = subject
                     msg.attach(MIMEText(message, 'plain'))
-                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                    with _AuditSMTP('smtp.gmail.com', 465) as server:
                         server.login(gmail_user, gmail_pw)
                         recipients_list = [r['Email']] + cc_list
                         if developer_email and developer_email not in recipients_list:
@@ -1514,7 +1545,7 @@ def need_sub():
                         sms_msg['From']    = gmail_user
                         sms_msg['To']      = addr
                         sms_msg['Subject'] = "Hugh's Golf - Sub Needed"
-                        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                        with _AuditSMTP('smtp.gmail.com', 465) as server:
                             server.login(gmail_user, gmail_pw)
                             server.send_message(sms_msg)
                         sent_this_one = True
@@ -1754,7 +1785,7 @@ def send_report_pdf():
     failed = []
 
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        with _AuditSMTP('smtp.gmail.com', 465) as server:
             server.login(gmail_user, gmail_pw)
             for r in recipients:
                 try:
@@ -1847,7 +1878,7 @@ You've received a payout of ${amount:.2f} from the {source}.
             msg['To']      = row['Email']
             msg['Subject'] = subject
             msg.attach(MIMEText(body_text, 'plain'))
-            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            with _AuditSMTP('smtp.gmail.com', 465) as server:
                 server.login(gmail_user, gmail_pw)
                 server.send_message(msg)
             sent_to.append('email')
@@ -1865,7 +1896,7 @@ You've received a payout of ${amount:.2f} from the {source}.
                 msg['From']    = gmail_user
                 msg['To']      = addr
                 msg['Subject'] = "Hugh's Golf League"
-                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                with _AuditSMTP('smtp.gmail.com', 465) as server:
                     server.login(gmail_user, gmail_pw)
                     server.send_message(msg)
                 sent_to.append('sms')
