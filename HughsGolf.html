@@ -2578,7 +2578,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260927.13';
+const APP_VERSION = '20260928.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3626,6 +3626,14 @@ function ensureAppChangelogTable() {
         [ver, date, cat, item, notes, ord], {silent:true});
     });
   };
+
+  ensureVersion('20260928.1', 'September 28, 2026', [
+    ['enhancement', 'Head to Head: Total row shows the combined record', 'The Record column on the Total row now shows W-L-T.', 1],
+  ]);
+  ensureVersion('20260928.2', 'September 28, 2026', [
+    ['summary', 'Stats → Head to Head now ends with every player\'s overall win-loss record for the season.', '', 0],
+    ['enhancement', 'Head to Head: All Players — Overall Record table', 'Below the selected player\'s table: every player\'s W/L/T, games, win % and record for the chosen season (or all seasons), ranked by win %. Selected player is highlighted; click a name to view their head-to-head.', 1],
+  ]);
 
   // ── Post-season fixes, Sep 27 2026 ──
   const _s27 = 'September 27, 2026';
@@ -10100,6 +10108,8 @@ function loadH2H() {
 
   // Build H2H record for focusPlayer
   const record = {}; // opponent → {w, l, t}
+  const allRecord = {}; // every player → {w, l, t} (league-wide totals)
+  const _tally = (p, a, b) => { if (!allRecord[p]) allRecord[p] = { w:0, l:0, t:0 }; if (a > b) allRecord[p].w++; else if (a < b) allRecord[p].l++; else allRecord[p].t++; };
   for (const {d: date} of matchDates) {
     const yr = date.slice(0, 4);
     const pairs = dateMatchups[date] || [];
@@ -10108,6 +10118,8 @@ function loadH2H() {
         const p1 = (subsMap[date]?.[t1]?.[grade]) ?? (teamMap[yr]?.[t1]?.[grade]);
         const p2 = (subsMap[date]?.[t2]?.[grade]) ?? (teamMap[yr]?.[t2]?.[grade]);
         if (!p1 || !p2) continue;
+        { const a = pointsMap[date]?.[p1], b = pointsMap[date]?.[p2];
+          if (a !== undefined && b !== undefined) { _tally(p1, a, b); _tally(p2, b, a); } }
         let focus, opp;
         if (p1 === focusPlayer) { focus = p1; opp = p2; }
         else if (p2 === focusPlayer) { focus = p2; opp = p1; }
@@ -10152,6 +10164,11 @@ function loadH2H() {
   const totPct = totGP ? ((totW + totT * 0.5) / totGP * 100).toFixed(0) : 0;
 
   // Store on body element for re-sort without re-running queries
+  body._h2hAll = Object.entries(allRecord).map(([player, r]) => {
+    const gp = r.w + r.l + r.t;
+    return { player, ...r, gp, pct: gp ? (r.w + r.t * 0.5) / gp * 100 : 0 };
+  }).sort((a, b) => b.pct - a.pct || b.w - a.w || a.player.localeCompare(b.player));
+  body._h2hFocus = focusPlayer;
   body._h2hRows = rows;
   body._h2hTotals = { totW, totL, totT, totGP, totPct };
   body._h2hSort = { col: 'w', dir: -1 }; // default: wins desc
@@ -10205,8 +10222,40 @@ function loadH2H() {
       <td style="${tdS('center')};color:#666">${totT}</td>
       <td style="${tdS('center')}">${totGP}</td>
       <td style="${tdS('center')}">${totPct}%</td>
-      <td style="${tdS('left')}"></td>
+      <td style="${tdS('left')};font-family:'DM Mono',monospace;font-size:12px">${totW}-${totL}${totT ? '-' + totT : ''}</td>
     </tr></tbody></table>`;
+    // Every player's overall record for the selected season
+    const _allRows = body._h2hAll || [];
+    if (_allRows.length) {
+      const _f = body._h2hFocus;
+      html += `<div style="margin:16px 0 6px;padding:0 12px;font-family:'Bebas Neue',cursive;font-size:18px;color:var(--green);letter-spacing:.5px">All Players — Overall Record</div>
+      <table style="width:100%;border-collapse:collapse"><thead><tr>
+        <th style="${thBase}center;cursor:default">#</th>
+        <th style="${thBase}left;cursor:default">Player</th>
+        <th style="${thBase}center;cursor:default">W</th>
+        <th style="${thBase}center;cursor:default">L</th>
+        <th style="${thBase}center;cursor:default">T</th>
+        <th style="${thBase}center;cursor:default">GP</th>
+        <th style="${thBase}center;cursor:default">Win%</th>
+        <th style="${thBase}left;cursor:default">Record</th>
+      </tr></thead><tbody>`;
+      _allRows.forEach((r, i) => {
+        const pc = r.pct >= 60 ? '#2e7d32' : r.pct >= 40 ? '#666' : '#c62828';
+        const me = r.player === _f;
+        html += `<tr style="${me ? 'background:#fff8e1;' : ''}">
+          <td style="${tdS('center')};color:#888">${i + 1}</td>
+          <td style="${tdS('left')};${me ? 'font-weight:700;' : ''}cursor:pointer;color:var(--green)" title="Show ${escapeHtml(r.player)}'s head-to-head"
+              data-p="${escapeHtml(r.player)}" onclick="var s=document.getElementById('h2hPlayer');s.value=this.dataset.p;loadH2H();s.scrollIntoView({behavior:'smooth',block:'center'})">${escapeHtml(r.player)}</td>
+          <td style="${tdS('center')};color:#2e7d32;font-weight:700">${r.w}</td>
+          <td style="${tdS('center')};color:#c62828;font-weight:700">${r.l}</td>
+          <td style="${tdS('center')};color:#666">${r.t}</td>
+          <td style="${tdS('center')};color:#555">${r.gp}</td>
+          <td style="${tdS('center')};font-weight:700;color:${pc}">${r.pct.toFixed(0)}%</td>
+          <td style="${tdS('left')};font-family:'DM Mono',monospace;font-size:12px">${r.w}-${r.l}${r.t ? '-' + r.t : ''}</td>
+        </tr>`;
+      });
+      html += `</tbody></table>`;
+    }
     body.innerHTML = html;
     // Re-attach renderH2HTable to window scope so onclick can reach it
     window.renderH2HTable = renderH2HTable;
