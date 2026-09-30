@@ -4740,11 +4740,24 @@ function loadPrizeMoney(options = {}) {
                   : `<span style="color:#999;font-size:11px" title="Regular players are eligible once they have scores in both post-season weeks">CC · needs both wks</span>`;
               const refundAmt = paid ? (eoyRefundMap[r.Player] || 0) : 0; // negative number if refund exists
               const refundBadge = refundAmt < 0 ? `<span style="color:#e65100;font-size:11px;font-weight:700;margin-left:4px">↩ Refund $${Math.abs(refundAmt).toFixed(2)}</span>` : '';
-              const noteText = r.Comment ? r.Comment : (r.DatePaid ? r.DatePaid : '');
+              // Every $10 must be assigned to Week 1 / Week 2 (or $20 to Both). Anything else is "unassigned" and
+              // funds no week until an officer assigns it here.
+              const _wks = paid ? eoyWeeksFromComment(r.Comment) : [];
+              const _entryTotal = getPostSeasonWeekEntry(season).total;
+              const _assigned = paid && _wks.length > 0 && Math.abs(parseFloat(r.Earned) - _entryTotal * _wks.length) < 0.005;
+              const _needsWeek = paid && !_assigned;
+              const _safe = (r.Player||'').replace(/'/g,"\\'");
+              const _btn = (bg, label, fn, tip) => `<button onclick="${fn}" style="padding:2px 7px;font-size:10px;background:${bg};color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;margin-right:2px" title="${tip}">${label}</button>`;
+              const _refunded = paid ? getEoyRefundedWeeks(season, r.Player) : new Set();
+              const weekBadge = _needsWeek ? `<span style="color:#c62828;font-size:11px;font-weight:700;margin-right:4px" title="Not counted in any week's Skins/CTP pool until assigned">⚠ Needs week</span>` : '';
+              const noteText = weekBadge + (r.Comment ? r.Comment : (r.DatePaid ? r.DatePaid : ''));
+              const assignBtns = _needsWeek ? ['1','2','both'].map(c => _btn('#2e7d32', c === 'both' ? 'Both' : 'Wk ' + c, `assignEoyPaymentWeeks(${r.ID},${season},'${c}')`, `Assign this $${parseFloat(r.Earned).toFixed(2)} payment to ${c === 'both' ? 'both weeks ($20)' : 'week ' + c + ' ($10)'}`)).join('') : '';
+              const refundBtns = _assigned ? _wks.filter(w => !_refunded.has(w)).map(w => _btn('#e65100', `↩ Wk ${w}`, `refundEoyPayment('${_safe}',${season},'${w}')`, `Refund week ${w}: $${_entryTotal.toFixed(2)} ($7 Skins + $3 CTP). Only for a player with no week ${w} score.`)).join('') : '';
               const actBtns = isOfficerOrDev && paid ? `
-                <button onclick="editEoyPayment(${r.ID},${season})" style="padding:2px 7px;font-size:10px;background:#1565c0;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;margin-right:2px" title="Edit amount or week assignment">✏ Edit</button>
-                <button onclick="refundEoyPayment('${(r.Player||'').replace(/'/g,"\\'")}',${season})" style="padding:2px 7px;font-size:10px;background:#e65100;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;margin-right:2px" title="Issue a refund for this player">↩ Refund</button>
-                <button onclick="deleteEoyPayment(${r.ID},${season},'${(r.Player||'').replace(/'/g,"\\'")}')" style="padding:2px 7px;font-size:10px;background:#c62828;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600" title="Delete payment record">✕ Del</button>` : '';
+                ${assignBtns}
+                ${_btn('#1565c0', '✏ Week', `editEoyPayment(${r.ID},${season})`, 'Change the week assignment')}
+                ${refundBtns}
+                ${_btn('#c62828', '✕ Del', `deleteEoyPayment(${r.ID},${season},'${_safe}')`, 'Delete payment record')}` : '';
               return `<tr style="background:${!paid?'#fff3e0':(i%2===0?'#fff':'#fce4ec')}">
                 <td style="padding:4px 10px;font-size:12px;font-weight:600">${r.Player}</td>
                 <td style="padding:4px 10px;font-size:12px;text-align:right;font-family:'DM Mono',monospace;color:${!paid?'#bbb':'inherit'}">${!paid?'Not paid':'$'+parseFloat(r.Earned).toFixed(2)}</td>
@@ -8149,7 +8162,30 @@ function loadSkins() {
   const skinWinCount = query(`SELECT COUNT(DISTINCT Detail || ':' || Player) as c FROM Payments p WHERE CAST(p.Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='Skin' AND Detail NOT IN ('Payment','') AND Player != 'Kitty'
     AND EXISTS (SELECT 1 FROM Scores s WHERE s.League=p.League AND CAST(s.Date AS INTEGER)=CAST(p.Date AS INTEGER) AND s.Player=p.Player AND s.Gross IS NOT NULL AND s.Gross != 0)`, [date])[0]?.c || 0;
 
-  document.getElementById('skinStatBoxes').innerHTML = `
+  // Post-season nights: buy-ins are 'EOY Skins' payments (not per-night 'Skin' payments). Each
+  // post-season week is independent: $10 per player per week entered ($7 skins + $3 CTP), so the
+  // players, pots and winners are for the selected week only.
+  let psInfo = null;
+  const psSeason = parseInt(String(date).substring(0, 4));
+  const psLp = getSeasonSettings(psSeason);
+  if (psLp?.PostSeasonDt) {
+    const psWeek = getPostSeasonWeekForDate(date, psLp.PostSeasonDt);
+    if (psWeek) {
+      const psPlayers = [...getEoySkinPlayersForWeek(psSeason, psWeek)].sort();
+      const skinAmt = parseFloat(psLp.SkinsPS || 7), ctpAmt = parseFloat(psLp.ClosestPS || 3);
+      const winRows = query(`SELECT Player, Detail FROM Payments WHERE CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`, [date]);
+      const pot = psPlayers.length * skinAmt;
+      psInfo = { week: psWeek, players: psPlayers, skinAmt, ctpAmt, pot,
+                 ctpPot: psPlayers.length * ctpAmt, perSkin: winRows.length ? pot / winRows.length : 0 };
+    }
+  }
+  const dateFilter = `CAST(p.Date AS INTEGER)=CAST(? AS INTEGER)`;
+
+  document.getElementById('skinStatBoxes').innerHTML = psInfo ? `
+    <div class="stat-box gold"><div class="val">${psInfo.players.length}</div><div class="lbl">Players In</div></div>
+    <div class="stat-box"><div class="val">$${psInfo.pot.toFixed(0)}</div><div class="lbl">Skin Pot</div></div>
+    <div class="stat-box"><div class="val">$${psInfo.ctpPot.toFixed(0)}</div><div class="lbl">CTP Pot</div></div>
+  ` : `
     <div class="stat-box gold"><div class="val">${participants}</div><div class="lbl">Players In</div></div>
     <div class="stat-box"><div class="val">$${skinPot}</div><div class="lbl">Skin Pot</div></div>
     <div class="stat-box"><div class="val">$${ctpPot}</div><div class="lbl">CTP Pot</div></div>
@@ -8159,7 +8195,7 @@ function loadSkins() {
   const skinWins = query(`
     SELECT DISTINCT p.Player, p.Detail, p.Earned, p.Comment
     FROM Payments p
-    WHERE CAST(p.Date AS INTEGER)=CAST(? AS INTEGER) AND p.Desc='Skin'
+    WHERE ${dateFilter} AND p.Desc='Skin'
       AND Detail NOT IN ('Payment','Carryover','')
       AND p.Player != 'Kitty'
       AND EXISTS (
@@ -8169,6 +8205,7 @@ function loadSkins() {
       )
     ORDER BY CAST(REPLACE(Detail,'#','') AS INTEGER)
   `, [date]);
+  if (psInfo) skinWins.forEach(w => { w.Earned = psInfo.perSkin; });
 
   const skinCarry = query(`SELECT Earned FROM Payments WHERE CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='Skin' AND Player='Kitty'`, [date])[0];
 
@@ -8233,6 +8270,14 @@ function loadSkins() {
     ORDER BY p.Player
   `, [date]);
 
+  if (psInfo) {
+    psInfo.players.forEach(pl => {
+      const ex = parts.find(r => r.Player === pl);
+      if (ex) { ex.skin_paid = ex.skin_paid || psInfo.skinAmt; ex.ctp_paid = ex.ctp_paid || psInfo.ctpAmt; }
+      else parts.push({ Player: pl, skin_paid: psInfo.skinAmt, ctp_paid: psInfo.ctpAmt });
+    });
+    parts.sort((a, b) => a.Player.localeCompare(b.Player));
+  }
   const tb = tbody('skinsParticipants');
   const pBtn = document.getElementById('skinsParticipantsToggle');
   if (pBtn) {
@@ -8721,7 +8766,8 @@ function populateCtpsDateDropdown(loadAfter = true) {
     UNION
     SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League="Hugh's"), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     ORDER BY sDate DESC`);
-  sel.innerHTML = dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
+  const dateKeys = getCtpDateKeys(dates.map(r => r.sDate || r.Date), season);
+  sel.innerHTML = dateKeys.map(d => `<option value="${d}">${fmtDate(d)}</option>`).join('');
   if (loadAfter) {
     const skinsDate = toDateKey(document.getElementById('skinsDate')?.value);
     if (skinsDate && String(skinsDate).substring(0, 4) === String(season) && Array.from(sel.options).some(o => String(o.value) === String(skinsDate))) {
@@ -8750,6 +8796,29 @@ function getScheduledFrontBack(date, league = "Hugh's") {
   return ((thisMonth - startMonth) % 2 === 0) ? start9 : (start9 === 'Front' ? 'Back' : 'Front');
 }
 
+// Post-season nights never get a CTP 'Payment' row (post-season buy-in is EOY Skins), so they
+// have to be added to the CTP date list explicitly or CTPs can't be assigned for them.
+function getCtpDateKeys(baseDates, season) {
+  const keys = new Set(baseDates.filter(Boolean).map(d => String(d)));
+  const lp = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND Season=${season} AND PostSeasonDt IS NOT NULL`)[0];
+  const ps = parsePostSeasonDates(lp?.PostSeasonDt);
+  if (ps) { keys.add(String(ps.week1)); keys.add(String(ps.week2)); }
+  return [...keys].sort().reverse();
+}
+
+// Post-season CTP context for a date: week 1 = PSWeek1Nine (default front), week 2 = the other nine; the players who can win
+// are those with EOY Skins paid for that week. Returns null for regular-season dates.
+function getPostSeasonCtpInfo(date) {
+  const ctx = getPostSeasonContextForDate(date);
+  if (!ctx) return null;
+  const payers = [...getEoySkinPlayersForWeek(ctx.season, ctx.week)].sort();
+  // Sandbox: Week 1 may be the Back 9 (SeasonSettings.PSWeek1Nine); Week 2 is the other nine.
+  const w1 = getPostSeasonWeek1Nine(ctx.season);
+  const fb = ctx.week === 1 ? w1 : (w1 === 'Back' ? 'Front' : 'Back');
+  const ctpAmt = parseFloat(getSeasonSettings(ctx.season)?.ClosestPS || 3);
+  return { week: ctx.week, fb, payers, ctpAmt };
+}
+
 function loadCtps() {
   if (!db) return;
   const date    = toDateKey(document.getElementById('ctpsDate').value);
@@ -8757,7 +8826,8 @@ function loadCtps() {
   const league  = "Hugh's";
   const season  = document.getElementById('ctpsSeason').value;
 
-  const fb = getScheduledFrontBack(date, league);
+  const psInfo = getPostSeasonCtpInfo(date);
+  const fb = psInfo ? psInfo.fb : getScheduledFrontBack(date, league);
   const repairedCarryovers = reconcilePreviousCtpCarryovers(date, season, league);
   if (repairedCarryovers) saveDBToServer();
 
@@ -8780,8 +8850,13 @@ function loadCtps() {
   }
 
   // Get CTP payers for this date
-  const payers = query(`SELECT Player FROM Payments WHERE Date=${date} AND Desc='CTP' AND Detail='Payment' AND League="${league}" ORDER BY Player`).map(r => r.Player);
-  const ctpPot = payers.length; // $1 per player
+  // Post-season: each week is independent. Every EOY Skins payer for THIS week put $3 into this
+  // week's CTP pot (their $10 = $7 skins + $3 CTP); winners come from that same list. Normal
+  // carryover per hole is added on top below.
+  const payers = psInfo
+    ? psInfo.payers
+    : query(`SELECT Player FROM Payments WHERE Date=${date} AND Desc='CTP' AND Detail='Payment' AND League="${league}" ORDER BY Player`).map(r => r.Player);
+  const ctpPot = psInfo ? payers.length * psInfo.ctpAmt : payers.length; // post season $3/player, otherwise $1
 
   // Get current winners
   const winners = {};
@@ -8815,7 +8890,7 @@ function loadCtps() {
 
   let html = `
   <div style="margin-bottom:16px;font-size:13px;color:var(--gray)">
-    ${payers.length} players × $1 = <strong>$${ctpPot}</strong> total pot · ${fb} 9 · ${holes.length} CTP hole${holes.length>1?'s':''}${remainder > 0 ? ` · <span style="color:#b8860b">$${remainder.toFixed(2)} remainder → kitty</span>` : ''}
+    ${psInfo ? `Post Season week ${psInfo.week} · ${payers.length} player${payers.length===1?'':'s'} × $${psInfo.ctpAmt} = <strong>$${ctpPot}</strong> total pot (plus any carryover)` : `${payers.length} players × $1 = <strong>$${ctpPot}</strong> total pot`} · ${fb} 9 · ${holes.length} CTP hole${holes.length>1?'s':''}${remainder > 0 ? ` · <span style="color:#b8860b">$${remainder.toFixed(2)} remainder → kitty</span>` : ''}
   </div>
   <div class="card">
     <div class="card-header">CTP Winners — ${fmtDate(date)}</div>
@@ -9453,6 +9528,7 @@ function openPaymentModalForPlayer(player, date) {
   document.getElementById('payEoyAmt').disabled   = eoyRemain <= 0;
 
   setPayRegularRowsVisible(!psStatus);
+  if (!psStatus) wireEoyWeekChoice(season, skinAmt, ctpAmt);
   if (psStatus) {
     document.getElementById('paySkinsCheck').checked = false;
     document.getElementById('paySkinsCheck').disabled = true;
@@ -9485,9 +9561,24 @@ function openPaymentModalForPlayer(player, date) {
   document.getElementById('paymentModal').style.display = 'flex';
 }
 
+// Validate the EOY Skins part of the payment modal before anything is written. Returns null when EOY isn't being
+// paid, { amt, comment, weeks } when valid, or false after alerting (the caller must then stop).
+function readEoyPaymentChoice(player) {
+  if (!document.getElementById('payEoyCheck').checked) return null;
+  const season = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
+  const wk = document.querySelector('input[name="payEoyWk"]:checked')?.value || '';
+  const pay = eoyPaymentForWeeks(season, wk);
+  if (pay.error) { alert(pay.error); return false; }
+  const conflict = eoyPaymentConflict(season, player, pay.weeks);
+  if (conflict) { alert(conflict); return false; }
+  return pay;
+}
+
 function confirmPaymentForPlayer(player, date, skinAmt, ctpAmt) {
   const league = "Hugh's";
   const now    = new Date().toLocaleDateString();
+  const eoyPay = readEoyPaymentChoice(player);
+  if (eoyPay === false) return;
 
   if (document.getElementById('paySkinsCheck').checked && !document.getElementById('paySkinsCheck').disabled)
     serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid) VALUES (?,?,?,'Skin','Payment',?,?)`, [league,player,date,skinAmt,now]);
@@ -9497,12 +9588,7 @@ function confirmPaymentForPlayer(player, date, skinAmt, ctpAmt) {
     const amt = parseFloat(document.getElementById('payDuesAmt').value || 0);
     if (amt > 0) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid) VALUES (?,?,?,'League Dues','Payment',?,?)`, [league,player,date,amt,now]);
   }
-  if (document.getElementById('payEoyCheck').checked) {
-    const amt = clampPostSeasonEoyAmt(parseFloat(document.getElementById('payEoyAmt').value || 0), date);
-    const wk  = document.querySelector('input[name="payEoyWk"]:checked')?.value || '';
-    const comment = wk === '1' ? '(1st Week)' : wk === '2' ? '(2nd Week)' : '';
-    if (amt > 0) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'EOY Skins','Payment',?,?,?)`, [league,player,date,amt,now,comment]);
-  }
+  if (eoyPay) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'EOY Skins','Payment',?,?,?)`, [league,player,date,eoyPay.amt,now,eoyPay.comment]);
 
   closePaymentModal();
   loadPayments(); // refresh payments tab
@@ -19055,11 +19141,51 @@ function getPostSeasonWeekForDate(date, postSeasonDt) {
   return null;
 }
 
-function getEoySkinPlayersForWeek(season, week) {
-  if (![1, 2].includes(week)) return new Set();
+// Weekly entry = SkinsPS + ClosestPS ($7 + $3 = $10). Refunds are only issued when this equals EOYSkins / 2.
+function getPostSeasonWeekEntry(season) {
+  const lp = getSeasonSettings(season) || {};
+  const skin = parseFloat(lp.SkinsPS || 7), ctp = parseFloat(lp.ClosestPS || 3);
+  const total = Math.round((skin + ctp) * 100) / 100;
+  const expected = Math.round((parseFloat(lp.EOYSkins || 20) / 2) * 100) / 100;
+  const ok = Math.abs(total - expected) < 0.005;
+  return { skin, ctp, total, expected, ok,
+    reason: ok ? '' : `Skins $${skin} + CTP $${ctp} = $${total} per week, but EOY Skins $${parseFloat(lp.EOYSkins || 20)} implies $${expected} per week. Fix the season settings before issuing refunds.` };
+}
 
-  const fullAmt = parseFloat(getSeasonSettings(season).EOYSkins || 20);
-  const rows = query(`SELECT Player, CAST(Earned AS REAL) as Earned, COALESCE(Comment,'') as Comment
+// ── EOY Skins entries: every $10 must be explicitly assigned to Week 1 or Week 2 ─────────────────────────────
+// A payment row carries its week in the Comment: "(1st Week)", "(2nd Week)" or "(Both Weeks)" ($20 = two $10 entries).
+// A row counts toward a week only when it names the week(s) AND its amount is exactly $10 per named week. Anything
+// else (older untagged rows, wrong amounts) is "unassigned": it funds no week's pool until an officer assigns it.
+function eoyWeeksFromComment(comment) {
+  const c = String(comment || '').toLowerCase();
+  const w1 = c.includes('1st') || c.includes('first') || c.includes('week 1') || c.includes('wk 1');
+  const w2 = c.includes('2nd') || c.includes('second') || c.includes('week 2') || c.includes('wk 2');
+  if (c.includes('both') || (w1 && w2)) return [1, 2];
+  return w1 ? [1] : w2 ? [2] : [];
+}
+function eoyCommentForWeeks(weeks) {
+  return weeks.length === 2 ? '(Both Weeks)' : weeks[0] === 1 ? '(1st Week)' : '(2nd Week)';
+}
+// The payment to record for the chosen weeks: { amt, comment, weeks } or { error }. Amount is derived, never typed.
+function eoyPaymentForWeeks(season, choice) {
+  const entry = getPostSeasonWeekEntry(season);
+  const weeks = choice === 'both' ? [1, 2] : (choice === '1' || choice === 1) ? [1] : (choice === '2' || choice === 2) ? [2] : [];
+  if (!weeks.length) return { error: 'Choose Week 1, Week 2 or Both Weeks — every $10 EOY Skins entry must be assigned to a week.' };
+  if (!entry.ok) return { error: entry.reason };
+  return { amt: entry.total * weeks.length, comment: eoyCommentForWeeks(weeks), weeks };
+}
+// Refuse a payment for a week the player has already paid (a week is $10, never paid twice).
+function eoyPaymentConflict(season, player, weeks) {
+  const g = computeEoyGrossByWeek(season);
+  const dup = weeks.filter(w => g.weeks[w].has(player));
+  return dup.length ? `${player} has already paid for week ${dup.join(' and ')}.` : '';
+}
+
+// Gross paid participants per week (assigned payment rows only — ignores refunds).
+// Used to detect and display no-shows; every financial calculation uses getEoySkinPlayersForWeek instead.
+// Also returns weekPaid[player][week] ($ assigned to that week) and the unassigned rows.
+function computeEoyGrossByWeek(season) {
+  const rows = query(`SELECT rowid as ID, Player, CAST(Earned AS REAL) as Earned, COALESCE(Comment,'') as Comment
     FROM Payments
     WHERE League="Hugh's"
       AND "Desc"='EOY Skins'
@@ -19067,31 +19193,65 @@ function getEoySkinPlayersForWeek(season, week) {
       AND CAST(Earned AS REAL) > 0
       AND Date >= ${season}0101
       AND Date < ${season+1}0101`);
-
-  const eligible = new Set();
-  const untaggedTotals = {};
+  const weekAmt = getPostSeasonWeekEntry(season).total;
+  const weeks = { 1: new Set(), 2: new Set() };
+  const weekPaid = {}, unassigned = [];
   rows.forEach(r => {
-    const comment = (r.Comment || '').toLowerCase();
-    const earned = parseFloat(r.Earned || 0);
-    const firstWeekOnly = comment.includes('1st') || comment.includes('first') || comment.includes('week 1') || comment.includes('wk 1');
-    const secondWeekOnly = comment.includes('2nd') || comment.includes('second') || comment.includes('week 2') || comment.includes('wk 2');
-
-    if (firstWeekOnly) {
-      if (week === 1) eligible.add(r.Player);
-    } else if (secondWeekOnly) {
-      if (week === 2) eligible.add(r.Player);
-    } else {
-      untaggedTotals[r.Player] = (untaggedTotals[r.Player] || 0) + earned;
-    }
+    const wks = eoyWeeksFromComment(r.Comment), earned = parseFloat(r.Earned || 0);
+    if (!wks.length || Math.abs(earned - weekAmt * wks.length) > 0.005) { unassigned.push({ ID: r.ID, Player: r.Player, Earned: earned, Comment: r.Comment }); return; }
+    const wp = weekPaid[r.Player] || (weekPaid[r.Player] = { 1: 0, 2: 0 });
+    wks.forEach(w => { wp[w] += weekAmt; });
   });
+  Object.keys(weekPaid).forEach(p => [1, 2].forEach(w => { if (weekPaid[p][w] >= weekAmt - 0.005) weeks[w].add(p); }));
+  return { weeks, weekPaid, unassigned };
+}
 
-  Object.entries(untaggedTotals).forEach(([player, total]) => {
-    // Include all untagged payers (full or partial) in both weeks.
-    // Partial payers ($10) can play in either week — their actual score row determines
-    // which week they participated in. CC eligibility is tracked separately.
-    eligible.add(player);
+function getEoySkinGrossPlayersForWeek(season, week) {
+  if (![1, 2].includes(week)) return new Set();
+  return new Set(computeEoyGrossByWeek(season).weeks[week]);
+}
+
+function getEoyUnassignedPayments(season) {
+  return computeEoyGrossByWeek(season).unassigned;
+}
+
+// Refunds per player and week. A refund row is dated on the week it refunds; older rows dated week 1 are read by
+// comment ("both" / "week 2") or, with no week named, split across both weeks when they refund two weeks' money.
+// weeks = weeks refunded in full; byWeek = dollars refunded per week.
+function getEoyRefundsByPlayer(season) {
+  const map = new Map();
+  const psDates = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
+  if (!psDates) return map;
+  const weekAmt = getPostSeasonWeekEntry(season).total;
+  query(`SELECT Player, Date, CAST(Earned AS REAL) as Earned, COALESCE(Comment,'') as Comment FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${season + 1}0101`)
+    .forEach(r => {
+      const amt = Math.abs(parseFloat(r.Earned || 0)), d = parseInt(r.Date), c = String(r.Comment).toLowerCase();
+      const e = map.get(r.Player) || { weeks: new Set(), byWeek: { 1: 0, 2: 0 }, total: 0 };
+      e.total += amt;
+      if (d === psDates.week2) e.byWeek[2] += amt;
+      else if (d === psDates.week1) {
+        if (c.includes('both') || (!c.includes('week 1') && !c.includes('week 2') && amt >= 2 * weekAmt - 0.005)) { e.byWeek[1] += amt / 2; e.byWeek[2] += amt / 2; }
+        else if (c.includes('week 2') && !c.includes('week 1')) e.byWeek[2] += amt;
+        else e.byWeek[1] += amt;
+      }
+      [1, 2].forEach(w => { if (e.byWeek[w] >= weekAmt - 0.005) e.weeks.add(w); });
+      map.set(r.Player, e);
+    });
+  return map;
+}
+
+// Players whose money is in this week's Skins ($7) and CTP ($3) pools: those whose money assigned to the week,
+// less refunds for the week, still covers the week's entry. A pool can never hold money that was refunded.
+function getEoySkinPlayersForWeek(season, week) {
+  if (![1, 2].includes(week)) return new Set();
+  const g = computeEoyGrossByWeek(season);
+  const refunds = getEoyRefundsByPlayer(season);
+  const weekAmt = getPostSeasonWeekEntry(season).total;
+  const eligible = new Set();
+  g.weeks[week].forEach(player => {
+    const refunded = refunds.get(player)?.byWeek[week] || 0;
+    if (g.weekPaid[player][week] - refunded >= weekAmt - 0.005) eligible.add(player);
   });
-
   return eligible;
 }
 
@@ -19102,42 +19262,15 @@ function deleteEoyPayment(rowId, season, playerName) {
   SERVER_RUN_QUEUE.then(() => { saveDBToServer(); loadPrizeMoney(); });
 }
 
-function refundEoyPayment(player, season) {
+// Refund a player's EOY Skins entry for one or both weeks (Prize Money tab). The old typed-amount refund is gone: a
+// refund is always a fixed $7 + $3 per week, written against that week's date, so it also leaves that week's pools.
+// Allowed only for a player with no score for the week (cancelled or no-show), never twice, and never after that
+// week's CTP results exist. choice: '1' | '2' | 'both'.
+function refundEoyPayment(player, season, choice) {
   if (!db) return;
-  const lp = getSeasonSettings(season);
-  const fullAmt = parseFloat(lp?.EOYSkins || 20);
-  const halfAmt = fullAmt / 2;
-  const psDates = lp?.PostSeasonDt ? parsePostSeasonDates(lp.PostSeasonDt) : null;
-
-  // Check existing refund
-  const existingRefund = parseFloat(query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player])[0]?.t || 0);
-  const paidTotal = parseFloat(query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player])[0]?.t || 0);
-  const maxRefund = Math.max(0, paidTotal + existingRefund); // existingRefund is negative
-
-  if (maxRefund <= 0) { alert(`${player} has no remaining payment to refund.`); return; }
-
-  let msg = `Issue refund for ${player}\nPaid: $${paidTotal.toFixed(2)}`;
-  if (existingRefund < 0) msg += `\nAlready refunded: $${Math.abs(existingRefund).toFixed(2)}`;
-  msg += `\nMax refundable: $${maxRefund.toFixed(2)}\n\nEnter refund amount:`;
-
-  const defaultAmt = paidTotal >= fullAmt ? halfAmt.toFixed(2) : maxRefund.toFixed(2);
-  const input = prompt(msg, defaultAmt);
-  if (input === null) return;
-  const refundAmt = parseFloat(input);
-  if (isNaN(refundAmt) || refundAmt <= 0) { alert('Invalid amount.'); return; }
-  if (refundAmt > maxRefund) { alert(`Cannot refund more than $${maxRefund.toFixed(2)}.`); return; }
-
-  const reasonInput = prompt(`Reason for refund (e.g., "Missed week 1", "No-show"):`, 'No-show');
-  if (reasonInput === null) return;
-
-  // Use psDate1 as the date for the refund row (matching auto-refund convention); fall back to today
-  const refundDate = psDates ? psDates.week1 : parseInt(`${season}${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getDate()).padStart(2,'0')}`);
-
-  // Remove any existing manual refund rows for this player this season, then insert fresh
-  serverRun(`DELETE FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${season+1}0101`, [player]);
-  serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,Comment) VALUES ("Hugh's",?,?,'EOY Skins','Refund',?,?)`,
-    [player, refundDate, -refundAmt, reasonInput]);
-  SERVER_RUN_QUEUE.then(() => { saveDBToServer(); loadPrizeMoney(); });
+  const weeks = choice === 'both' ? [1, 2] : choice === '1' ? [1] : choice === '2' ? [2] : null;
+  if (!weeks) { alert('Choose a week to refund: Week 1, Week 2 or Both.'); return; }
+  return issuePostSeasonRefunds(season, weeks, [player], { allowUnplayed: true, reasonLabel: 'Refunded (no score)' });
 }
 
 function dismissEoyPaymentPrompt() {
@@ -19147,22 +19280,45 @@ function dismissEoyPaymentPrompt() {
 
 function quickPayEoySkins(player, season, amt, weekTag) {
   if (!db) return;
+  // weekTag: '1' | '2' | '' (both). The amount is derived from the weeks chosen ($10 each), never typed.
+  const pay = eoyPaymentForWeeks(season, weekTag === '' ? 'both' : weekTag);
+  if (pay.error) { alert(pay.error); return; }
+  const conflict = eoyPaymentConflict(season, player, pay.weeks);
+  if (conflict) { alert(conflict); return; }
   const lp = getSeasonSettings(season);
   const psDates = lp?.PostSeasonDt ? parsePostSeasonDates(lp.PostSeasonDt) : null;
   const payDate = psDates ? psDates.week1 : parseInt(`${season}0901`);
-  const comment = weekTag === '1' ? 'Week 1 only' : weekTag === '2' ? 'Week 2 only' : '';
   serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,DatePaid,Comment) VALUES ("Hugh's",?,?,'EOY Skins','Payment',?,?,?)`,
-    [player, payDate, amt, new Date().toLocaleString(), comment]);
+    [player, payDate, pay.amt, new Date().toLocaleString(), pay.comment]);
   SERVER_RUN_QUEUE.then(() => { saveDBToServer(); });
   dismissEoyPaymentPrompt();
   // Flash a green confirmation in the prompt area briefly
   const el = document.getElementById('eoyPayPrompt');
   if (el) {
     el.style.display = 'block';
-    const weekLabel = weekTag === '1' ? 'Week 1 only' : weekTag === '2' ? 'Week 2 only' : 'both weeks';
-    el.innerHTML = `<div style="background:#e8f5e9;border:1px solid #2e7d32;border-radius:8px;padding:10px 16px;font-size:13px;color:#2e7d32;font-weight:600">✓ EOY Skins payment recorded for ${player} — $${amt.toFixed(2)} (${weekLabel})</div>`;
+    const weekLabel = pay.weeks.length === 2 ? 'both weeks' : `Week ${pay.weeks[0]} only`;
+    el.innerHTML = `<div style="background:#e8f5e9;border:1px solid #2e7d32;border-radius:8px;padding:10px 16px;font-size:13px;color:#2e7d32;font-weight:600">✓ EOY Skins payment recorded for ${player} — $${pay.amt.toFixed(2)} (${weekLabel})</div>`;
     setTimeout(() => dismissEoyPaymentPrompt(), 4000);
   }
+}
+
+// Assign an existing unassigned EOY payment row to Week 1, Week 2 or Both ($10 per week; the amount must match).
+function assignEoyPaymentWeeks(rowId, season, choice) {
+  if (!db) return;
+  const rows = query(`SELECT rowid as ID, Player, CAST(Earned AS REAL) as Earned FROM Payments WHERE rowid=?`, [rowId]);
+  if (!rows.length) { alert('Payment not found.'); return; }
+  const r = rows[0], entry = getPostSeasonWeekEntry(season);
+  const weeks = choice === 'both' ? [1, 2] : choice === '1' ? [1] : choice === '2' ? [2] : [];
+  if (!weeks.length) { alert('Choose Week 1, Week 2 or Both.'); return; }
+  if (!entry.ok) { alert(entry.reason); return; }
+  if (Math.abs(parseFloat(r.Earned) - entry.total * weeks.length) > 0.005) {
+    alert(`$${parseFloat(r.Earned).toFixed(2)} does not match ${weeks.length === 2 ? 'both weeks' : 'one week'} ($${(entry.total * weeks.length).toFixed(2)}). Choose the assignment that matches the amount, or edit the payment.`);
+    return;
+  }
+  const conflict = eoyPaymentConflict(season, r.Player, weeks);
+  if (conflict) { alert(conflict); return; }
+  serverRun(`UPDATE Payments SET Comment=? WHERE rowid=?`, [eoyCommentForWeeks(weeks), rowId]);
+  SERVER_RUN_QUEUE.then(() => { saveDBToServer(); loadPrizeMoney(); });
 }
 
 function showEoyPaymentPrompt(player, season, ctx) {
@@ -19213,23 +19369,17 @@ function editEoyPayment(rowId, season) {
   const rows = query(`SELECT rowid as ID, Player, Earned, COALESCE(Comment,'') as Comment FROM Payments WHERE rowid=?`, [rowId]);
   if (!rows.length) { alert('Payment not found.'); return; }
   const r = rows[0];
-  const newAmt = prompt(`Edit EOY Skins payment for ${r.Player}\nCurrent amount: $${parseFloat(r.Earned).toFixed(2)}\n\nEnter new amount:`, parseFloat(r.Earned).toFixed(2));
-  if (newAmt === null) return;
-  const amt = parseFloat(newAmt);
-  if (isNaN(amt) || amt <= 0) { alert('Invalid amount.'); return; }
-  const fullAmt = parseFloat(getSeasonSettings(season).EOYSkins || 20);
-  let newComment = r.Comment;
-  if (amt < fullAmt) {
-    const weekChoice = prompt(
-      `$${amt.toFixed(2)} is a partial payment (full is $${fullAmt.toFixed(2)}).\n\nWhich week is this player in?\n  Type 1 for Week 1 only\n  Type 2 for Week 2 only\n  Leave blank for "either week" (scores will determine)`,
-      ''
-    );
-    if (weekChoice === null) return;
-    if (weekChoice === '1') newComment = 'Week 1 only';
-    else if (weekChoice === '2') newComment = 'Week 2 only';
-    else newComment = r.Comment; // leave existing comment
-  }
-  serverRun(`UPDATE Payments SET Earned=?, Comment=? WHERE rowid=?`, [amt, newComment, rowId]);
+  const cur = eoyWeeksFromComment(r.Comment);
+  const choice = prompt(`Change the week for ${r.Player}'s EOY Skins payment ($${parseFloat(r.Earned).toFixed(2)}, ${cur.length ? (cur.length === 2 ? 'both weeks' : 'week ' + cur[0]) : 'no week assigned'}).\n\nEvery $10 must be assigned to a week. The amount is set from the choice.\n\n  Type 1 for Week 1 only ($10)\n  Type 2 for Week 2 only ($10)\n  Type both for Both Weeks ($20)`, cur.length === 2 ? 'both' : cur[0] ? String(cur[0]) : '');
+  if (choice === null) return;
+  const pay = eoyPaymentForWeeks(season, String(choice).trim().toLowerCase());
+  if (pay.error) { alert(pay.error); return; }
+  // Other payments by this player must not already cover the chosen weeks
+  const g = computeEoyGrossByWeek(season);
+  const others = query(`SELECT rowid as ID, CAST(Earned AS REAL) as Earned, COALESCE(Comment,'') as Comment FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Payment' AND rowid<>? AND Date >= ${season}0101 AND Date < ${season + 1}0101`, [r.Player, rowId]);
+  const clash = pay.weeks.filter(w => others.some(o => eoyWeeksFromComment(o.Comment).includes(w)));
+  if (clash.length) { alert(`${r.Player} already has another payment for week ${clash.join(' and ')}.`); return; }
+  serverRun(`UPDATE Payments SET Earned=?, Comment=? WHERE rowid=?`, [pay.amt, pay.comment, rowId]);
   SERVER_RUN_QUEUE.then(() => { saveDBToServer(); loadPrizeMoney(); });
 }
 
@@ -19281,6 +19431,17 @@ function getPostSeasonWeek1Nine(season) {
     const v = String(getSeasonSettings(season)?.PSWeek1Nine || '').trim().toUpperCase();
     return (v === 'BACK' || v === 'B') ? 'Back' : 'Front';
   } catch(e) { return 'Front'; }
+}
+
+// Post-season weeks are independent: $10 per player per week entered = $7 Skins + $3 CTP.
+// Which week a grid hole index (0-8 = Front, 9-17 = Back) belongs to, given the nine played in Week 1.
+function psWeekForHoleIndex(hi, week1Fb) {
+  return ((hi >= 9) === (week1Fb === 'Back')) ? 1 : 2;
+}
+
+// Per-skin value for ONE week: that week's Skins pot / that week's skins won (never a two-week pot).
+function psWeekSkinValue(playerCount, skinsWon, skinAmt) {
+  return skinsWon ? Math.round(((playerCount * skinAmt) / skinsWon) * 100) / 100 : 0;
 }
 
 function getPostSeasonFrontBackMap(psDate1, psDate2, league = "Hugh's") {
@@ -19336,18 +19497,8 @@ function getPostSeasonPaymentStatus(player, date) {
       AND Date >= ${ctx.season}0101
       AND Date < ${ctx.season+1}0101`, [player]);
   const eligible = getEoySkinPlayersForWeek(ctx.season, ctx.week).has(player);
-  const weekOnly = rows.filter(r => {
-    const comment = (r.Comment || '').toLowerCase();
-    return ctx.week === 1
-      ? (comment.includes('1st') || comment.includes('first') || comment.includes('week 1') || comment.includes('wk 1'))
-      : (comment.includes('2nd') || comment.includes('second') || comment.includes('week 2') || comment.includes('wk 2'));
-  });
-  const fullRows = rows.filter(r => {
-    const comment = (r.Comment || '').toLowerCase();
-    const tagged = comment.includes('1st') || comment.includes('first') || comment.includes('week 1') || comment.includes('wk 1') ||
-                   comment.includes('2nd') || comment.includes('second') || comment.includes('week 2') || comment.includes('wk 2');
-    return !tagged && parseFloat(r.Earned || 0) >= ctx.fullAmt;
-  });
+  const weekOnly = rows.filter(r => { const w = eoyWeeksFromComment(r.Comment); return w.length === 1 && w[0] === ctx.week; });
+  const fullRows = rows.filter(r => eoyWeeksFromComment(r.Comment).length === 2);
 
   const paidTotal = rows.reduce((sum, r) => sum + parseFloat(r.Earned || 0), 0);
   return { ...ctx, eligible, weekOnly, fullRows, paidTotal };
@@ -19364,6 +19515,132 @@ function hasPostSeasonScore(player, date, frontBack) {
     LIMIT 1`, [player, date, frontBack]).length > 0;
 }
 
+// ── Post-season no-show refunds (per week) ───────────────────────────────────
+// Each week is independent: a player's $10 for a week ($7 Skins + $3 CTP) is refunded only for that week.
+// A refund is a Payments row (Desc 'EOY Skins', Detail 'Refund', Earned negative) dated on that week's date.
+// A week is "played" once someone has a score for it; a no-show is a player who GROSS-paid for that week with no
+// score for that week's nine. Refunded players stay in this gross list (shown as "Refunded") but are removed
+// from every pool by getEoySkinPlayersForWeek.
+function getPostSeasonWeekNoShows(season, week) {
+  const psDates = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
+  if (!psDates || ![1, 2].includes(week)) return { week, played: false, noShows: [], date: null, fb: null, scored: new Set() };
+  const week1Fb = getPostSeasonWeek1Nine(season);
+  const fb = week === 1 ? week1Fb : (week1Fb === 'Back' ? 'Front' : 'Back');
+  const date = week === 1 ? psDates.week1 : psDates.week2;
+  const scored = new Set(query(`SELECT DISTINCT Player FROM Scores WHERE League="Hugh's" AND CAST(Date AS INTEGER)=? AND FrontBack=? AND COALESCE(CAST(Gross AS REAL),0) > 0`, [date, fb]).map(r => r.Player));
+  const played = scored.size > 0;
+  const noShows = played ? [...getEoySkinGrossPlayersForWeek(season, week)].filter(p => !scored.has(p)).sort() : [];
+  return { week, played, noShows, date, fb, scored };
+}
+
+// Weeks already refunded for a player.
+function getEoyRefundedWeeks(season, player) {
+  return getEoyRefundsByPlayer(season).get(player)?.weeks || new Set();
+}
+
+// Do CTP winners or carryovers already exist for this post-season date? CTP payouts embed the pot and carryover
+// at the time they were recorded, so a refund (which shrinks the pot) is blocked until they are reset.
+function psWeekHasCtpResults(date) {
+  return query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND "Desc"='CTP' AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND (Detail LIKE '#%' OR Player='Kitty') LIMIT 1`, [date]).length > 0;
+}
+
+// Refund rows to write for these players/weeks: one per player per week, $7 + $3 (SkinsPS + ClosestPS),
+// only for players who paid that week and have no score for it, skipping weeks already refunded, never more than
+// the week's retained money. By default the week must already have been played (no-show refunds); with
+// opts.allowUnplayed an officer may also refund a player who cancels before the round (still no score, still fixed
+// amount). Returns { plan, errors }; any error blocks the whole request.
+function planPostSeasonRefunds(season, weeks, players, opts) {
+  opts = opts || {};
+  const errors = [];
+  const entry = getPostSeasonWeekEntry(season);
+  if (!entry.ok) return { plan: [], errors: [entry.reason] };
+  const psDates = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
+  if (!psDates) return { plan: [], errors: ['Post season dates are not set up.'] };
+  const g = computeEoyGrossByWeek(season);
+  const refunds = getEoyRefundsByPlayer(season);
+  const info = {};
+  [...weeks].forEach(w => {
+    info[w] = getPostSeasonWeekNoShows(season, w);
+    if (!opts.allowUnplayed && !info[w].played) errors.push(`Week ${w} has no scores yet, so nobody can be marked a no-show.`);
+    else if (psWeekHasCtpResults(info[w].date))
+      errors.push(`Week ${w} CTP results are already recorded. A refund changes that week's CTP pot, so reset the week ${w} CTP winners/carryovers on the CTPs tab first, then refund, then re-assign the CTPs.`);
+  });
+  if (errors.length) return { plan: [], errors };
+  const plan = [];
+  players.forEach(player => {
+    [...weeks].sort().forEach(week => {
+      const done = refunds.get(player)?.weeks.has(week);
+      if (done) return;                                              // already refunded: never twice
+      if (!g.weeks[week].has(player)) { errors.push(`${player} has no week ${week} entry to refund.`); return; }
+      if (info[week].scored.has(player)) { errors.push(`${player} has a week ${week} score, so cannot be refunded for it.`); return; }
+      const room = (g.weekPaid[player]?.[week] || 0) - (refunds.get(player)?.byWeek[week] || 0);
+      const amt = Math.min(entry.total, room);
+      if (amt <= 0) return;
+      plan.push({ player, week, amt, date: week === 1 ? psDates.week1 : psDates.week2, comment: `${opts.reasonLabel || 'Missed post-season'} week ${week}` });
+    });
+  });
+  return { plan: errors.length ? [] : plan, errors };
+}
+
+async function issuePostSeasonRefunds(season, weeks, players, opts) {
+  opts = opts || {};
+  if (!db) return;
+  if (!(currentUser?.role === 'admin' || currentUser?.role === 'developer')) { alert('Only officers can issue refunds.'); return; }
+  const { plan, errors } = planPostSeasonRefunds(season, weeks, players, opts);
+  if (errors.length) { alert('Refund not issued:\n\n' + errors.join('\n')); return; }
+  if (!plan.length) { alert('Nothing to refund — already refunded, or nothing paid.'); return; }
+  const total = plan.reduce((a, r) => a + r.amt, 0);
+  const lines = plan.map(r => `  ${r.player} — week ${r.week}: $${r.amt.toFixed(2)}`);
+  if (!confirm(`${opts.allowUnplayed ? 'Refund post-season entries?' : 'Refund post-season no-shows?'}\n\n${lines.join('\n')}\n\nTotal: $${total.toFixed(2)}\n\nThe refunded players are removed from that week's Skins and CTP pots.`)) return;
+  plan.forEach(r => serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,Comment) VALUES ("Hugh's",?,?,'EOY Skins','Refund',?,?)`,
+    [r.player, r.date, -r.amt, r.comment]));
+  await SERVER_RUN_QUEUE;
+  // Restate stored post-season Skins payouts from the reduced pools (only when results already exist)
+  const psDates = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
+  const hasSkinRows = psDates && query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND CAST(Date AS INTEGER) IN (${psDates.week1},${psDates.week2}) LIMIT 1`).length > 0;
+  if (hasSkinRows && (getEoySkinPlayersForWeek(season, 1).size || getEoySkinPlayersForWeek(season, 2).size)) {
+    calcEoySkins(season, true);
+    await SERVER_RUN_QUEUE;
+  }
+  await saveDBToServer();
+  renderPostSeasonBreakdown(courseData.all18);
+  try { loadPrizeMoney(); } catch (e) {}
+}
+
+// Refund section for the entry-screen Prize Breakdown (officers only): the selected week's no-shows
+// (gross-paid for that week, no score once the week has been played), with per-player, whole-week and both-week
+// buttons. Refunded players stay listed as "Refunded" and cannot be refunded again.
+function psRefundPanelHtml(season, week) {
+  if (!(currentUser?.role === 'admin' || currentUser?.role === 'developer') || !season) return '';
+  const cur = getPostSeasonWeekNoShows(season, week);
+  const other = getPostSeasonWeekNoShows(season, week === 1 ? 2 : 1);
+  const entry = getPostSeasonWeekEntry(season);
+  const esc = n => String(n).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const btn = (label, weeks, players, bg) => `<button onclick="issuePostSeasonRefunds(${season},[${weeks}],[${players.map(p => `'${esc(p)}'`).join(',')}])" style="padding:2px 8px;font-size:11px;background:${bg};color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;margin-left:4px">${label}</button>`;
+  const unassigned = getEoyUnassignedPayments(season);
+  const unassignedNote = unassigned.length
+    ? `<div style="color:#c62828;margin-bottom:6px">⚠ ${unassigned.length} EOY Skins payment${unassigned.length === 1 ? '' : 's'} (${[...new Set(unassigned.map(u => u.Player))].join(', ')}) ${unassigned.length === 1 ? 'has' : 'have'} no week assigned and ${unassigned.length === 1 ? 'is' : 'are'} not counted in any pool. Assign Week 1 / Week 2 / Both on Prize Money → EOY Skins.</div>` : '';
+  const wrap = body => `<div style="margin-top:14px;padding:8px 10px;background:#fff3e0;border:1px solid #ffcc80;border-radius:6px;font-size:12px">
+    <div style="font-weight:700;color:#e65100;margin-bottom:6px">↩ Week ${week} No-Show Refunds (paid $${entry.total}, no score)</div>${unassignedNote}${body}</div>`;
+  if (!entry.ok) return wrap(`<div style="color:#c62828">${entry.reason}</div>`);
+  if (!cur.played) return wrap(`<div style="color:#888">Week ${week} has no scores yet — no-show refunds become available once the week has been played.</div>`);
+  if (!cur.noShows.length) return wrap(`<div style="color:#2e7d32">No no-shows for week ${week}.</div>`);
+  const ctpBlocked = psWeekHasCtpResults(cur.date);
+  const otherBlocked = other.played && psWeekHasCtpResults(other.date);
+  const notice = ctpBlocked ? `<div style="color:#c62828;margin-bottom:6px">Week ${week} CTP results are already recorded. Reset that week's CTP winners/carryovers on the CTPs tab, then refund, then re-assign the CTPs.</div>` : '';
+  const rows = cur.noShows.map(p => {
+    const done = getEoyRefundedWeeks(season, p);
+    const alsoOther = other.played && !otherBlocked && other.noShows.includes(p) && !done.has(other.week);
+    const acts = done.has(week) ? '<span style="color:#888;font-size:11px">Refunded</span>'
+      : ctpBlocked ? '<span style="color:#888;font-size:11px">Blocked</span>'
+      : btn(`↩ Refund week ${week}`, [week], [p], '#e65100') + (alsoOther ? btn('↩ Refund both weeks', [1, 2], [p], '#c62828') : '');
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #ffe0b2"><span style="font-weight:600">${p}</span><span>${acts}</span></div>`;
+  }).join('');
+  const pending = cur.noShows.filter(p => !getEoyRefundedWeeks(season, p).has(week));
+  const bulk = (!ctpBlocked && pending.length > 1) ? `<div style="margin-top:6px;text-align:right">${btn(`↩ Refund all week ${week} no-shows`, [week], pending, '#e65100')}</div>` : '';
+  return wrap(notice + rows + bulk);
+}
+
 function recalcPostSeasonEoyRefunds(season) {
   const _lp12910 = getSeasonSettings(season);
   const lp = { PostSeasonDt: _lp12910.PostSeasonDt, EoySkins: _lp12910.EOYSkins };
@@ -19372,65 +19649,22 @@ function recalcPostSeasonEoyRefunds(season) {
   const psDates = parsePostSeasonDates(lp.PostSeasonDt);
   if (!psDates) return { noShows: new Set(), changed: false };
 
-  const fullAmt = parseFloat(lp.EoySkins || 20);
-  const weekAmt = fullAmt / 2;
+  // Refunds are no longer written automatically: officers issue them per week with the
+  // "No-Show Refunds" buttons (issuePostSeasonRefunds). This only reports who is a no-show.
   const week1Players = getEoySkinPlayersForWeek(season, 1);
   const week2Players = getEoySkinPlayersForWeek(season, 2);
   const eoyPlayers = new Set([...week1Players, ...week2Players]);
   const noShows = new Set();
+  const w1 = getPostSeasonWeekNoShows(season, 1), w2 = getPostSeasonWeekNoShows(season, 2);
 
-  // A week only counts as "missed" once that week has actually been played (someone has a
-  // score for it). Otherwise just opening the post-season grid before the round refunded
-  // every paid player.
-  const weekPlayed = (d, fb) => query(`SELECT 1 FROM Scores WHERE League="Hugh's" AND CAST(Date AS INTEGER)=? AND FrontBack=? AND COALESCE(CAST(Gross AS REAL),0) > 0 LIMIT 1`, [d, fb]).length > 0;
-  const week1Played = weekPlayed(psDates.week1, 'Front');
-  const week2Played = weekPlayed(psDates.week2, 'Back');
-
+  // No-show (both weeks) only once both weeks have been played and the player has neither score
   eoyPlayers.forEach(player => {
-    const paid = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as amt
-      FROM Payments
-      WHERE Player=?
-        AND League="Hugh's"
-        AND "Desc"='EOY Skins'
-        AND Detail='Payment'
-        AND Date >= ${season}0101
-        AND Date < ${season+1}0101`, [player])[0]?.amt || 0);
-
-    let refund = 0;
-    let missed = 0;
-    const playedWeek1 = !week1Players.has(player) || !week1Played || hasPostSeasonScore(player, psDates.week1, 'Front');
-    const playedWeek2 = !week2Players.has(player) || !week2Played || hasPostSeasonScore(player, psDates.week2, 'Back');
-
-    if (week1Players.has(player) && !playedWeek1) { refund += weekAmt; missed++; }
-    if (week2Players.has(player) && !playedWeek2) { refund += weekAmt; missed++; }
-    refund = Math.min(refund, paid);
-    const comment = missed === 2 ? 'Missed both post-season weeks' : (playedWeek1 ? 'Missed post-season week 2' : 'Missed post-season week 1');
-
-    // Only write when the refund actually changes (this runs every time the post-season grid opens)
-    const existing = query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as amt, MAX(COALESCE(Comment,'')) as c, COUNT(*) as n
-      FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Refund'
-        AND Date IN (${psDates.week1},${psDates.week2})`, [player])[0] || { amt: 0, c: '', n: 0 };
-    const unchanged = refund > 0
-      ? (existing.n === 1 && Math.abs(parseFloat(existing.amt) + refund) < 0.005 && existing.c === comment)
-      : existing.n === 0;
-    if (!unchanged) {
-      serverRun(`DELETE FROM Payments
-        WHERE League="Hugh's"
-          AND Player=?
-          AND "Desc"='EOY Skins'
-          AND Detail='Refund'
-          AND Date IN (${psDates.week1},${psDates.week2})`, [player]);
-      if (refund > 0) {
-        serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,Comment)
-          VALUES ("Hugh's",?,?,'EOY Skins','Refund',?,?)`, [player, psDates.week1, -refund, comment]);
-      }
-    }
-
-    // No-show only once both weeks have been played and the player has neither
-    if (week1Played && week2Played && missed === 2) noShows.add(player);
+    const missed1 = week1Players.has(player) && w1.noShows.includes(player);
+    const missed2 = week2Players.has(player) && w2.noShows.includes(player);
+    if (w1.played && w2.played && missed1 && missed2) noShows.add(player);
   });
 
-  return { noShows, changed: true };
+  return { noShows, changed: false };
 }
 
 function calcEoySkins(season, silent=false) {
@@ -19452,6 +19686,12 @@ function calcEoySkins(season, silent=false) {
   const refundInfo = recalcPostSeasonEoyRefunds(season);
   window.eoyNoShows = refundInfo.noShows;
 
+  const skinPerPlayer = parseFloat(lp.SkinsPS || 7);
+  // Players in a week's Skins pool who actually have a score row on that week's date.
+  const weekScorerRows = (date, weekPlayers) => query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${date} AND League="Hugh's"`)
+    .filter(r => weekPlayers.has(r.Player))
+    .filter(r => [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']].some(v => v != null));
+
   // Check if results already exist — just load them
   const psD1check = psDate1;
   const psD2check = psDate2;
@@ -19459,6 +19699,7 @@ function calcEoySkins(season, silent=false) {
   if (existingWinners.length > 0) {
     window.skinWinnerCells = {};
     const seen = new Set();
+    const keptByDate = { [psDate1]: 0, [psDate2]: 0 };
     let removed = 0;
     existingWinners.forEach(r => {
       const weekPlayers = parseInt(r.Date) === psDate1 ? eoyWeek1Players : eoyWeek2Players;
@@ -19470,14 +19711,20 @@ function calcEoySkins(season, silent=false) {
         return;
       }
       seen.add(rowKey);
+      keptByDate[parseInt(r.Date)] = (keptByDate[parseInt(r.Date)] || 0) + 1;
       window.skinWinnerCells[cellKey] = true;
     });
-    if (removed) saveDBToServer();
+    // Restate each week's stored payout from THAT week's pot only (week 1 and week 2 never share a pot).
+    [[psDate1, eoyWeek1Players], [psDate2, eoyWeek2Players]].forEach(([d, wp]) => {
+      if (!keptByDate[d]) return;
+      const v = psWeekSkinValue(weekScorerRows(d, wp).length, keptByDate[d], skinPerPlayer);
+      serverRun(`UPDATE Payments SET Earned=? WHERE Date=${d} AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`, [v]);
+    });
+    if (removed || seen.size > 0) saveDBToServer();
     if (seen.size > 0) return;
   }
 
   // Get course data
-  const skinPerPlayer = lp.SkinsPS || 7;
   const backHcps  = courseData.back.hcps;
   const frontHcps = courseData.front.hcps;
   const backPars  = courseData.back.pars;
@@ -19510,9 +19757,7 @@ function calcEoySkins(season, silent=false) {
   const w1Hcps = w1Fb === 'Back' ? backHcps : frontHcps;
   const w1HoleNums = w1Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w1Scores = {};
-  query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${psDate1} AND League="Hugh's"`)
-    .filter(r => eoyWeek1Players.has(r.Player))
-    .filter(r => [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']].some(v => v != null))
+  weekScorerRows(psDate1, eoyWeek1Players)
     .forEach(r => { w1Scores[r.Player] = [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']]; });
   const w1Nets = {};
   Object.keys(w1Scores).forEach(p => { w1Nets[p] = netHoles(w1Scores[p], getPhdcp(p, psDate1), w1Hcps); });
@@ -19524,20 +19769,17 @@ function calcEoySkins(season, silent=false) {
   const w2Hcps = w2Fb === 'Back' ? backHcps : frontHcps;
   const w2HoleNums = w2Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w2Scores = {};
-  query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${psDate2} AND League="Hugh's"`)
-    .filter(r => eoyWeek2Players.has(r.Player))
-    .filter(r => [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']].some(v => v != null))
+  weekScorerRows(psDate2, eoyWeek2Players)
     .forEach(r => { w2Scores[r.Player] = [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']]; });
   const w2Nets = {};
   Object.keys(w2Scores).forEach(p => { w2Nets[p] = netHoles(w2Scores[p], getPhdcp(p, psDate2), w2Hcps); });
   const w2Winners = findWinners(w2Nets, w2HoleNums);
   const w2Pot = Object.keys(w2Scores).length * skinPerPlayer;
 
-  // Calculate payouts
-  const allWinners = [...w1Winners, ...w2Winners];
-  const totalPot = w1Pot + w2Pot;
-  const totalSkins = allWinners.length;
-  const skinValue = totalSkins ? Math.round((totalPot / totalSkins) * 100) / 100 : 0;
+  // Calculate payouts — each week is its own pool: week N's pot pays only week N's winners.
+  const w1Value = psWeekSkinValue(Object.keys(w1Scores).length, w1Winners.length, skinPerPlayer);
+  const w2Value = psWeekSkinValue(Object.keys(w2Scores).length, w2Winners.length, skinPerPlayer);
+  const totalSkins = w1Winners.length + w2Winners.length;
 
   // CC (League Championship) eligibility: every regular roster player who has scores in BOTH
   // post-season weeks. The championship is funded by the $45 dues — EOY Skins payment doesn't matter.
@@ -19548,9 +19790,8 @@ function calcEoySkins(season, silent=false) {
   // Show confirmation dialog
   const lines = [
     `EOY Skins ${season} Results`,
-    `Week 1 (${w1Fb} 9): ${Object.keys(w1Scores).length} players · $${w1Pot} pot`,
-    `Week 2 (${w2Fb} 9): ${Object.keys(w2Scores).length} players · $${w2Pot} pot`,
-    `Total pot: $${totalPot} · ${totalSkins} skins · $${skinValue.toFixed(2)} each`,
+    `Week 1 (${w1Fb} 9): ${Object.keys(w1Scores).length} players · $${w1Pot} skins pot · ${w1Winners.length} skins · $${w1Value.toFixed(2)} each`,
+    `Week 2 (${w2Fb} 9): ${Object.keys(w2Scores).length} players · $${w2Pot} skins pot · ${w2Winners.length} skins · $${w2Value.toFixed(2)} each`,
     '',
     ccPool.length ? `CC Eligible (roster players with scores both weeks): ${ccPool.join(', ')}` : 'CC Eligible: nobody yet (roster players need scores both weeks)',
     '',
@@ -19560,10 +19801,12 @@ function calcEoySkins(season, silent=false) {
     '',
     'Payouts:',
   ];
-  const tally = {};
-  allWinners.forEach(w => { tally[w.player] = (tally[w.player]||0) + 1; });
-  Object.entries(tally).sort((a,b)=>b[1]-a[1]).forEach(([p,c]) => {
-    lines.push(`  ${p}: ${c} skin(s) = $${(c * skinValue).toFixed(2)}`);
+  [[1, w1Winners, w1Value], [2, w2Winners, w2Value]].forEach(([wk, winners, val]) => {
+    const tally = {};
+    winners.forEach(w => { tally[w.player] = (tally[w.player]||0) + 1; });
+    Object.entries(tally).sort((a,b)=>b[1]-a[1]).forEach(([p,c]) => {
+      lines.push(`  Week ${wk} — ${p}: ${c} skin(s) = $${(c * val).toFixed(2)}`);
+    });
   });
   lines.push('', 'Write results to Payments table?');
 
@@ -19571,10 +19814,11 @@ function calcEoySkins(season, silent=false) {
 
   // Write skin winner hole records
   serverRun(`DELETE FROM Payments WHERE Date IN (${psDate1},${psDate2}) AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%'`);
-  allWinners.forEach(w => {
-    const date = w1HoleNums.includes(w.hole) ? psDate1 : psDate2;
-    serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned) VALUES ("Hugh's",?,?,'Skin',?,?)`,
-      [w.player, date, `#${w.hole}`, skinValue]);
+  [[psDate1, w1Winners, w1Value], [psDate2, w2Winners, w2Value]].forEach(([date, winners, val]) => {
+    winners.forEach(w => {
+      serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned) VALUES ("Hugh's",?,?,'Skin',?,?)`,
+        [w.player, date, `#${w.hole}`, val]);
+    });
   });
 
   // Rebuild skinWinnerCells and refresh grid
@@ -19585,7 +19829,7 @@ function calcEoySkins(season, silent=false) {
 
   applyCellClasses(isPostSeasonEntryMode() ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front));
 
-  if (!silent) alert(`✓ EOY Skins calculated!\n${totalSkins} skins @ $${skinValue.toFixed(2)} each`);
+  if (!silent) alert(`✓ EOY Skins calculated!\nWeek 1: ${w1Winners.length} skins @ $${w1Value.toFixed(2)} each\nWeek 2: ${w2Winners.length} skins @ $${w2Value.toFixed(2)} each`);
 }
 
 function isDatePostSeason(dateStr) {
@@ -20287,9 +20531,13 @@ function buildEntryGrid() {
     const d2 = String(parsePostSeasonDates(lp.PostSeasonDt).week2);
     return `Date IN (${d1},${d2})`;
   })() : `Date=${date}`;
+  // Post season: the single entry grid covers both weeks, so track each week's EOY Skins payers
+  // separately (inSkinsW1/W2); inSkins = paid for either week (row shading only).
+  const psSkinsW1 = isPostSeason ? getEoySkinPlayersForWeek(season, 1) : new Set();
+  const psSkinsW2 = isPostSeason ? getEoySkinPlayersForWeek(season, 2) : new Set();
   const skinPlayers = new Set(
     isPostSeason
-      ? [...getEoySkinPlayersForDate(season, date, lp?.PostSeasonDt)]
+      ? [...psSkinsW1, ...psSkinsW2]
       : query(`SELECT DISTINCT Player FROM Payments WHERE ${skinDateFilter} AND "Desc"='Skin' AND Detail='Payment'`).map(r => r.Player)
   );
 
@@ -20386,6 +20634,8 @@ function buildEntryGrid() {
         ? (ex ? [ex['1'],ex['2'],ex['3'],ex['4'],ex['5'],ex['6'],ex['7'],ex['8'],ex['9'],ex['10'],ex['11'],ex['12'],ex['13'],ex['14'],ex['15'],ex['16'],ex['17'],ex['18']].map(v => v!=null?String(v):'') : Array(18).fill(''))
         : (ex ? [ex['1'],ex['2'],ex['3'],ex['4'],ex['5'],ex['6'],ex['7'],ex['8'],ex['9']].map(v => v!=null?String(v):'') : Array(9).fill('')),
       inSkins: skinPlayers.has(slot.active) || skinPlayers.has(slot.regular),
+      inSkinsW1: isPostSeason && (psSkinsW1.has(slot.active) || psSkinsW1.has(slot.regular)),
+      inSkinsW2: isPostSeason && (psSkinsW2.has(slot.active) || psSkinsW2.has(slot.regular)),
       phdcp: h.phdcp,
       last5: slot.sub ? (last5Map[slot.sub] || null) : (last5Map[slot.regular] || null),
       allPlayers
@@ -21014,7 +21264,14 @@ function renderPostSeasonBreakdown(nine) {
   // Skins players = EOY Skins buy-ins. Leaderboard = everyone eligible for the League
   // Championship (roster players), whether or not they bought into skins.
   const allSlots = Object.values(entryState).filter(st => st && Array.isArray(st.holes) && (st.sub || st.regular));
-  const players = allSlots.filter(st => st.inSkins);
+  // Each post-season week is independent ($10 = $7 Skins + $3 CTP per week entered): the panel shows
+  // ONE selected week — its players, its pots, its nine's skins and its payouts. Never both weeks combined.
+  if (window._psBreakdownWeek !== 1 && window._psBreakdownWeek !== 2) window._psBreakdownWeek = 1;
+  const selWeek = window._psBreakdownWeek;
+  const week1Fb = entryState._psWeek1Fb || 'Front';
+  const selFb = selWeek === 1 ? week1Fb : (week1Fb === 'Back' ? 'Front' : 'Back');
+  const selHoleIdx = new Set((selFb === 'Back' ? [9,10,11,12,13,14,15,16,17] : [0,1,2,3,4,5,6,7,8]));
+  const players = allSlots.filter(st => selWeek === 1 ? st.inSkinsW1 : st.inSkinsW2);
   const pot = players.length * skinsAmt;
   const ctpPot = players.length * ctpAmt;
 
@@ -21053,6 +21310,7 @@ function renderPostSeasonBreakdown(nine) {
   const skinWins = [];
   let skinsWonCount = 0;
   nine.nums.forEach((holeNum, hi) => {
+    if (!selHoleIdx.has(hi)) { skinWins.push(null); return; }   // other week's nine
     const validNets = playerNets
       .map(p => ({ name: p.name, net: p.nets18[hi], gross: p.gross18[hi] }))
       .filter(x => x.net !== null);
@@ -21067,19 +21325,25 @@ function renderPostSeasonBreakdown(nine) {
     }
   });
 
-  const perSkinValue = skinsWonCount > 0 ? pot / skinsWonCount : 0;
+  const perSkinValue = psWeekSkinValue(players.length, skinsWonCount, skinsAmt);
 
   // Leaderboard — sort by totalNet ascending (blanks last)
   const leaderboard = [...lbPlayers]
     .map(p => ({ name: p.name, phdcp: p.phdcp, inSkins: p.inSkins, ...p.totals }))
     .sort((a, b) => {
-      if (a.totalNet === '' && b.totalNet === '') return 0;
-      if (a.totalNet === '') return 1;
-      if (b.totalNet === '') return -1;
-      return a.totalNet - b.totalNet;
+      // Live: rank by completed nines first, then running net (blanks last)
+      const na = (a.frontComplete ? 1 : 0) + (a.backComplete ? 1 : 0);
+      const nb = (b.frontComplete ? 1 : 0) + (b.backComplete ? 1 : 0);
+      if (na !== nb) return nb - na;
+      if (a.runNet === '' && b.runNet === '') return 0;
+      if (a.runNet === '') return 1;
+      if (b.runNet === '') return -1;
+      return a.runNet - b.runNet;
     });
 
-  const hasAnyScore = playerNets.some(p => p.nets18.some(n => n !== null));
+  const hasAnyScore = playerNets.some(p => p.nets18.some((n, hi) => n !== null && selHoleIdx.has(hi))) ||
+    lbPlayers.some(p => p.nets18.some(n => n !== null));
+  const hasWeekScore = playerNets.some(p => p.nets18.some((n, hi) => n !== null && selHoleIdx.has(hi)));
   const allComplete = leaderboard.every(p => p.frontComplete && p.backComplete);
 
   // --- Render ---
@@ -21116,8 +21380,11 @@ function renderPostSeasonBreakdown(nine) {
       </div>`).join('')}
     </div>` : '';
 
+  const weekBtn = wk => `<button onclick="event.stopPropagation();window._psBreakdownWeek=${wk};renderPostSeasonBreakdown(courseData.all18)"
+      style="font-size:12px;padding:3px 12px;border:1px solid #2e7d32;border-radius:4px;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;${selWeek===wk?'background:#2e7d32;color:white':'background:white;color:#2e7d32'}">Week ${wk} (${wk===1?week1Fb:(week1Fb==='Back'?'Front':'Back')} 9)</button>`;
   const summaryHtml = `
     <div style="margin-bottom:14px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">${weekBtn(1)}${weekBtn(2)}<span style="font-size:11px;color:#888">Each week is separate: $10 = $${skinsAmt} Skins + $${ctpAmt} CTP</span></div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div style="background:#f1f8e9;border:1px solid ${_pso==='skins'?'#2e7d32':'#a5d6a7'};border-radius:6px;padding:8px 14px;text-align:center;cursor:pointer;transition:box-shadow .15s${_pso==='skins'?';box-shadow:0 0 0 2px #a5d6a7':''}"
           onclick="window._psSummaryOpen=window._psSummaryOpen==='skins'?null:'skins';renderPostSeasonBreakdown(courseData.all18)">
@@ -21151,9 +21418,9 @@ function renderPostSeasonBreakdown(nine) {
     lbHtml += leaderboard.map((p, i) => {
       const isSubLb = season && !ccRosterEligible(p.name, season);
       const pos = isSubLb ? null : ++ccPos;
-      const net = p.totalNet !== '' ? p.totalNet : '—';
-      const gross = p.totalGross !== '' ? p.totalGross : '—';
-      const bg = pos === 1 && p.totalNet !== '' ? '#fff8e1' : i % 2 === 0 ? '#fafafa' : '#fff';
+      const net = p.runNet !== '' ? p.runNet : '—';
+      const gross = p.runGross !== '' ? p.runGross : '—';
+      const bg = pos === 1 && p.runNet !== '' ? '#fff8e1' : i % 2 === 0 ? '#fafafa' : '#fff';
       const medal = pos === null ? '—' : pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : `${pos}.`;
       return `<div style="${rowStyle};background:${bg}">
         <span style="font-weight:700;text-align:center">${medal}</span>
@@ -21167,12 +21434,12 @@ function renderPostSeasonBreakdown(nine) {
   // Skins results
   if (window._psSkinShowTies === undefined) window._psSkinShowTies = false;
   let skinsHtml = '';
-  if (hasAnyScore) {
+  if (hasWeekScore) {
     const showTies = window._psSkinShowTies;
     const tieCount = skinWins.filter(w => w && w.tied).length;
     skinsHtml = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <div style="font-weight:700;font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.5px">🎯 Skins Results</div>
+        <div style="font-weight:700;font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.5px">🎯 Week ${selWeek} Skins Results (${selFb} 9)</div>
         ${tieCount > 0 ? `<label style="font-size:11px;color:#888;cursor:pointer;display:flex;align-items:center;gap:4px">
           <input type="checkbox" ${showTies ? 'checked' : ''} onchange="window._psSkinShowTies=this.checked;renderPostSeasonBreakdown(courseData.all18)">
           Show ties (${tieCount})
@@ -21180,6 +21447,7 @@ function renderPostSeasonBreakdown(nine) {
       </div>`;
     const skinsGrid = `display:grid;grid-template-columns:44px 1fr 60px auto;gap:6px;align-items:center;padding:4px 10px;border-radius:4px;font-size:12px;margin-bottom:2px`;
     skinsHtml += nine.nums.map((holeNum, hi) => {
+      if (!selHoleIdx.has(hi)) return '';
       const w = skinWins[hi];
       if (!w) return `<div style="${skinsGrid};background:#fafafa;color:#bbb"><span style="font-weight:700">H${holeNum}</span><span>—</span><span></span><span></span></div>`;
       if (w.tied) return showTies
@@ -21196,7 +21464,7 @@ function renderPostSeasonBreakdown(nine) {
     <div style="${cardH};cursor:pointer" onclick="window._psBreakdownCollapsed=!window._psBreakdownCollapsed;renderPostSeasonBreakdown(courseData.all18)">
       <span>⛳ Post-Season Prize Breakdown${allComplete ? '' : ' <span style="font-size:11px;font-weight:400;color:rgba(255,255,255,.7)">(Live)</span>'}</span>
       <div style="display:flex;align-items:center;gap:12px">
-        <span style="font-size:11px;font-weight:400;color:rgba(255,255,255,.7)">${players.length} players · $${skinsAmt}/skins · $${ctpAmt}/CTP</span>
+        <span style="font-size:11px;font-weight:400;color:rgba(255,255,255,.7)">Week ${selWeek} · ${players.length} players · $${skinsAmt}/skins · $${ctpAmt}/CTP</span>
         <button style="font-size:12px;padding:2px 12px;border:1px solid rgba(255,255,255,.4);border-radius:4px;background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600">${collapsed ? 'Expand' : 'Collapse'}</button>
       </div>
     </div>
@@ -21206,6 +21474,7 @@ function renderPostSeasonBreakdown(nine) {
         <div>${lbHtml || '<div style="color:#aaa;font-size:13px">Scores not yet entered</div>'}</div>
         <div>${skinsHtml || ''}</div>
       </div>
+      ${psRefundPanelHtml(season, selWeek)}
     </div>`}`;
 }
 
@@ -21607,6 +21876,12 @@ async function manualRecalcSkins() {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Post season: is this slot in the Skins pool of the week that plays grid hole index hi?
+function psSlotInSkinsForHole(st, hi) {
+  const wk = psWeekForHoleIndex(hi, entryState._psWeek1Fb);
+  return !!(wk === 1 ? st.inSkinsW1 : st.inSkinsW2);
+}
+
 function computeSkinTies(nine, isPostSeason) {
   const holeCount = nine.nums.length; // 9 or 18
   const holeMins   = Array(holeCount).fill(null);
@@ -21620,6 +21895,7 @@ function computeSkinTies(nine, isPostSeason) {
     st.holes.forEach((v, hi) => {
       const gross = parseInt(v);
       if (isNaN(gross)) return;
+      if (isPostSeason && !psSlotInSkinsForHole(st, hi)) return;
 
       // Stroke count: for post season apply full phdcp to each half
       let strokes = 0;
@@ -21661,6 +21937,7 @@ function computeLiveSkinWinners(nine, isPostSeason) {
     players.forEach(st => {
       const gross = parseInt(st.holes[hi]);
       if (!Number.isFinite(gross) || gross <= 0) return;
+      if (isPostSeason && !psSlotInSkinsForHole(st, hi)) return;
 
       let strokes = 0;
       if (isPostSeason) {
@@ -22828,6 +23105,7 @@ function openPaymentModal(key) {
   }
 
   setPayRegularRowsVisible(!psStatus);
+  if (!psStatus) wireEoyWeekChoice(season, skinAmt, ctpAmt);
   if (psStatus) {
     document.getElementById('paySkinsCheck').checked = false;
     document.getElementById('paySkinsCheck').disabled = true;
@@ -22874,8 +23152,7 @@ function updatePayTotal(skinAmt, ctpAmt) {
 let postSeasonEoyCap = null;
 
 function postSeasonEoyCapFor(psStatus, wk) {
-  const remain = Math.max(0, psStatus.fullAmt - (psStatus.paidTotal || 0));
-  return wk === 'both' ? remain : Math.min(psStatus.weekAmt, remain);
+  return wk === 'both' ? psStatus.weekAmt * 2 : psStatus.weekAmt;   // $10 per week chosen
 }
 
 // Weekly Skins/CTP rows only apply in the regular season; post season is paid through EOY Skins.
@@ -22883,6 +23160,27 @@ function setPayRegularRowsVisible(show) {
   ['paySkinsRow','payCtpRow'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = show ? 'flex' : 'none';
+  });
+}
+
+// Regular-season date: EOY Skins can be prepaid, but the amount is never typed — picking Wk 1 / Wk 2 / Both sets it
+// ($10 per week) and confirming without a week is refused.
+function wireEoyWeekChoice(season, skinAmt, ctpAmt) {
+  const amtEl = document.getElementById('payEoyAmt');
+  const chk = document.getElementById('payEoyCheck');
+  if (!amtEl || !chk || chk.disabled) return;
+  amtEl.readOnly = true;
+  amtEl.style.background = '#f3f3f3';
+  amtEl.title = 'Set by Wk 1 / Wk 2 / Both';
+  amtEl.value = 0;
+  document.querySelectorAll('input[name="payEoyWk"]').forEach(r => {
+    r.onchange = () => {
+      if (!r.checked) return;
+      const pay = eoyPaymentForWeeks(season, r.value);
+      chk.checked = true;
+      amtEl.value = pay.error ? 0 : pay.amt;
+      updatePayTotal(skinAmt, ctpAmt);
+    };
   });
 }
 
@@ -22927,6 +23225,8 @@ function confirmPayment() {
   const date   = document.getElementById('entryDate').value;
   const league = "Hugh's";
   const now    = new Date().toLocaleDateString('en-US');
+  const eoyPay = readEoyPaymentChoice(player);
+  if (eoyPay === false) return;
 
   // Skins
   if (document.getElementById('paySkinsCheck').checked && !document.getElementById('paySkinsCheck').disabled) {
@@ -22946,14 +23246,9 @@ function confirmPayment() {
     if (amt > 0) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid) VALUES (?,?,?,'League Dues','Payment',?,?)`,
       [league, player, date, amt, now]);
   }
-  // EOY Skins
-  if (document.getElementById('payEoyCheck').checked) {
-    const amt = clampPostSeasonEoyAmt(parseFloat(document.getElementById('payEoyAmt').value || 0), date);
-    const wk  = document.querySelector('input[name="payEoyWk"]:checked')?.value || '';
-    const comment = wk === '1' ? '(1st Week)' : wk === '2' ? '(2nd Week)' : '';
-    if (amt > 0) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'EOY Skins','Payment',?,?,?)`,
-      [league, player, date, amt, now, comment]);
-  }
+  // EOY Skins (validated above: explicit week, derived amount)
+  if (eoyPay) serverRun(`INSERT INTO Payments (League,Player,Date,Desc,Detail,Earned,DatePaid,Comment) VALUES (?,?,?,'EOY Skins','Payment',?,?,?)`,
+    [league, player, date, eoyPay.amt, now, eoyPay.comment]);
 
   closePaymentModal();
   // Rebuild grid to reflect new skins status
