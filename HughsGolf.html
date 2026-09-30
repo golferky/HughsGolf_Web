@@ -19345,6 +19345,17 @@ function getPostSeasonWeek1Nine(season) {
   } catch(e) { return 'Front'; }
 }
 
+// Post-season weeks are independent: $10 per player per week entered = $7 Skins + $3 CTP.
+// Which week a grid hole index (0-8 = Front, 9-17 = Back) belongs to, given the nine played in Week 1.
+function psWeekForHoleIndex(hi, week1Fb) {
+  return ((hi >= 9) === (week1Fb === 'Back')) ? 1 : 2;
+}
+
+// Per-skin value for ONE week: that week's Skins pot / that week's skins won (never a two-week pot).
+function psWeekSkinValue(playerCount, skinsWon, skinAmt) {
+  return skinsWon ? Math.round(((playerCount * skinAmt) / skinsWon) * 100) / 100 : 0;
+}
+
 function getPostSeasonFrontBackMap(psDate1, psDate2, league = "Hugh's") {
   // Which nine is played in Week 1 comes from SeasonSettings.PSWeek1Nine (default Front).
   // Front 9 scores are always saved on the date the front was played, back 9 likewise.
@@ -19514,6 +19525,12 @@ function calcEoySkins(season, silent=false) {
   const refundInfo = recalcPostSeasonEoyRefunds(season);
   window.eoyNoShows = refundInfo.noShows;
 
+  const skinPerPlayer = parseFloat(lp.SkinsPS || 7);
+  // Players in a week's Skins pool who actually have a score row on that week's date.
+  const weekScorerRows = (date, weekPlayers) => query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${date} AND League="Hugh's"`)
+    .filter(r => weekPlayers.has(r.Player))
+    .filter(r => [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']].some(v => v != null));
+
   // Check if results already exist — just load them
   const psD1check = psDate1;
   const psD2check = psDate2;
@@ -19521,6 +19538,7 @@ function calcEoySkins(season, silent=false) {
   if (existingWinners.length > 0) {
     window.skinWinnerCells = {};
     const seen = new Set();
+    const keptByDate = { [psDate1]: 0, [psDate2]: 0 };
     let removed = 0;
     existingWinners.forEach(r => {
       const weekPlayers = parseInt(r.Date) === psDate1 ? eoyWeek1Players : eoyWeek2Players;
@@ -19532,14 +19550,20 @@ function calcEoySkins(season, silent=false) {
         return;
       }
       seen.add(rowKey);
+      keptByDate[parseInt(r.Date)] = (keptByDate[parseInt(r.Date)] || 0) + 1;
       window.skinWinnerCells[cellKey] = true;
     });
-    if (removed) saveDBToServer();
+    // Restate each week's stored payout from THAT week's pot only (week 1 and week 2 never share a pot).
+    [[psDate1, eoyWeek1Players], [psDate2, eoyWeek2Players]].forEach(([d, wp]) => {
+      if (!keptByDate[d]) return;
+      const v = psWeekSkinValue(weekScorerRows(d, wp).length, keptByDate[d], skinPerPlayer);
+      serverRun(`UPDATE Payments SET Earned=? WHERE Date=${d} AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`, [v]);
+    });
+    if (removed || seen.size > 0) saveDBToServer();
     if (seen.size > 0) return;
   }
 
   // Get course data
-  const skinPerPlayer = lp.SkinsPS || 7;
   const backHcps  = courseData.back.hcps;
   const frontHcps = courseData.front.hcps;
   const backPars  = courseData.back.pars;
@@ -19572,9 +19596,7 @@ function calcEoySkins(season, silent=false) {
   const w1Hcps = w1Fb === 'Back' ? backHcps : frontHcps;
   const w1HoleNums = w1Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w1Scores = {};
-  query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${psDate1} AND League="Hugh's"`)
-    .filter(r => eoyWeek1Players.has(r.Player))
-    .filter(r => [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']].some(v => v != null))
+  weekScorerRows(psDate1, eoyWeek1Players)
     .forEach(r => { w1Scores[r.Player] = [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']]; });
   const w1Nets = {};
   Object.keys(w1Scores).forEach(p => { w1Nets[p] = netHoles(w1Scores[p], getPhdcp(p, psDate1), w1Hcps); });
@@ -19586,20 +19608,17 @@ function calcEoySkins(season, silent=false) {
   const w2Hcps = w2Fb === 'Back' ? backHcps : frontHcps;
   const w2HoleNums = w2Fb === 'Back' ? [10,11,12,13,14,15,16,17,18] : [1,2,3,4,5,6,7,8,9];
   const w2Scores = {};
-  query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${psDate2} AND League="Hugh's"`)
-    .filter(r => eoyWeek2Players.has(r.Player))
-    .filter(r => [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']].some(v => v != null))
+  weekScorerRows(psDate2, eoyWeek2Players)
     .forEach(r => { w2Scores[r.Player] = [r['1'],r['2'],r['3'],r['4'],r['5'],r['6'],r['7'],r['8'],r['9']]; });
   const w2Nets = {};
   Object.keys(w2Scores).forEach(p => { w2Nets[p] = netHoles(w2Scores[p], getPhdcp(p, psDate2), w2Hcps); });
   const w2Winners = findWinners(w2Nets, w2HoleNums);
   const w2Pot = Object.keys(w2Scores).length * skinPerPlayer;
 
-  // Calculate payouts
-  const allWinners = [...w1Winners, ...w2Winners];
-  const totalPot = w1Pot + w2Pot;
-  const totalSkins = allWinners.length;
-  const skinValue = totalSkins ? Math.round((totalPot / totalSkins) * 100) / 100 : 0;
+  // Calculate payouts — each week is its own pool: week N's pot pays only week N's winners.
+  const w1Value = psWeekSkinValue(Object.keys(w1Scores).length, w1Winners.length, skinPerPlayer);
+  const w2Value = psWeekSkinValue(Object.keys(w2Scores).length, w2Winners.length, skinPerPlayer);
+  const totalSkins = w1Winners.length + w2Winners.length;
 
   // CC (League Championship) eligibility: every regular roster player who has scores in BOTH
   // post-season weeks. The championship is funded by the $45 dues — EOY Skins payment doesn't matter.
@@ -19610,9 +19629,8 @@ function calcEoySkins(season, silent=false) {
   // Show confirmation dialog
   const lines = [
     `EOY Skins ${season} Results`,
-    `Week 1 (${w1Fb} 9): ${Object.keys(w1Scores).length} players · $${w1Pot} pot`,
-    `Week 2 (${w2Fb} 9): ${Object.keys(w2Scores).length} players · $${w2Pot} pot`,
-    `Total pot: $${totalPot} · ${totalSkins} skins · $${skinValue.toFixed(2)} each`,
+    `Week 1 (${w1Fb} 9): ${Object.keys(w1Scores).length} players · $${w1Pot} skins pot · ${w1Winners.length} skins · $${w1Value.toFixed(2)} each`,
+    `Week 2 (${w2Fb} 9): ${Object.keys(w2Scores).length} players · $${w2Pot} skins pot · ${w2Winners.length} skins · $${w2Value.toFixed(2)} each`,
     '',
     ccPool.length ? `CC Eligible (roster players with scores both weeks): ${ccPool.join(', ')}` : 'CC Eligible: nobody yet (roster players need scores both weeks)',
     '',
@@ -19622,10 +19640,12 @@ function calcEoySkins(season, silent=false) {
     '',
     'Payouts:',
   ];
-  const tally = {};
-  allWinners.forEach(w => { tally[w.player] = (tally[w.player]||0) + 1; });
-  Object.entries(tally).sort((a,b)=>b[1]-a[1]).forEach(([p,c]) => {
-    lines.push(`  ${p}: ${c} skin(s) = $${(c * skinValue).toFixed(2)}`);
+  [[1, w1Winners, w1Value], [2, w2Winners, w2Value]].forEach(([wk, winners, val]) => {
+    const tally = {};
+    winners.forEach(w => { tally[w.player] = (tally[w.player]||0) + 1; });
+    Object.entries(tally).sort((a,b)=>b[1]-a[1]).forEach(([p,c]) => {
+      lines.push(`  Week ${wk} — ${p}: ${c} skin(s) = $${(c * val).toFixed(2)}`);
+    });
   });
   lines.push('', 'Write results to Payments table?');
 
@@ -19633,10 +19653,11 @@ function calcEoySkins(season, silent=false) {
 
   // Write skin winner hole records
   serverRun(`DELETE FROM Payments WHERE Date IN (${psDate1},${psDate2}) AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%'`);
-  allWinners.forEach(w => {
-    const date = w1HoleNums.includes(w.hole) ? psDate1 : psDate2;
-    serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned) VALUES ("Hugh's",?,?,'Skin',?,?)`,
-      [w.player, date, `#${w.hole}`, skinValue]);
+  [[psDate1, w1Winners, w1Value], [psDate2, w2Winners, w2Value]].forEach(([date, winners, val]) => {
+    winners.forEach(w => {
+      serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned) VALUES ("Hugh's",?,?,'Skin',?,?)`,
+        [w.player, date, `#${w.hole}`, val]);
+    });
   });
 
   // Rebuild skinWinnerCells and refresh grid
@@ -19647,7 +19668,7 @@ function calcEoySkins(season, silent=false) {
 
   applyCellClasses(isPostSeasonEntryMode() ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front));
 
-  if (!silent) alert(`✓ EOY Skins calculated!\n${totalSkins} skins @ $${skinValue.toFixed(2)} each`);
+  if (!silent) alert(`✓ EOY Skins calculated!\nWeek 1: ${w1Winners.length} skins @ $${w1Value.toFixed(2)} each\nWeek 2: ${w2Winners.length} skins @ $${w2Value.toFixed(2)} each`);
 }
 
 function isDatePostSeason(dateStr) {
@@ -20349,9 +20370,13 @@ function buildEntryGrid() {
     const d2 = String(parsePostSeasonDates(lp.PostSeasonDt).week2);
     return `Date IN (${d1},${d2})`;
   })() : `Date=${date}`;
+  // Post season: the single entry grid covers both weeks, so track each week's EOY Skins payers
+  // separately (inSkinsW1/W2); inSkins = paid for either week (row shading only).
+  const psSkinsW1 = isPostSeason ? getEoySkinPlayersForWeek(season, 1) : new Set();
+  const psSkinsW2 = isPostSeason ? getEoySkinPlayersForWeek(season, 2) : new Set();
   const skinPlayers = new Set(
     isPostSeason
-      ? [...getEoySkinPlayersForDate(season, date, lp?.PostSeasonDt)]
+      ? [...psSkinsW1, ...psSkinsW2]
       : query(`SELECT DISTINCT Player FROM Payments WHERE ${skinDateFilter} AND "Desc"='Skin' AND Detail='Payment'`).map(r => r.Player)
   );
 
@@ -20448,6 +20473,8 @@ function buildEntryGrid() {
         ? (ex ? [ex['1'],ex['2'],ex['3'],ex['4'],ex['5'],ex['6'],ex['7'],ex['8'],ex['9'],ex['10'],ex['11'],ex['12'],ex['13'],ex['14'],ex['15'],ex['16'],ex['17'],ex['18']].map(v => v!=null?String(v):'') : Array(18).fill(''))
         : (ex ? [ex['1'],ex['2'],ex['3'],ex['4'],ex['5'],ex['6'],ex['7'],ex['8'],ex['9']].map(v => v!=null?String(v):'') : Array(9).fill('')),
       inSkins: skinPlayers.has(slot.active) || skinPlayers.has(slot.regular),
+      inSkinsW1: isPostSeason && (psSkinsW1.has(slot.active) || psSkinsW1.has(slot.regular)),
+      inSkinsW2: isPostSeason && (psSkinsW2.has(slot.active) || psSkinsW2.has(slot.regular)),
       phdcp: h.phdcp,
       last5: slot.sub ? (last5Map[slot.sub] || null) : (last5Map[slot.regular] || null),
       allPlayers
@@ -21076,7 +21103,14 @@ function renderPostSeasonBreakdown(nine) {
   // Skins players = EOY Skins buy-ins. Leaderboard = everyone eligible for the League
   // Championship (roster players), whether or not they bought into skins.
   const allSlots = Object.values(entryState).filter(st => st && Array.isArray(st.holes) && (st.sub || st.regular));
-  const players = allSlots.filter(st => st.inSkins);
+  // Each post-season week is independent ($10 = $7 Skins + $3 CTP per week entered): the panel shows
+  // ONE selected week — its players, its pots, its nine's skins and its payouts. Never both weeks combined.
+  if (window._psBreakdownWeek !== 1 && window._psBreakdownWeek !== 2) window._psBreakdownWeek = 1;
+  const selWeek = window._psBreakdownWeek;
+  const week1Fb = entryState._psWeek1Fb || 'Front';
+  const selFb = selWeek === 1 ? week1Fb : (week1Fb === 'Back' ? 'Front' : 'Back');
+  const selHoleIdx = new Set((selFb === 'Back' ? [9,10,11,12,13,14,15,16,17] : [0,1,2,3,4,5,6,7,8]));
+  const players = allSlots.filter(st => selWeek === 1 ? st.inSkinsW1 : st.inSkinsW2);
   const pot = players.length * skinsAmt;
   const ctpPot = players.length * ctpAmt;
 
@@ -21115,6 +21149,7 @@ function renderPostSeasonBreakdown(nine) {
   const skinWins = [];
   let skinsWonCount = 0;
   nine.nums.forEach((holeNum, hi) => {
+    if (!selHoleIdx.has(hi)) { skinWins.push(null); return; }   // other week's nine
     const validNets = playerNets
       .map(p => ({ name: p.name, net: p.nets18[hi], gross: p.gross18[hi] }))
       .filter(x => x.net !== null);
@@ -21129,7 +21164,7 @@ function renderPostSeasonBreakdown(nine) {
     }
   });
 
-  const perSkinValue = skinsWonCount > 0 ? pot / skinsWonCount : 0;
+  const perSkinValue = psWeekSkinValue(players.length, skinsWonCount, skinsAmt);
 
   // Leaderboard — sort by totalNet ascending (blanks last)
   const leaderboard = [...lbPlayers]
@@ -21145,7 +21180,9 @@ function renderPostSeasonBreakdown(nine) {
       return a.runNet - b.runNet;
     });
 
-  const hasAnyScore = playerNets.some(p => p.nets18.some(n => n !== null));
+  const hasAnyScore = playerNets.some(p => p.nets18.some((n, hi) => n !== null && selHoleIdx.has(hi))) ||
+    lbPlayers.some(p => p.nets18.some(n => n !== null));
+  const hasWeekScore = playerNets.some(p => p.nets18.some((n, hi) => n !== null && selHoleIdx.has(hi)));
   const allComplete = leaderboard.every(p => p.frontComplete && p.backComplete);
 
   // --- Render ---
@@ -21182,8 +21219,11 @@ function renderPostSeasonBreakdown(nine) {
       </div>`).join('')}
     </div>` : '';
 
+  const weekBtn = wk => `<button onclick="event.stopPropagation();window._psBreakdownWeek=${wk};renderPostSeasonBreakdown(courseData.all18)"
+      style="font-size:12px;padding:3px 12px;border:1px solid #2e7d32;border-radius:4px;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;${selWeek===wk?'background:#2e7d32;color:white':'background:white;color:#2e7d32'}">Week ${wk} (${wk===1?week1Fb:(week1Fb==='Back'?'Front':'Back')} 9)</button>`;
   const summaryHtml = `
     <div style="margin-bottom:14px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">${weekBtn(1)}${weekBtn(2)}<span style="font-size:11px;color:#888">Each week is separate: $10 = $${skinsAmt} Skins + $${ctpAmt} CTP</span></div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div style="background:#f1f8e9;border:1px solid ${_pso==='skins'?'#2e7d32':'#a5d6a7'};border-radius:6px;padding:8px 14px;text-align:center;cursor:pointer;transition:box-shadow .15s${_pso==='skins'?';box-shadow:0 0 0 2px #a5d6a7':''}"
           onclick="window._psSummaryOpen=window._psSummaryOpen==='skins'?null:'skins';renderPostSeasonBreakdown(courseData.all18)">
@@ -21233,12 +21273,12 @@ function renderPostSeasonBreakdown(nine) {
   // Skins results
   if (window._psSkinShowTies === undefined) window._psSkinShowTies = false;
   let skinsHtml = '';
-  if (hasAnyScore) {
+  if (hasWeekScore) {
     const showTies = window._psSkinShowTies;
     const tieCount = skinWins.filter(w => w && w.tied).length;
     skinsHtml = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <div style="font-weight:700;font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.5px">🎯 Skins Results</div>
+        <div style="font-weight:700;font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.5px">🎯 Week ${selWeek} Skins Results (${selFb} 9)</div>
         ${tieCount > 0 ? `<label style="font-size:11px;color:#888;cursor:pointer;display:flex;align-items:center;gap:4px">
           <input type="checkbox" ${showTies ? 'checked' : ''} onchange="window._psSkinShowTies=this.checked;renderPostSeasonBreakdown(courseData.all18)">
           Show ties (${tieCount})
@@ -21246,6 +21286,7 @@ function renderPostSeasonBreakdown(nine) {
       </div>`;
     const skinsGrid = `display:grid;grid-template-columns:44px 1fr 60px auto;gap:6px;align-items:center;padding:4px 10px;border-radius:4px;font-size:12px;margin-bottom:2px`;
     skinsHtml += nine.nums.map((holeNum, hi) => {
+      if (!selHoleIdx.has(hi)) return '';
       const w = skinWins[hi];
       if (!w) return `<div style="${skinsGrid};background:#fafafa;color:#bbb"><span style="font-weight:700">H${holeNum}</span><span>—</span><span></span><span></span></div>`;
       if (w.tied) return showTies
@@ -21262,7 +21303,7 @@ function renderPostSeasonBreakdown(nine) {
     <div style="${cardH};cursor:pointer" onclick="window._psBreakdownCollapsed=!window._psBreakdownCollapsed;renderPostSeasonBreakdown(courseData.all18)">
       <span>⛳ Post-Season Prize Breakdown${allComplete ? '' : ' <span style="font-size:11px;font-weight:400;color:rgba(255,255,255,.7)">(Live)</span>'}</span>
       <div style="display:flex;align-items:center;gap:12px">
-        <span style="font-size:11px;font-weight:400;color:rgba(255,255,255,.7)">${players.length} players · $${skinsAmt}/skins · $${ctpAmt}/CTP</span>
+        <span style="font-size:11px;font-weight:400;color:rgba(255,255,255,.7)">Week ${selWeek} · ${players.length} players · $${skinsAmt}/skins · $${ctpAmt}/CTP</span>
         <button style="font-size:12px;padding:2px 12px;border:1px solid rgba(255,255,255,.4);border-radius:4px;background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600">${collapsed ? 'Expand' : 'Collapse'}</button>
       </div>
     </div>
@@ -21673,6 +21714,12 @@ async function manualRecalcSkins() {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Post season: is this slot in the Skins pool of the week that plays grid hole index hi?
+function psSlotInSkinsForHole(st, hi) {
+  const wk = psWeekForHoleIndex(hi, entryState._psWeek1Fb);
+  return !!(wk === 1 ? st.inSkinsW1 : st.inSkinsW2);
+}
+
 function computeSkinTies(nine, isPostSeason) {
   const holeCount = nine.nums.length; // 9 or 18
   const holeMins   = Array(holeCount).fill(null);
@@ -21686,6 +21733,7 @@ function computeSkinTies(nine, isPostSeason) {
     st.holes.forEach((v, hi) => {
       const gross = parseInt(v);
       if (isNaN(gross)) return;
+      if (isPostSeason && !psSlotInSkinsForHole(st, hi)) return;
 
       // Stroke count: for post season apply full phdcp to each half
       let strokes = 0;
@@ -21727,6 +21775,7 @@ function computeLiveSkinWinners(nine, isPostSeason) {
     players.forEach(st => {
       const gross = parseInt(st.holes[hi]);
       if (!Number.isFinite(gross) || gross <= 0) return;
+      if (isPostSeason && !psSlotInSkinsForHole(st, hi)) return;
 
       let strokes = 0;
       if (isPostSeason) {
