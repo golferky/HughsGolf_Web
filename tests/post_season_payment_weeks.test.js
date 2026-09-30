@@ -19,10 +19,10 @@ function extract(name) {
 }
 const plain = v => JSON.parse(JSON.stringify(v));
 
-// ---- Fake database. Season 2026: week 1 = 9/22 (Front), week 2 = 9/29 (Back).
+// ---- Fake database. Season 2026: week 1 = 9/29 (Back 9), week 2 = 10/6 (Front 9).
 let settings, payments, refundRows, scores, ctpRows, legacyScores = [];
 function reset() {
-  settings = { PostSeasonDt: '9/22/2026', PSWeek1Nine: 'Front', EOYSkins: 20, SkinsPS: 7, ClosestPS: 3 };
+  settings = { PostSeasonDt: '9/29/2026', PSWeek1Nine: 'Back', EOYSkins: 20, SkinsPS: 7, ClosestPS: 3 };
   payments = [];
   refundRows = []; ctpRows = []; scores = {};
 }
@@ -51,7 +51,7 @@ const ctx = vm.createContext({
   courseData: { all18: {} },
   serverRun: (sql, params) => runs.push({ sql, params }),
   SERVER_RUN_QUEUE: Promise.resolve(), saveDBToServer: async () => {}, renderPostSeasonBreakdown() {}, loadPrizeMoney() {},
-  closePaymentModal() {}, loadPayments() {}, dismissEoyPaymentPrompt() {}, setTimeout() {},
+  closePaymentModal() {}, loadPayments() {}, dismissEoyPaymentPrompt() {}, setTimeout() {}, calcEoySkins() {},
   getSeasonSettings: () => settings,
 });
 ['psMdyToInt', 'psAddDaysMdy', 'parsePostSeasonDates', 'getPostSeasonWeek1Nine', 'getPostSeasonWeekEntry',
@@ -99,9 +99,9 @@ const lastAlert = () => alerts.pop() || '';
   // Legacy $20: week 1 has been played -> a score keeps them in; a no-show is a refund candidate (still in the pool until refunded)
   assert.deepStrictEqual(plain(ctx.computeEoyGrossByWeek(2026).legacy).map(l => [l.Player, l.weeks]), [['Old20', [1, 2]], ['Old10', []]]);
   // Legacy $10 goes to the week they have a score for
-  legacyScores = [{ Player: 'Old10', D: 20260929 }];
+  legacyScores = [{ Player: 'Old10', D: 20261006 }];
   assert(!pool(1).includes('Old10') && pool(2).includes('Old10'), 'legacy $10 scored in week 2 -> week 2 only');
-  legacyScores = [{ Player: 'Old10', D: 20260922 }, { Player: 'Old10', D: 20260929 }];
+  legacyScores = [{ Player: 'Old10', D: 20260929 }, { Player: 'Old10', D: 20261006 }];
   assert(pool(1).includes('Old10') && !pool(2).includes('Old10'), 'one $10 funds only one week (the first scored)');
   legacyScores = [];
 
@@ -141,11 +141,11 @@ const lastAlert = () => alerts.pop() || '';
   // ================= Payment modal: EOY checked with no week chosen writes NOTHING (not even skins/dues)
   runs.length = 0;
   checks.payEoyCheck = true; checks.payDuesCheck = true; checks.paySkinsCheck = true; chosenWeek = '';
-  ctx.confirmPaymentForPlayer('Wes', '20260922', 7, 3);
+  ctx.confirmPaymentForPlayer('Wes', '20260929', 7, 3);
   assert(/every \$10 EOY Skins entry must be assigned to a week/.test(lastAlert()));
   assert.strictEqual(runs.length, 0, 'nothing written when no week is chosen');
   chosenWeek = 'both';
-  ctx.confirmPaymentForPlayer('Wes', '20260922', 7, 3);
+  ctx.confirmPaymentForPlayer('Wes', '20260929', 7, 3);
   const eoy = inserts().find(r => /'EOY Skins'/.test(r.sql));
   assert.deepStrictEqual(plain([eoy.params[3], eoy.params[5]]), [20, '(Both Weeks)']);
   assert(/readEoyPaymentChoice/.test(html.slice(html.indexOf('function confirmPayment()'), html.indexOf('function closePaymentModal'))),
@@ -183,27 +183,27 @@ const lastAlert = () => alerts.pop() || '';
   // Before the round (no scores at all): a cancelled player can be refunded — fixed $10 dated that week
   await ctx.refundEoyPayment('Ben', 2026, '1');
   assert.deepStrictEqual(plain(inserts().map(r => [r.params[0], r.params[1], r.params[2], r.params[3]])),
-    [['Ben', 20260922, -10, 'Refunded (no score) week 1']]);
-  refundRows.push({ Player: 'Ben', Date: 20260922, Earned: -10, Comment: 'Refunded (no score) week 1' });
+    [['Ben', 20260929, -10, 'Refunded (no score) week 1']]);
+  refundRows.push({ Player: 'Ben', Date: 20260929, Earned: -10, Comment: 'Refunded (no score) week 1' });
   assert.deepStrictEqual(pool(1), ['Ann']); assert.deepStrictEqual(pool(2), ['Ann', 'Cy'], 'other week untouched');
   runs.length = 0;
   await ctx.refundEoyPayment('Ben', 2026, '1');                  // never twice
   assert.strictEqual(inserts().length, 0); assert(/Nothing to refund/.test(lastAlert()));
   // A player who has a score for that week cannot be refunded for it
-  scores['20260929|Back'] = ['Cy'];
+  scores['20261006|Front'] = ['Cy'];
   await ctx.refundEoyPayment('Cy', 2026, '2');
   assert(/has a week 2 score/.test(lastAlert())); assert.strictEqual(inserts().length, 0);
   // Not paid for that week -> nothing to refund
   await ctx.refundEoyPayment('Cy', 2026, '1');
   assert(/no week 1 entry to refund/.test(lastAlert())); assert.strictEqual(inserts().length, 0);
   // CTP results for the week block it
-  ctpRows.push({ Date: 20260929, Player: 'Kitty', Detail: 'Carryover12-Back' });
+  ctpRows.push({ Date: 20261006, Player: 'Kitty', Detail: 'Carryover3-Front' });
   await ctx.refundEoyPayment('Ann', 2026, '2');
   assert(/CTP results are already recorded/.test(lastAlert())); assert.strictEqual(inserts().length, 0);
   ctpRows.length = 0;
   // Both weeks for a $20 entry: one fixed $10 row per week, never typed
   await ctx.refundEoyPayment('Ann', 2026, 'both');
-  assert.deepStrictEqual(plain(inserts().map(r => [r.params[1], r.params[2]])), [[20260922, -10], [20260929, -10]]);
+  assert.deepStrictEqual(plain(inserts().map(r => [r.params[1], r.params[2]])), [[20260929, -10], [20261006, -10]]);
 
   // The Prize Money table no longer offers a typed refund; it offers per-week buttons and assign buttons
   const table = html.slice(html.indexOf('const _untagged = paid'), html.indexOf('const _untagged = paid') + 5200);
@@ -218,18 +218,18 @@ const lastAlert = () => alerts.pop() || '';
   reset();
   payments = [{ ID: 1, Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' }, { ID: 2, Player: 'Old', Earned: 20, Comment: '' },
               { ID: 3, Player: 'Ben', Earned: 20, Comment: '(Both Weeks)' }];
-  scores = { '20260922|Front': ['Ann', 'Old'] };                // Ann + Old played Week 1; nobody has played Week 2; Ben no-show
+  scores = { '20260929|Back': ['Ann', 'Old'] };                // Ann + Old played Week 1; nobody has played Week 2; Ben no-show
   const scoredByWeek = () => ({ 1: ctx.getPostSeasonWeekNoShows(2026, 1).scored, 2: ctx.getPostSeasonWeekNoShows(2026, 2).scored });
   const btns = p => Array.from(ctx.getEoyRefundButtonWeeks([1, 2], ctx.getEoyRefundedWeeks(2026, p), scoredByWeek(), p));
   assert.deepStrictEqual(btns('Ann'), [2], 'Week 1 score -> no Week 1 button; Week 2 (unplayed) button stays');
   assert.deepStrictEqual(btns('Old'), [2], 'same for a legacy untagged $20 payer');
   assert.deepStrictEqual(btns('Ben'), [1, 2], 'no Week 1 score (no-show) -> both buttons');
-  scores['20260929|Back'] = ['Ann'];                             // Week 2 played too, Ann scored in both
+  scores['20261006|Front'] = ['Ann'];                             // Week 2 played too, Ann scored in both
   assert.deepStrictEqual(btns('Ann'), [], 'scores in both weeks -> no refund buttons at all');
   assert.deepStrictEqual(btns('Old'), [2], 'Old has no Week 2 score -> Week 2 (no-show) button available');
-  scores = { '20260929|Back': ['Ann'] };                         // Week 1 unplayed/cancelled, Ann only has a Week 2 score
+  scores = { '20261006|Front': ['Ann'] };                         // Week 1 unplayed/cancelled, Ann only has a Week 2 score
   assert.deepStrictEqual(btns('Ann'), [1], 'Week 2 score -> no Week 2 button; Week 1 stays');
-  refundRows.push({ Player: 'Ben', Date: 20260922, Earned: -10, Comment: 'Missed post-season week 1' });
+  refundRows.push({ Player: 'Ben', Date: 20260929, Earned: -10, Comment: 'Missed post-season week 1' });
   assert.deepStrictEqual(btns('Ben'), [2], 'an already-refunded week has no button either');
   // The table really uses it (button hidden, not just refused by the refund code)
   const tbl = html.slice(html.indexOf('const _untagged = paid'), html.indexOf('const _untagged = paid') + 5200);
@@ -255,7 +255,7 @@ const lastAlert = () => alerts.pop() || '';
   assert.strictEqual(canEdit({ Player: 'Odd', Earned: 10, Comment: '(Both Weeks)' }), false, '$10 tagged both: no ✏ Week');
   assert.strictEqual(canEdit({ Player: 'Xi', Earned: 10, Comment: '(1st Week)' }), true, 'unplayed $10 Week 1 entry');
   assert.strictEqual(canEdit({ Player: 'Xi', Earned: 10, Comment: '(2nd Week)' }), true, 'unplayed $10 Week 2 entry');
-  scores = { '20260922|Front': ['Wes'], '20260929|Back': ['Zoe'] };
+  scores = { '20260929|Back': ['Wes'], '20261006|Front': ['Zoe'] };
   assert.strictEqual(canEdit({ Player: 'Wes', Earned: 10, Comment: '(1st Week)' }), false, 'scored Week 1 -> no ✏ Week');
   assert.strictEqual(canEdit({ Player: 'Zoe', Earned: 10, Comment: '(2nd Week)' }), false, 'scored Week 2 -> no ✏ Week');
   assert.strictEqual(canEdit({ Player: 'Wes', Earned: 10, Comment: '(2nd Week)' }), true, 'Wes has not played Week 2');
@@ -266,7 +266,7 @@ const lastAlert = () => alerts.pop() || '';
 
   // 3. scored Week 1 player cannot edit away the Week 1 payment; a legacy $20 cannot be cut
   payments = [{ ID: 20, Player: 'Wes', Earned: 10, Comment: '(1st Week)' }];
-  scores = { '20260922|Front': ['Wes'] };
+  scores = { '20260929|Back': ['Wes'] };
   runs.length = 0; promptAnswer = '2';
   ctx.editEoyPayment(20, 2026);
   assert(/has a week 1 score/.test(lastAlert())); noDbChange();
@@ -286,7 +286,7 @@ const lastAlert = () => alerts.pop() || '';
   ctx.editEoyPayment(26, 2026);
   assert.deepStrictEqual(plain(updates().map(u => u.params)), [['(1st Week)', 26]], 'Week 2 -> Week 1, amount untouched');
   assert.strictEqual(anyUpdateTouchesAmount(), false);
-  scores = { '20260929|Back': ['Zoe'] };                         // another player having played Week 2 doesn't matter
+  scores = { '20261006|Front': ['Zoe'] };                         // another player having played Week 2 doesn't matter
   runs.length = 0; promptAnswer = '2';
   ctx.editEoyPayment(22, 2026);
   assert.strictEqual(updates().length, 1);

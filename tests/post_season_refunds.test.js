@@ -18,18 +18,18 @@ function extract(name) {
 }
 const plain = v => JSON.parse(JSON.stringify(v));
 
-// ---- Fake database. Season 2026: week 1 = 9/22 (Front), week 2 = 9/29 (Back).
+// ---- Fake database. Season 2026: week 1 = 9/29 (Back 9), week 2 = 10/6 (Front 9).
 //  Ann both weeks, Ben week 1 only, Cy + Dee week 2 only, Fay both weeks.
 let settings, payments, refundRows, scores, ctpRows, skinRows, scoreRows;
 function reset() {
-  settings = { PostSeasonDt: '9/22/2026', PSWeek1Nine: 'Front', EOYSkins: 20, SkinsPS: 7, ClosestPS: 3 };
+  settings = { PostSeasonDt: '9/29/2026', PSWeek1Nine: 'Back', EOYSkins: 20, SkinsPS: 7, ClosestPS: 3 };
   payments = [
     { Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' }, { Player: 'Ben', Earned: 10, Comment: '(1st Week)' },
     { Player: 'Cy', Earned: 10, Comment: '(2nd Week)' }, { Player: 'Dee', Earned: 10, Comment: '(2nd Week)' },
     { Player: 'Fay', Earned: 20, Comment: '(Both Weeks)' },
   ];
   refundRows = []; ctpRows = []; skinRows = []; scoreRows = {};
-  scores = { '20260922|Front': ['Ann', 'Fay'], '20260929|Back': ['Ann'] };   // Ben, Cy, Dee, Fay(wk2) are no-shows
+  scores = { '20260929|Back': ['Ann', 'Fay'], '20261006|Front': ['Ann'] };   // Ben, Cy, Dee, Fay(wk2) are no-shows
 }
 const runs = [];
 const live = () => skinRows.filter(r => !r._del);
@@ -37,6 +37,7 @@ const alerts = [];
 const par3 = { Hole1: 4, Hole2: 4, Hole3: 3, Hole4: 4, Hole5: 5, Hole6: 4, Hole7: 3, Hole8: 4, Hole9: 5,
                Hole10: 4, Hole11: 4, Hole12: 3, Hole13: 4, Hole14: 5, Hole15: 4, Hole16: 3, Hole17: 4, Hole18: 5 };
 function query(sql, params = []) {
+  if (/ABS\(CAST\(Earned/.test(sql)) return live().some(r => String(r.Date) === String(params[0]) && Math.abs(r.Earned - Math.round(r.Earned)) > 0.005) ? [{ 1: 1 }] : [];
   if (/FROM Courses/.test(sql)) return [par3];
   if (/FROM SeasonSettings/.test(sql) && /SELECT \*/.test(sql)) return [settings];
   if (/SELECT PostSeasonDt, EOYSkins as EoySkins/.test(sql)) return [{ PostSeasonDt: settings.PostSeasonDt, EoySkins: settings.EOYSkins }];
@@ -45,7 +46,12 @@ function query(sql, params = []) {
   if (/Detail='Refund'/.test(sql)) return refundRows;
   if (/FROM Payments/.test(sql) && /'EOY Skins'/.test(sql)) return payments;
   if (/SELECT DISTINCT Player FROM Scores/.test(sql)) return (scores[`${params[0]}|${params[1]}`] || []).map(Player => ({ Player }));
-  if (/FROM Scores WHERE Date=(\d+) AND League/.test(sql)) return scoreRows[sql.match(/Date=(\d+)/)[1]] || [];
+  if (/FROM Scores WHERE Date=(\d+) AND League/.test(sql)) {
+    // hole scores for the pot basis: explicit rows if a test sets them, else everyone listed in `scores` for that date
+    const d = sql.match(/Date=(\d+)/)[1];
+    if (scoreRows[d]) return scoreRows[d];
+    return Object.keys(scores).filter(k => k.startsWith(d + '|')).flatMap(k => scores[k]).map(Player => ({ Player, ...nines([4, 4, 4, 4, 4, 4, 4, 4, 4]) }));
+  }
   if (/FROM Handicaps/.test(sql)) return [{ Hdcp: 0 }];
   if (/'CTP'/.test(sql) && /LIMIT 1/.test(sql) && /Detail LIKE '#%' OR Player='Kitty'/.test(sql))
     return ctpRows.some(r => String(r.Date) === String(params[0])) ? [{ 1: 1 }] : [];
@@ -61,6 +67,7 @@ const seq = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ctx = vm.createContext({
   window: {}, document: { getElementById: el, createElement: () => ({ innerHTML: '', style: {} }) },
   query, parseInt, parseFloat, String, Set, Map, Number, Math, Object, Array, JSON, db: true,
+  PS_SKIN_REM_DETAIL: 'PS Skin Remainder', PS_EOY_REM_DETAIL: 'Skins Kitty Remainder',
   currentUser: { role: 'admin' }, alert: m => alerts.push(m), confirm: () => true,
   courseData: { all18: {}, front: { hcps: seq, pars: Array(9).fill(4) }, back: { hcps: seq, pars: Array(9).fill(4) } },
   serverRun: (sql, params) => {
@@ -80,7 +87,7 @@ const ctx = vm.createContext({
 ['psMdyToInt', 'psAddDaysMdy', 'parsePostSeasonDates', 'getPostSeasonWeek1Nine', 'getPostSeasonWeekForDate',
  'getPostSeasonWeekEntry', 'eoyWeeksFromComment', 'computeEoyGrossByWeek', 'getEoyUnassignedPayments', 'getEoySkinGrossPlayersForWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
  'getPostSeasonContextForDate', 'getPostSeasonCtpInfo', 'getPostSeasonWeekNoShows', 'getEoyRefundedWeeks', 'psWeekHasCtpResults',
- 'planPostSeasonRefunds', 'issuePostSeasonRefunds', 'psRefundPanelHtml', 'psWeekSkinValue', 'calcEoySkins', 'loadSkins', 'loadCtps']
+ 'planPostSeasonRefunds', 'issuePostSeasonRefunds', 'psRefundPanelHtml', 'psWeekSkinPayout', 'psWeekScorerRows', 'getPostSeasonWeekPotPlayers', 'psSkinFingerprint', 'psWeekSkinState', 'psWeekPanelHtml', 'psNetHoles', 'psFindWinners', 'psComputeWeekWinners', 'calcEoySkins', 'loadSkins', 'loadCtps']
   .forEach(n => vm.runInContext((n === 'issuePostSeasonRefunds' ? 'async ' : '') + extract(n), ctx));
 
 const pool = w => Array.from(ctx.getEoySkinPlayersForWeek(2026, w)).sort();
@@ -96,8 +103,9 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   reset();
   assert.deepStrictEqual(pool(1), ['Ann', 'Ben', 'Fay']);
   assert.deepStrictEqual(pool(2), ['Ann', 'Cy', 'Dee', 'Fay']);
-  assert.strictEqual(stat(skinsStats('20260922'), 'Skin Pot'), '21');
-  assert.strictEqual(stat(skinsStats('20260929'), 'Skin Pot'), '28');
+  // The Skins/CTP pot basis is paid-AND-SCORED: week 1 Ann + Fay scored (Ben paid, no score); week 2 only Ann scored
+  assert.strictEqual(stat(skinsStats('20260929'), 'Skin Pot'), '14');
+  assert.strictEqual(stat(skinsStats('20261006'), 'Skin Pot'), '7');
 
   // ---- Config guard: $7 + $3 must equal EOYSkins / 2
   settings.ClosestPS = 4;
@@ -110,18 +118,18 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
 
   // ================= Refund Ben (week 1 no-show): $10 = $7 skins + $3 CTP, removed from week 1 ONLY
   await refund([1], ['Ben']);
-  assert.deepStrictEqual(plain(refundRows), [{ Player: 'Ben', Date: 20260922, Earned: -10, Comment: 'Missed post-season week 1' }]);
+  assert.deepStrictEqual(plain(refundRows), [{ Player: 'Ben', Date: 20260929, Earned: -10, Comment: 'Missed post-season week 1' }]);
   assert.deepStrictEqual(pool(1), ['Ann', 'Fay'], 'Ben is out of the week 1 pools');
   assert.deepStrictEqual(pool(2), ['Ann', 'Cy', 'Dee', 'Fay'], 'week 2 pool is untouched');
   assert.deepStrictEqual(gross(1), ['Ann', 'Ben', 'Fay'], 'gross list still shows Ben as a paid participant');
   // Skins tab and CTP tab both use the reduced week 1 pool; week 2 unchanged
-  assert.strictEqual(stat(skinsStats('20260922'), 'Skin Pot'), '14');
-  assert.strictEqual(stat(skinsStats('20260922'), 'CTP Pot'), '6');
-  assert.strictEqual(stat(skinsStats('20260929'), 'Skin Pot'), '28');
-  assert.strictEqual(stat(skinsStats('20260929'), 'CTP Pot'), '12');
-  assert(/2 players × \$3 = <strong>\$6<\/strong>/.test(ctpHtml('20260922')), 'week 1 CTP pot excludes Ben');
-  assert(!ctpHtml('20260922').includes('Ben'), 'Ben cannot be picked as a week 1 CTP winner');
-  assert(/4 players × \$3 = <strong>\$12<\/strong>/.test(ctpHtml('20260929')), 'week 2 CTP pot unchanged');
+  assert.strictEqual(stat(skinsStats('20260929'), 'Skin Pot'), '14');
+  assert.strictEqual(stat(skinsStats('20260929'), 'CTP Pot'), '6');
+  assert.strictEqual(stat(skinsStats('20261006'), 'Skin Pot'), '7');
+  assert.strictEqual(stat(skinsStats('20261006'), 'CTP Pot'), '3');
+  assert(/2 players × \$3 = <strong>\$6<\/strong>/.test(ctpHtml('20260929')), 'week 1 CTP pot excludes Ben');
+  assert(!ctpHtml('20260929').includes('Ben'), 'Ben cannot be picked as a week 1 CTP winner');
+  assert(/1 player × \$3 = <strong>\$3<\/strong>/.test(ctpHtml('20261006')), 'week 2 CTP pot unchanged by the week 1 refund (only Ann scored)');
   // Still displayed as a no-show, but as "Refunded" with no buttons for him
   assert.deepStrictEqual(Array.from(ctx.getPostSeasonWeekNoShows(2026, 1).noShows), ['Ben']);
   let panel = ctx.psRefundPanelHtml(2026, 1);
@@ -139,7 +147,7 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   await refund([2], ['Cy']);
   assert.deepStrictEqual(pool(2), ['Ann', 'Dee', 'Fay']);
   assert.deepStrictEqual(pool(1), ['Ann', 'Fay']);
-  assert.strictEqual(stat(skinsStats('20260929'), 'Skin Pot'), '21');
+  assert.strictEqual(stat(skinsStats('20261006'), 'Skin Pot'), '7', 'Cy never scored, so the pot (paid-and-scored) is unchanged by his refund');
   // Fay played week 1 and missed week 2: refunding week 2 leaves her in week 1
   await refund([2], ['Fay']);
   assert.deepStrictEqual(pool(2), ['Ann', 'Dee']);
@@ -147,9 +155,9 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   assert.deepStrictEqual(Array.from(ctx.getEoyRefundedWeeks(2026, 'Fay')), [2]);
   // Bulk / both weeks
   reset();
-  scores = { '20260922|Front': ['Ann'], '20260929|Back': ['Ann'] };     // Fay missed both
+  scores = { '20260929|Back': ['Ann'], '20261006|Front': ['Ann'] };     // Fay missed both
   await refund([1, 2], ['Fay']);
-  assert.deepStrictEqual(refundRows.map(r => [r.Player, r.Date, r.Earned]), [['Fay', 20260922, -10], ['Fay', 20260929, -10]]);
+  assert.deepStrictEqual(refundRows.map(r => [r.Player, r.Date, r.Earned]), [['Fay', 20260929, -10], ['Fay', 20261006, -10]]);
   assert.deepStrictEqual(pool(1), ['Ann', 'Ben']); assert.deepStrictEqual(pool(2), ['Ann', 'Cy', 'Dee']);
   await refund([1, 2], ['Fay']);
   assert.strictEqual(refundRows.length, 2, 'both-week refund is not repeated');
@@ -157,7 +165,7 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   // ================= LEGACY untagged $20 (existing data): no week assignment, in both weeks' pools, refundable as a no-show
   reset();
   payments = [{ Player: 'Old', Earned: 20, Comment: '' }, { Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' }];
-  scores = { '20260922|Front': ['Old', 'Ann'] };                 // week 1 played and Old scored; week 2 is in the future
+  scores = { '20260929|Back': ['Old', 'Ann'] };                 // week 1 played and Old scored; week 2 is in the future
   assert(pool(1).includes('Old'), 'legacy payer with a week 1 score is in week 1\'s pools ($7 + $3)');
   assert(pool(2).includes('Old'), 'week 2 needs no decision yet: legacy payer stays in week 2');
   assert.deepStrictEqual(plain(ctx.getEoyUnassignedPayments(2026)), [], 'legacy payments are not "unassigned"');
@@ -169,10 +177,10 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   assert.deepStrictEqual(Array.from(ctx.getPostSeasonWeekNoShows(2026, 1).noShows), ['Ghost']);
   assert(pool(1).includes('Ghost'), 'still pooled until refunded');
   await refund([1], ['Ghost']);
-  assert.deepStrictEqual(plain(refundRows), [{ Player: 'Ghost', Date: 20260922, Earned: -10, Comment: 'Missed post-season week 1' }]);
+  assert.deepStrictEqual(plain(refundRows), [{ Player: 'Ghost', Date: 20260929, Earned: -10, Comment: 'Missed post-season week 1' }]);
   assert(!pool(1).includes('Ghost') && pool(2).includes('Ghost'), 'refund leaves week 1 only; week 2 still funded');
   // Week 2 gets played without Ghost -> now a week 2 no-show; refunded the same way
-  scores['20260929|Back'] = ['Old', 'Ann'];
+  scores['20261006|Front'] = ['Old', 'Ann'];
   assert.deepStrictEqual(Array.from(ctx.getPostSeasonWeekNoShows(2026, 2).noShows), ['Ghost']);
   await refund([2], ['Ghost']);
   assert(!pool(2).includes('Ghost'));
@@ -182,38 +190,38 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   // Legacy untagged $10: counted in the week they score; untagged $15 is still flagged
   reset();
   payments.push({ Player: 'Gus', Earned: 10, Comment: '' }, { Player: 'Odd', Earned: 15, Comment: '' });
-  scores = { '20260922|Front': ['Ann'], '20260929|Back': ['Ann'] };
+  scores = { '20260929|Back': ['Ann'], '20261006|Front': ['Ann'] };
   assert(!pool(1).includes('Gus') && !pool(2).includes('Gus'), 'legacy $10 with no score yet is in no pool');
   assert.deepStrictEqual(plain(ctx.getEoyUnassignedPayments(2026)).map(u => u.Player), ['Odd']);
   await refund([1], ['Gus']);
   assert.strictEqual(refundRows.length, 0, 'no week-1 entry to refund');
   // A $20 both-weeks payment refunded for week 1 stays in week 2 only
   reset();
-  scores = { '20260922|Front': ['Ann'], '20260929|Back': ['Ann', 'Fay'] };
+  scores = { '20260929|Back': ['Ann'], '20261006|Front': ['Ann', 'Fay'] };
   await refund([1], ['Fay']);
   assert(!pool(1).includes('Fay') && pool(2).includes('Fay'));
 
   // ================= Legacy combined refund rows are read correctly (no double refund of a legacy "both weeks" row)
   reset();
-  scores = { '20260922|Front': ['Ann'], '20260929|Back': ['Ann'] };
-  refundRows.push({ Player: 'Fay', Date: 20260922, Earned: -20, Comment: 'Missed both post-season weeks' });
+  scores = { '20260929|Back': ['Ann'], '20261006|Front': ['Ann'] };
+  refundRows.push({ Player: 'Fay', Date: 20260929, Earned: -20, Comment: 'Missed both post-season weeks' });
   assert(!pool(1).includes('Fay') && !pool(2).includes('Fay'));
   await refund([1, 2], ['Fay']);
   assert.strictEqual(refundRows.length, 1);
   // legacy partial refund ($5) does not count as a week refund
   reset();
-  refundRows.push({ Player: 'Ben', Date: 20260922, Earned: -5, Comment: 'Partial' });
+  refundRows.push({ Player: 'Ben', Date: 20260929, Earned: -5, Comment: 'Partial' });
   assert(!pool(1).includes('Ben'), 'a $5 partial refund leaves $5 which does not fund the $10 week');
 
   // ================= Refund BEFORE CTP results exist: allowed, and the CTP pot is right when winners are later picked
   reset();
   await refund([2], ['Cy']);
   assert.strictEqual(refundRows.length, 1);
-  assert(/3 players × \$3 = <strong>\$9<\/strong>/.test(ctpHtml('20260929')));
+  assert(/1 player × \$3 = <strong>\$3<\/strong>/.test(ctpHtml('20261006')), 'CTP pot = paid-and-scored only (Ann)');
 
   // ================= Refund AFTER CTP results exist: blocked with a clear explanation, nothing written
   reset();
-  ctpRows.push({ Date: 20260929, Player: 'Dee', Detail: '#12' });        // week 2 winner recorded
+  ctpRows.push({ Date: 20261006, Player: 'Dee', Detail: '#12' });        // week 2 winner recorded
   await refund([2], ['Cy']);
   assert.strictEqual(refundRows.length, 0);
   let msg = alerts.pop();
@@ -225,13 +233,13 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   assert.strictEqual(refundRows.length, 1);
   // A carryover ("No Winner") record also blocks
   reset();
-  ctpRows.push({ Date: 20260922, Player: 'Kitty', Detail: 'Carryover3-Front' });
+  ctpRows.push({ Date: 20260929, Player: 'Kitty', Detail: 'Carryover12-Back' });
   await refund([1], ['Ben']);
   assert.strictEqual(refundRows.length, 0);
   // both-week request is all-or-nothing when one week is blocked
   reset();
-  scores = { '20260922|Front': ['Ann'], '20260929|Back': ['Ann'] };
-  ctpRows.push({ Date: 20260929, Player: 'Ann', Detail: '#16' });
+  scores = { '20260929|Back': ['Ann'], '20261006|Front': ['Ann'] };
+  ctpRows.push({ Date: 20261006, Player: 'Ann', Detail: '#16' });
   await refund([1, 2], ['Fay']);
   assert.strictEqual(refundRows.length, 0);
   // Reset CTPs -> refund now works
@@ -239,27 +247,22 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   await refund([1, 2], ['Fay']);
   assert.strictEqual(refundRows.length, 2);
 
-  // ================= Stored Skins payouts are restated from the reduced pool after a refund
+  // ================= A refund NEVER changes stored Skin winner rows (paid or unpaid): the week is only marked for an officer
   reset();
-  scores['20260929|Back'] = ['Ann', 'Dee'];
-  scoreRows = {
-    20260922: [{ Player: 'Ann', ...nines([3, 4, 4, 4, 4, 4, 4, 4, 4]) }, { Player: 'Fay', ...nines([4, 4, 4, 4, 4, 4, 4, 4, 4]) }],
-    20260929: [{ Player: 'Ann', ...nines([3, 4, 4, 4, 4, 4, 4, 4, 4]) }, { Player: 'Dee', ...nines([4, 4, 4, 4, 4, 4, 4, 4, 4]) }],
-  };
-  vm.runInContext('calcEoySkins(2026, true)', ctx);
-  // week 1: Ann + Fay scored (Ben no-show) -> $14 pot, 1 skin = $14; week 2: Ann + Dee -> $14
-  assert.deepStrictEqual(live().map(r => [r.Player, r.Date, r.Earned]), [['Ann', 20260922, 14], ['Ann', 20260929, 14]]);
-  await refund([1], ['Ben']);                     // Ben (no score) leaves the week 1 pool; restated from retained money
-  assert.deepStrictEqual(live().map(r => [r.Player, r.Date, r.Earned]), [['Ann', 20260922, 14], ['Ann', 20260929, 14]]);
-  // Fay was in week 1; refund her (she is a week 2 no-show only) -> week 2 stays; a NO-SHOW who somehow has stale winner rows is removed
-  skinRows.push({ Player: 'Cy', Date: 20260929, Detail: '#12', Earned: 99 });
+  scores['20261006|Front'] = ['Ann', 'Dee'];
+  skinRows = [{ Player: 'Ann', Date: 20260929, Detail: '#10', Earned: 14 }, { Player: 'Fay', Date: 20260929, Detail: '#11', Earned: 14 },
+              { Player: 'Cy', Date: 20261006, Detail: '#12', Earned: 99 }];           // Cy: a stale row for a player refunded below
+  const before = JSON.stringify(skinRows);
+  const nRuns = runs.length;
+  await refund([1], ['Ben']);
   await refund([2], ['Cy']);
-  assert(!live().some(r => r.Player === 'Cy'), 'refunded player cannot hold a week 2 skin');
-  assert(!live().some(r => r.Earned === 99));
+  assert.strictEqual(JSON.stringify(skinRows), before, 'refunds must not create, delete or update any Skin winner row');
+  assert(!runs.slice(nRuns).some(r => /'Skin'|Skin/.test(r.sql) && !/'EOY Skins'/.test(r.sql)), 'no Skin SQL issued by a refund');
+  assert.strictEqual(refundRows.length, 2, 'the refunds themselves were written');
 
   // ================= Money invariant: no pool or payout exceeds the money retained after refunds
   reset();
-  scores = { '20260922|Front': ['Ann', 'Fay'], '20260929|Back': ['Ann', 'Dee'] };
+  scores = { '20260929|Back': ['Ann', 'Fay'], '20261006|Front': ['Ann', 'Dee'] };
   payments.push({ Player: 'Gus', Earned: 10, Comment: '(1st Week)' });
   await refund([1], ['Ben']); await refund([2], ['Cy', 'Fay']); await refund([1], ['Gus']);
   const paidTotal = payments.reduce((a, p) => a + p.Earned, 0);
@@ -275,14 +278,10 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
     const weeksIn = [1, 2].filter(w => pool(w).includes(pl)).length;
     assert(weeksIn * 10 <= paid - ref + 1e-9, `${pl}: in ${weeksIn} weeks but retained only $${paid - ref}`);
   });
-  // Skins payouts never exceed that week's retained Skins money
-  scoreRows = { 20260922: [{ Player: 'Ann', ...nines([3, 4, 4, 4, 4, 4, 4, 4, 4]) }, { Player: 'Fay', ...nines([4, 4, 4, 4, 4, 4, 4, 4, 4]) }],
-                20260929: [{ Player: 'Ann', ...nines([3, 4, 4, 4, 4, 4, 4, 4, 4]) }, { Player: 'Dee', ...nines([4, 4, 4, 4, 4, 4, 4, 4, 4]) }] };
-  skinRows = [];
-  vm.runInContext('calcEoySkins(2026, true)', ctx);
-  [20260922, 20260929].forEach((d, i) => {
-    const payout = live().filter(r => r.Date === d).reduce((a, r) => a + r.Earned, 0);
-    assert(payout <= pool(i + 1).length * 7 + 0.01, `week ${i + 1} payout $${payout} exceeds retained skins money`);
+  // Whole-dollar Skins payouts (3 skins) never exceed that week's retained Skins money
+  [1, 2].forEach(w => {
+    const pay = ctx.psWeekSkinPayout(pool(w).length, 3, 7);
+    assert(pay.paid <= pool(w).length * 7 + 0.01, `week ${w} payout $${pay.paid} exceeds retained skins money`);
   });
 
   console.log('ok');
