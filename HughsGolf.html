@@ -4742,15 +4742,21 @@ function loadPrizeMoney(options = {}) {
               const refundBadge = refundAmt < 0 ? `<span style="color:#e65100;font-size:11px;font-weight:700;margin-left:4px">↩ Refund $${Math.abs(refundAmt).toFixed(2)}</span>` : '';
               // Every $10 must be assigned to Week 1 / Week 2 (or $20 to Both). Anything else is "unassigned" and
               // funds no week until an officer assigns it here.
-              const _wks = paid ? eoyWeeksFromComment(r.Comment) : [];
               const _entryTotal = getPostSeasonWeekEntry(season).total;
+              const _untagged = paid && eoyWeeksFromComment(r.Comment).length === 0;
+              // Legacy untagged rows need no assignment: $20 = both weeks, $10 = the one week the player scores in.
+              const _legacyBoth = _untagged && Math.abs(parseFloat(r.Earned) - 2 * _entryTotal) < 0.005;
+              const _legacyOne = _untagged && Math.abs(parseFloat(r.Earned) - _entryTotal) < 0.005;
+              const _wks = paid ? (_legacyBoth ? [1, 2] : eoyWeeksFromComment(r.Comment)) : [];
               const _assigned = paid && _wks.length > 0 && Math.abs(parseFloat(r.Earned) - _entryTotal * _wks.length) < 0.005;
-              const _needsWeek = paid && !_assigned;
+              const _needsWeek = paid && !_assigned && !_legacyOne;
               const _safe = (r.Player||'').replace(/'/g,"\\'");
               const _btn = (bg, label, fn, tip) => `<button onclick="${fn}" style="padding:2px 7px;font-size:10px;background:${bg};color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;margin-right:2px" title="${tip}">${label}</button>`;
               const _refunded = paid ? getEoyRefundedWeeks(season, r.Player) : new Set();
               const weekBadge = _needsWeek ? `<span style="color:#c62828;font-size:11px;font-weight:700;margin-right:4px" title="Not counted in any week's Skins/CTP pool until assigned">⚠ Needs week</span>` : '';
-              const noteText = weekBadge + (r.Comment ? r.Comment : (r.DatePaid ? r.DatePaid : ''));
+              const legacyBadge = _legacyBoth ? `<span style="color:#666;font-size:11px;margin-right:4px" title="Existing untagged payment: counts for both weeks. After a week is played, a no-show can be refunded for that week.">Legacy · both weeks</span>`
+                : _legacyOne ? `<span style="color:#666;font-size:11px;margin-right:4px" title="Existing untagged single-week payment: counts for the week the player has a score in.">Legacy · week by score</span>` : '';
+              const noteText = weekBadge + legacyBadge + (r.Comment ? r.Comment : (r.DatePaid ? r.DatePaid : ''));
               const assignBtns = _needsWeek ? ['1','2','both'].map(c => _btn('#2e7d32', c === 'both' ? 'Both' : 'Wk ' + c, `assignEoyPaymentWeeks(${r.ID},${season},'${c}')`, `Assign this $${parseFloat(r.Earned).toFixed(2)} payment to ${c === 'both' ? 'both weeks ($20)' : 'week ' + c + ' ($10)'}`)).join('') : '';
               const refundBtns = _assigned ? _wks.filter(w => !_refunded.has(w)).map(w => _btn('#e65100', `↩ Wk ${w}`, `refundEoyPayment('${_safe}',${season},'${w}')`, `Refund week ${w}: $${_entryTotal.toFixed(2)} ($7 Skins + $3 CTP). Only for a player with no week ${w} score.`)).join('') : '';
               const actBtns = isOfficerOrDev && paid ? `
@@ -19153,9 +19159,14 @@ function getPostSeasonWeekEntry(season) {
 }
 
 // ── EOY Skins entries: every $10 must be explicitly assigned to Week 1 or Week 2 ─────────────────────────────
-// A payment row carries its week in the Comment: "(1st Week)", "(2nd Week)" or "(Both Weeks)" ($20 = two $10 entries).
-// A row counts toward a week only when it names the week(s) AND its amount is exactly $10 per named week. Anything
-// else (older untagged rows, wrong amounts) is "unassigned": it funds no week's pool until an officer assigns it.
+// New payments carry their week in the Comment: "(1st Week)", "(2nd Week)" or "(Both Weeks)" ($20 = two $10 entries).
+// A tagged row counts toward a week only when its amount is exactly $10 per named week.
+// LEGACY untagged rows keep working without any manual assignment:
+//   - untagged $20  = paid both weeks: in Week 1's and Week 2's pools. Week 2 is not decided early; once a week has been
+//                     played, a payer with no score for it is a no-show handled by the refund workflow.
+//   - untagged $10  = one week, whichever week the player actually has a score for (the first such week).
+// Only rows that fit none of these (e.g. a tagged row with the wrong amount, or an untagged $15) are "unassigned":
+// they fund no pool and show "⚠ Needs week" until an officer assigns them.
 function eoyWeeksFromComment(comment) {
   const c = String(comment || '').toLowerCase();
   const w1 = c.includes('1st') || c.includes('first') || c.includes('week 1') || c.includes('wk 1');
@@ -19195,15 +19206,40 @@ function computeEoyGrossByWeek(season) {
       AND Date < ${season+1}0101`);
   const weekAmt = getPostSeasonWeekEntry(season).total;
   const weeks = { 1: new Set(), 2: new Set() };
-  const weekPaid = {}, unassigned = [];
+  const weekPaid = {}, unassigned = [], legacy = [], legacySingle = [];
+  const wpFor = p => weekPaid[p] || (weekPaid[p] = { 1: 0, 2: 0 });
   rows.forEach(r => {
     const wks = eoyWeeksFromComment(r.Comment), earned = parseFloat(r.Earned || 0);
-    if (!wks.length || Math.abs(earned - weekAmt * wks.length) > 0.005) { unassigned.push({ ID: r.ID, Player: r.Player, Earned: earned, Comment: r.Comment }); return; }
-    const wp = weekPaid[r.Player] || (weekPaid[r.Player] = { 1: 0, 2: 0 });
+    const bad = () => unassigned.push({ ID: r.ID, Player: r.Player, Earned: earned, Comment: r.Comment });
+    if (!wks.length) {                                       // legacy untagged
+      if (Math.abs(earned - 2 * weekAmt) < 0.005) {          // $20: paid both weeks
+        const wp = wpFor(r.Player); wp[1] += weekAmt; wp[2] += weekAmt;
+        legacy.push({ ID: r.ID, Player: r.Player, Earned: earned, weeks: [1, 2] });
+      } else if (Math.abs(earned - weekAmt) < 0.005) legacySingle.push({ ID: r.ID, Player: r.Player, Earned: earned });
+      else bad();
+      return;
+    }
+    if (Math.abs(earned - weekAmt * wks.length) > 0.005) { bad(); return; }
+    const wp = wpFor(r.Player);
     wks.forEach(w => { wp[w] += weekAmt; });
   });
+  // Legacy untagged $10: the week is the one the player has a score for (first such week not already funded).
+  if (legacySingle.length) {
+    const psDates = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
+    const scoredWeeks = {};
+    if (psDates) {
+      query(`SELECT DISTINCT Player, CAST(Date AS INTEGER) as D FROM Scores WHERE League="Hugh's" AND CAST(Date AS INTEGER) IN (${psDates.week1},${psDates.week2}) AND COALESCE(CAST(Gross AS REAL),0) > 0`)
+        .forEach(r => { (scoredWeeks[r.Player] = scoredWeeks[r.Player] || new Set()).add(parseInt(r.D) === psDates.week1 ? 1 : 2); });
+    }
+    legacySingle.forEach(r => {
+      const wp = wpFor(r.Player);
+      const wk = [1, 2].find(w => scoredWeeks[r.Player]?.has(w) && wp[w] < weekAmt - 0.005);
+      if (wk) wp[wk] += weekAmt;
+      legacy.push({ ID: r.ID, Player: r.Player, Earned: r.Earned, weeks: wk ? [wk] : [] });
+    });
+  }
   Object.keys(weekPaid).forEach(p => [1, 2].forEach(w => { if (weekPaid[p][w] >= weekAmt - 0.005) weeks[w].add(p); }));
-  return { weeks, weekPaid, unassigned };
+  return { weeks, weekPaid, unassigned, legacy };
 }
 
 function getEoySkinGrossPlayersForWeek(season, week) {
@@ -19498,7 +19534,8 @@ function getPostSeasonPaymentStatus(player, date) {
       AND Date < ${ctx.season+1}0101`, [player]);
   const eligible = getEoySkinPlayersForWeek(ctx.season, ctx.week).has(player);
   const weekOnly = rows.filter(r => { const w = eoyWeeksFromComment(r.Comment); return w.length === 1 && w[0] === ctx.week; });
-  const fullRows = rows.filter(r => eoyWeeksFromComment(r.Comment).length === 2);
+  const fullRows = rows.filter(r => eoyWeeksFromComment(r.Comment).length === 2 ||
+    (eoyWeeksFromComment(r.Comment).length === 0 && parseFloat(r.Earned || 0) >= ctx.fullAmt - 0.005));   // legacy untagged $20
 
   const paidTotal = rows.reduce((sum, r) => sum + parseFloat(r.Earned || 0), 0);
   return { ...ctx, eligible, weekOnly, fullRows, paidTotal };

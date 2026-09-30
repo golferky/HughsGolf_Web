@@ -20,7 +20,7 @@ function extract(name) {
 const plain = v => JSON.parse(JSON.stringify(v));
 
 // ---- Fake database. Season 2026: week 1 = 9/22 (Front), week 2 = 9/29 (Back).
-let settings, payments, refundRows, scores, ctpRows;
+let settings, payments, refundRows, scores, ctpRows, legacyScores = [];
 function reset() {
   settings = { PostSeasonDt: '9/22/2026', PSWeek1Nine: 'Front', EOYSkins: 20, SkinsPS: 7, ClosestPS: 3 };
   payments = [];
@@ -34,6 +34,7 @@ function query(sql, params = []) {
   if (/WHERE rowid=\?/.test(sql)) return payments.filter(p => p.ID === params[0]);
   if (/Detail='Refund'/.test(sql)) return refundRows;
   if (/FROM Payments/.test(sql) && /'EOY Skins'/.test(sql)) return payments;
+  if (/SELECT DISTINCT Player, CAST\(Date AS INTEGER\) as D/.test(sql)) return legacyScores;
   if (/SELECT DISTINCT Player FROM Scores/.test(sql)) return (scores[`${params[0]}|${params[1]}`] || []).map(Player => ({ Player }));
   if (/'CTP'/.test(sql) && /LIMIT 1/.test(sql)) return ctpRows.some(r => String(r.Date) === String(params[0])) ? [{ 1: 1 }] : [];
   return [];
@@ -77,36 +78,47 @@ const lastAlert = () => alerts.pop() || '';
   assert(/\$11 per week/.test(ctx.eoyPaymentForWeeks(2026, '1').error), 'mismatched settings block payments too');
   settings.ClosestPS = 3;
 
-  // ================= Only explicitly assigned, correctly-sized rows fund a week
+  // ================= Tagged rows must be $10 per named week; legacy untagged $20 / $10 keep working; odd rows are unassigned
   payments = [
     { ID: 1, Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' },
     { ID: 2, Player: 'Ben', Earned: 10, Comment: '(1st Week)' },
     { ID: 3, Player: 'Cy', Earned: 10, Comment: '(2nd Week)' },
-    { ID: 4, Player: 'Old20', Earned: 20, Comment: '' },                 // untagged legacy "both"
-    { ID: 5, Player: 'Old10', Earned: 10, Comment: '' },                 // untagged legacy partial
+    { ID: 4, Player: 'Old20', Earned: 20, Comment: '' },                 // legacy untagged $20 = both weeks
+    { ID: 5, Player: 'Old10', Earned: 10, Comment: '' },                 // legacy untagged $10 = the week they score in
     { ID: 6, Player: 'Odd', Earned: 15, Comment: '(1st Week)' },         // named week but not $10
     { ID: 7, Player: 'Short', Earned: 10, Comment: '(Both Weeks)' },     // both weeks but only $10
+    { ID: 9, Player: 'Odd15', Earned: 15, Comment: '' },                 // untagged and not $10/$20
   ];
-  assert.deepStrictEqual(pool(1), ['Ann', 'Ben']);
-  assert.deepStrictEqual(pool(2), ['Ann', 'Cy']);
-  assert.deepStrictEqual(plain(ctx.getEoyUnassignedPayments(2026)).map(u => u.Player), ['Old20', 'Old10', 'Odd', 'Short']);
-  ['Old20', 'Old10', 'Odd', 'Short'].forEach(n => assert(!pool(1).includes(n) && !pool(2).includes(n), `${n} is unassigned so funds no pool`));
+  legacyScores = [];
+  assert.deepStrictEqual(pool(1), ['Ann', 'Ben', 'Old20'], 'legacy $20 is in week 1 with no assignment');
+  assert.deepStrictEqual(pool(2), ['Ann', 'Cy', 'Old20'], 'legacy $20 is in week 2 too (paid both weeks)');
+  assert.deepStrictEqual(plain(ctx.getEoyUnassignedPayments(2026)).map(u => u.Player), ['Odd', 'Short', 'Odd15'],
+    'only rows that fit no rule are "unassigned"; legacy $20 and $10 are not');
+  ['Odd', 'Short', 'Odd15'].forEach(n => assert(!pool(1).includes(n) && !pool(2).includes(n), `${n} is unassigned so funds no pool`));
+  assert(!pool(1).includes('Old10') && !pool(2).includes('Old10'), 'legacy $10 with no score yet is in no pool');
+  // Legacy $20: week 1 has been played -> a score keeps them in; a no-show is a refund candidate (still in the pool until refunded)
+  assert.deepStrictEqual(plain(ctx.computeEoyGrossByWeek(2026).legacy).map(l => [l.Player, l.weeks]), [['Old20', [1, 2]], ['Old10', []]]);
+  // Legacy $10 goes to the week they have a score for
+  legacyScores = [{ Player: 'Old10', D: 20260929 }];
+  assert(!pool(1).includes('Old10') && pool(2).includes('Old10'), 'legacy $10 scored in week 2 -> week 2 only');
+  legacyScores = [{ Player: 'Old10', D: 20260922 }, { Player: 'Old10', D: 20260929 }];
+  assert(pool(1).includes('Old10') && !pool(2).includes('Old10'), 'one $10 funds only one week (the first scored)');
+  legacyScores = [];
 
-  // ================= Assigning an unassigned row: amount must match, week not already paid
+  // ================= Assigning a row: amount must match, week not already paid
   runs.length = 0;
+  ctx.assignEoyPaymentWeeks(7, 2026, 'both');                    // $10 is not two weeks
+  assert(/does not match/.test(lastAlert())); assert.strictEqual(updates().length, 0);
   ctx.assignEoyPaymentWeeks(4, 2026, '1');                       // $20 is not one week
   assert(/does not match/.test(lastAlert())); assert.strictEqual(updates().length, 0);
-  ctx.assignEoyPaymentWeeks(5, 2026, 'both');                    // $10 is not two weeks
-  assert(/does not match/.test(lastAlert())); assert.strictEqual(updates().length, 0);
-  ctx.assignEoyPaymentWeeks(4, 2026, '');                        // no choice
+  ctx.assignEoyPaymentWeeks(7, 2026, '');                        // no choice
   assert(/Choose Week 1/.test(lastAlert())); assert.strictEqual(updates().length, 0);
-  ctx.assignEoyPaymentWeeks(4, 2026, 'both');
-  assert.deepStrictEqual(plain(updates().map(u => u.params)), [['(Both Weeks)', 4]]);
-  payments.find(p => p.ID === 4).Comment = '(Both Weeks)';       // (what the UPDATE does)
-  assert(pool(1).includes('Old20') && pool(2).includes('Old20'));
-  ctx.assignEoyPaymentWeeks(5, 2026, '2');
-  payments.find(p => p.ID === 5).Comment = '(2nd Week)';
-  assert(!pool(1).includes('Old10') && pool(2).includes('Old10'));
+  ctx.assignEoyPaymentWeeks(4, 2026, 'both');                    // legacy $20 already counts for both weeks
+  assert(/already paid for week 1 and 2/.test(lastAlert())); assert.strictEqual(updates().length, 0);
+  ctx.assignEoyPaymentWeeks(7, 2026, '2');                       // "Short" $10 -> week 2
+  assert.deepStrictEqual(plain(updates().map(u => u.params)), [['(2nd Week)', 7]]);
+  payments.find(p => p.ID === 7).Comment = '(2nd Week)';         // (what the UPDATE does)
+  assert(!pool(1).includes('Short') && pool(2).includes('Short'));
   runs.length = 0;
   payments.push({ ID: 8, Player: 'Ben', Earned: 10, Comment: '' });
   ctx.assignEoyPaymentWeeks(8, 2026, '1');                       // Ben already paid week 1
@@ -191,9 +203,13 @@ const lastAlert = () => alerts.pop() || '';
   assert.deepStrictEqual(plain(inserts().map(r => [r.params[1], r.params[2]])), [[20260922, -10], [20260929, -10]]);
 
   // The Prize Money table no longer offers a typed refund; it offers per-week buttons and assign buttons
-  const table = html.slice(html.indexOf('const _assigned = paid'), html.indexOf('const _assigned = paid') + 3200);
+  const table = html.slice(html.indexOf('const _untagged = paid'), html.indexOf('const _untagged = paid') + 5200);
   assert(/refundEoyPayment\('\$\{_safe\}',\$\{season\},'\$\{w\}'\)/.test(table), 'per-week refund buttons');
   assert(/assignEoyPaymentWeeks\(/.test(table) && /Needs week/.test(table));
+  // Legacy untagged $20 / $10 payments are labelled, never flagged "Needs week"
+  assert(/_legacyBoth/.test(table) && /Legacy · both weeks/.test(table) && /Legacy · week by score/.test(table));
+  assert(/_needsWeek = paid && !_assigned && !_legacyOne/.test(table), 'legacy rows are not "needs week"');
+  assert(/_legacyBoth \? \[1, 2\]/.test(table), 'legacy $20 gets per-week refund buttons');
 
   console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });

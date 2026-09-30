@@ -49,8 +49,8 @@ function makeEl() {
   });
 }
 
-// ---- Scripted fake SQLite: enough rows for a post-season season with LEGACY untagged EOY payments
-//      (which PR #2's stricter "assigned week" rule counts as unassigned -> zero eligible payers).
+// ---- Scripted fake SQLite: enough rows for a post-season season with an EOY payment that
+//      funds no week (untagged $15 -> zero eligible payers), the situation that made calcEoySkins alert.
 const par = { Name: 'Boone Links' };
 for (let i = 1; i <= 18; i++) par['Hole' + i] = [4, 4, 3, 4, 5, 4, 3, 4, 5][(i - 1) % 9];
 for (let i = 1; i <= 18; i++) par['HCP' + i] = i;
@@ -62,7 +62,7 @@ function answer(sql) {
   if (/MAX\(Season\)/.test(sql)) return [{ s: 2026 }];
   if (/FROM Courses/.test(sql)) return [par];
   if (/FROM SeasonSettings/.test(sql)) return [seasonRow];
-  if (/'EOY Skins'/.test(sql) && /Detail='Payment'/.test(sql)) return [{ ID: 1, Player: 'Ann', Earned: 20, Comment: '', DatePaid: '9/1/2026' }];
+  if (/'EOY Skins'/.test(sql) && /Detail='Payment'/.test(sql)) return [{ ID: 1, Player: 'Ann', Earned: 15, Comment: '', DatePaid: '9/1/2026' }];   // untagged $15 fits no rule -> zero eligible payers
   return [];
 }
 class FakeDatabase {
