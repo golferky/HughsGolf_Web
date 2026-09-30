@@ -4266,8 +4266,15 @@ const SUBS_CC_ELIGIBLE = false;
 function isSeasonRosterPlayer(player, season, league = "Hugh's") {
   return query(`SELECT 1 FROM Teams WHERE League=? AND Year=? AND Player=? LIMIT 1`, [league, season, player]).length > 0;
 }
+// League-decided special cases: a named SUB who IS eligible for the League Championship in a given season. He stays a
+// sub for everything else (not on the Teams roster, dues list or regular slots); only CC eligibility changes.
+const CC_SUB_EXCEPTIONS = { 2026: ['Howard Gorman'] };
+function isCcSubException(player, season) {
+  const names = CC_SUB_EXCEPTIONS[parseInt(season)];
+  return !!names && names.includes(String(player || '').trim());
+}
 function ccRosterEligible(player, season) {
-  return SUBS_CC_ELIGIBLE || isSeasonRosterPlayer(player, season);
+  return SUBS_CC_ELIGIBLE || isSeasonRosterPlayer(player, season) || isCcSubException(player, season);
 }
 
 function getCurrentSeason(league = "Hugh's") {
