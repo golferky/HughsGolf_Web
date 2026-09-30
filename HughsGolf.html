@@ -8149,23 +8149,24 @@ function loadSkins() {
   const skinWinCount = query(`SELECT COUNT(DISTINCT Detail || ':' || Player) as c FROM Payments p WHERE CAST(p.Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='Skin' AND Detail NOT IN ('Payment','') AND Player != 'Kitty'
     AND EXISTS (SELECT 1 FROM Scores s WHERE s.League=p.League AND CAST(s.Date AS INTEGER)=CAST(p.Date AS INTEGER) AND s.Player=p.Player AND s.Gross IS NOT NULL AND s.Gross != 0)`, [date])[0]?.c || 0;
 
-  // Post-season nights: buy-ins are 'EOY Skins' payments (not per-night 'Skin' payments) and
-  // the skins span both post-season weeks, so build the pots/winners from both dates.
+  // Post-season nights: buy-ins are 'EOY Skins' payments (not per-night 'Skin' payments). Each
+  // post-season week is independent: $10 per player per week entered ($7 skins + $3 CTP), so the
+  // players, pots and winners are for the selected week only.
   let psInfo = null;
   const psSeason = parseInt(String(date).substring(0, 4));
   const psLp = getSeasonSettings(psSeason);
   if (psLp?.PostSeasonDt) {
-    const psd = parsePostSeasonDates(psLp.PostSeasonDt);
-    if (psd && (parseInt(date) === psd.week1 || parseInt(date) === psd.week2)) {
-      const psPlayers = [...new Set([...getEoySkinPlayersForWeek(psSeason, 1), ...getEoySkinPlayersForWeek(psSeason, 2)])].sort();
+    const psWeek = getPostSeasonWeekForDate(date, psLp.PostSeasonDt);
+    if (psWeek) {
+      const psPlayers = [...getEoySkinPlayersForWeek(psSeason, psWeek)].sort();
       const skinAmt = parseFloat(psLp.SkinsPS || 7), ctpAmt = parseFloat(psLp.ClosestPS || 3);
-      const winRows = query(`SELECT Player, Detail FROM Payments WHERE Date IN (${psd.week1},${psd.week2}) AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`);
+      const winRows = query(`SELECT Player, Detail FROM Payments WHERE CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`, [date]);
       const pot = psPlayers.length * skinAmt;
-      psInfo = { dates: `${psd.week1},${psd.week2}`, players: psPlayers, skinAmt, ctpAmt, pot,
+      psInfo = { week: psWeek, players: psPlayers, skinAmt, ctpAmt, pot,
                  ctpPot: psPlayers.length * ctpAmt, perSkin: winRows.length ? pot / winRows.length : 0 };
     }
   }
-  const dateFilter = psInfo ? `Date IN (${psInfo.dates})` : `CAST(p.Date AS INTEGER)=CAST(? AS INTEGER)`;
+  const dateFilter = `CAST(p.Date AS INTEGER)=CAST(? AS INTEGER)`;
 
   document.getElementById('skinStatBoxes').innerHTML = psInfo ? `
     <div class="stat-box gold"><div class="val">${psInfo.players.length}</div><div class="lbl">Players In</div></div>
@@ -8190,7 +8191,7 @@ function loadSkins() {
           AND s.Gross IS NOT NULL AND s.Gross != 0
       )
     ORDER BY CAST(REPLACE(Detail,'#','') AS INTEGER)
-  `, psInfo ? [] : [date]);
+  `, [date]);
   if (psInfo) skinWins.forEach(w => { w.Earned = psInfo.perSkin; });
 
   const skinCarry = query(`SELECT Earned FROM Payments WHERE CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='Skin' AND Player='Kitty'`, [date])[0];
@@ -8801,7 +8802,8 @@ function getPostSeasonCtpInfo(date) {
   // Sandbox: Week 1 may be the Back 9 (SeasonSettings.PSWeek1Nine); Week 2 is the other nine.
   const w1 = getPostSeasonWeek1Nine(ctx.season);
   const fb = ctx.week === 1 ? w1 : (w1 === 'Back' ? 'Front' : 'Back');
-  return { week: ctx.week, fb, payers };
+  const ctpAmt = parseFloat(getSeasonSettings(ctx.season)?.ClosestPS || 3);
+  return { week: ctx.week, fb, payers, ctpAmt };
 }
 
 function loadCtps() {
@@ -8835,12 +8837,13 @@ function loadCtps() {
   }
 
   // Get CTP payers for this date
-  // Post-season: no new CTP money is collected; winners come from that week's EOY Skins players
-  // and the pot is just the regular-season carryover kitty.
+  // Post-season: each week is independent. Every EOY Skins payer for THIS week put $3 into this
+  // week's CTP pot (their $10 = $7 skins + $3 CTP); winners come from that same list. Normal
+  // carryover per hole is added on top below.
   const payers = psInfo
     ? psInfo.payers
     : query(`SELECT Player FROM Payments WHERE Date=${date} AND Desc='CTP' AND Detail='Payment' AND League="${league}" ORDER BY Player`).map(r => r.Player);
-  const ctpPot = psInfo ? 0 : payers.length; // $1 per player
+  const ctpPot = psInfo ? payers.length * psInfo.ctpAmt : payers.length; // post season $3/player, otherwise $1
 
   // Get current winners
   const winners = {};
@@ -8874,7 +8877,7 @@ function loadCtps() {
 
   let html = `
   <div style="margin-bottom:16px;font-size:13px;color:var(--gray)">
-    ${psInfo ? `Post Season week ${psInfo.week} · ${payers.length} eligible player${payers.length===1?'':'s'} · carryover kitty only` : `${payers.length} players × $1 = <strong>$${ctpPot}</strong> total pot`} · ${fb} 9 · ${holes.length} CTP hole${holes.length>1?'s':''}${remainder > 0 ? ` · <span style="color:#b8860b">$${remainder.toFixed(2)} remainder → kitty</span>` : ''}
+    ${psInfo ? `Post Season week ${psInfo.week} · ${payers.length} player${payers.length===1?'':'s'} × $${psInfo.ctpAmt} = <strong>$${ctpPot}</strong> total pot (plus any carryover)` : `${payers.length} players × $1 = <strong>$${ctpPot}</strong> total pot`} · ${fb} 9 · ${holes.length} CTP hole${holes.length>1?'s':''}${remainder > 0 ? ` · <span style="color:#b8860b">$${remainder.toFixed(2)} remainder → kitty</span>` : ''}
   </div>
   <div class="card">
     <div class="card-header">CTP Winners — ${fmtDate(date)}</div>
