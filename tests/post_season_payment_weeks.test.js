@@ -58,7 +58,7 @@ const ctx = vm.createContext({
  'eoyWeeksFromComment', 'eoyCommentForWeeks', 'eoyPaymentForWeeks', 'eoyPaymentConflict', 'computeEoyGrossByWeek',
  'getEoyUnassignedPayments', 'getEoySkinGrossPlayersForWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
  'getPostSeasonWeekNoShows', 'getEoyRefundedWeeks', 'psWeekHasCtpResults', 'planPostSeasonRefunds', 'issuePostSeasonRefunds',
- 'refundEoyPayment', 'quickPayEoySkins', 'assignEoyPaymentWeeks', 'editEoyPayment', 'readEoyPaymentChoice', 'confirmPaymentForPlayer']
+ 'refundEoyPayment', 'getEoyRefundButtonWeeks', 'quickPayEoySkins', 'assignEoyPaymentWeeks', 'editEoyPayment', 'readEoyPaymentChoice', 'confirmPaymentForPlayer']
   .forEach(n => vm.runInContext((n === 'issuePostSeasonRefunds' ? 'async ' : '') + extract(n), ctx));
 
 const pool = w => Array.from(ctx.getEoySkinPlayersForWeek(2026, w)).sort();
@@ -210,6 +210,28 @@ const lastAlert = () => alerts.pop() || '';
   assert(/_legacyBoth/.test(table) && /Legacy · both weeks/.test(table) && /Legacy · week by score/.test(table));
   assert(/_needsWeek = paid && !_assigned && !_legacyOne/.test(table), 'legacy rows are not "needs week"');
   assert(/_legacyBoth \? \[1, 2\]/.test(table), 'legacy $20 gets per-week refund buttons');
+
+  // ================= Prize Money "↩ Wk N" buttons: never for a week the player has a score in
+  reset();
+  payments = [{ ID: 1, Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' }, { ID: 2, Player: 'Old', Earned: 20, Comment: '' },
+              { ID: 3, Player: 'Ben', Earned: 20, Comment: '(Both Weeks)' }];
+  scores = { '20260922|Front': ['Ann', 'Old'] };                // Ann + Old played Week 1; nobody has played Week 2; Ben no-show
+  const scoredByWeek = () => ({ 1: ctx.getPostSeasonWeekNoShows(2026, 1).scored, 2: ctx.getPostSeasonWeekNoShows(2026, 2).scored });
+  const btns = p => Array.from(ctx.getEoyRefundButtonWeeks([1, 2], ctx.getEoyRefundedWeeks(2026, p), scoredByWeek(), p));
+  assert.deepStrictEqual(btns('Ann'), [2], 'Week 1 score -> no Week 1 button; Week 2 (unplayed) button stays');
+  assert.deepStrictEqual(btns('Old'), [2], 'same for a legacy untagged $20 payer');
+  assert.deepStrictEqual(btns('Ben'), [1, 2], 'no Week 1 score (no-show) -> both buttons');
+  scores['20260929|Back'] = ['Ann'];                             // Week 2 played too, Ann scored in both
+  assert.deepStrictEqual(btns('Ann'), [], 'scores in both weeks -> no refund buttons at all');
+  assert.deepStrictEqual(btns('Old'), [2], 'Old has no Week 2 score -> Week 2 (no-show) button available');
+  scores = { '20260929|Back': ['Ann'] };                         // Week 1 unplayed/cancelled, Ann only has a Week 2 score
+  assert.deepStrictEqual(btns('Ann'), [1], 'Week 2 score -> no Week 2 button; Week 1 stays');
+  refundRows.push({ Player: 'Ben', Date: 20260922, Earned: -10, Comment: 'Missed post-season week 1' });
+  assert.deepStrictEqual(btns('Ben'), [2], 'an already-refunded week has no button either');
+  // The table really uses it (button hidden, not just refused by the refund code)
+  const tbl = html.slice(html.indexOf('const _untagged = paid'), html.indexOf('const _untagged = paid') + 5200);
+  assert(/getEoyRefundButtonWeeks\(_wks, _refunded, eoyScoredByWeek, r\.Player\)/.test(tbl));
+  assert(/eoyScoredByWeek = \{ 1: getPostSeasonWeekNoShows\(season, 1\)\.scored, 2: getPostSeasonWeekNoShows\(season, 2\)\.scored \}/.test(html));
 
   console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });

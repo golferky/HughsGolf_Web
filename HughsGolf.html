@@ -4492,6 +4492,7 @@ function loadPrizeMoney(options = {}) {
   const eoyPaidRows = query(`SELECT rowid as ID, Player, Earned, COALESCE(Comment,'') as Comment, DatePaid FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd} ORDER BY Player`);
   const eoyPaidPlayers = new Set(eoyPaidRows.map(r => r.Player));
   // Refund lookup: existing EOY refund rows per player
+  const eoyScoredByWeek = { 1: getPostSeasonWeekNoShows(season, 1).scored, 2: getPostSeasonWeekNoShows(season, 2).scored };
   const eoyRefundMap = {};
   query(`SELECT Player, COALESCE(SUM(CAST(Earned AS REAL)),0) as total FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${seasonEnd} GROUP BY Player`)
     .forEach(r => { eoyRefundMap[r.Player] = parseFloat(r.total || 0); }); // Earned is negative, so total will be negative
@@ -4758,7 +4759,7 @@ function loadPrizeMoney(options = {}) {
                 : _legacyOne ? `<span style="color:#666;font-size:11px;margin-right:4px" title="Existing untagged single-week payment: counts for the week the player has a score in.">Legacy · week by score</span>` : '';
               const noteText = weekBadge + legacyBadge + (r.Comment ? r.Comment : (r.DatePaid ? r.DatePaid : ''));
               const assignBtns = _needsWeek ? ['1','2','both'].map(c => _btn('#2e7d32', c === 'both' ? 'Both' : 'Wk ' + c, `assignEoyPaymentWeeks(${r.ID},${season},'${c}')`, `Assign this $${parseFloat(r.Earned).toFixed(2)} payment to ${c === 'both' ? 'both weeks ($20)' : 'week ' + c + ' ($10)'}`)).join('') : '';
-              const refundBtns = _assigned ? _wks.filter(w => !_refunded.has(w)).map(w => _btn('#e65100', `↩ Wk ${w}`, `refundEoyPayment('${_safe}',${season},'${w}')`, `Refund week ${w}: $${_entryTotal.toFixed(2)} ($7 Skins + $3 CTP). Only for a player with no week ${w} score.`)).join('') : '';
+              const refundBtns = _assigned ? getEoyRefundButtonWeeks(_wks, _refunded, eoyScoredByWeek, r.Player).map(w => _btn('#e65100', `↩ Wk ${w}`, `refundEoyPayment('${_safe}',${season},'${w}')`, `Refund week ${w}: $${_entryTotal.toFixed(2)} ($7 Skins + $3 CTP). Only for a player with no week ${w} score.`)).join('') : '';
               const actBtns = isOfficerOrDev && paid ? `
                 ${assignBtns}
                 ${_btn('#1565c0', '✏ Week', `editEoyPayment(${r.ID},${season})`, 'Change the week assignment')}
@@ -19296,6 +19297,13 @@ function deleteEoyPayment(rowId, season, playerName) {
   if (!confirm(`Delete EOY Skins payment for ${playerName}?\nThis will remove their payment record for ${season}.`)) return;
   serverRun(`DELETE FROM Payments WHERE rowid=?`, [rowId]);
   SERVER_RUN_QUEUE.then(() => { saveDBToServer(); loadPrizeMoney(); });
+}
+
+// Weeks for which the Prize Money table may show a "↩ Wk N" refund button: weeks the payment covers that are not
+// already refunded and where the player has NO score for that week's nine (unplayed / cancelled / no-show week).
+// A player with a Week 1 score gets no Week 1 button (and likewise Week 2). scoredByWeek = { 1: Set, 2: Set }.
+function getEoyRefundButtonWeeks(paidWeeks, refundedWeeks, scoredByWeek, player) {
+  return paidWeeks.filter(w => !refundedWeeks.has(w) && !(scoredByWeek[w] && scoredByWeek[w].has(player)));
 }
 
 // Refund a player's EOY Skins entry for one or both weeks (Prize Money tab). The old typed-amount refund is gone: a
