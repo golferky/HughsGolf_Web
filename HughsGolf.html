@@ -8752,7 +8752,8 @@ function populateCtpsDateDropdown(loadAfter = true) {
     UNION
     SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League="Hugh's"), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     ORDER BY sDate DESC`);
-  sel.innerHTML = dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
+  const dateKeys = getCtpDateKeys(dates.map(r => r.sDate || r.Date), season);
+  sel.innerHTML = dateKeys.map(d => `<option value="${d}">${fmtDate(d)}</option>`).join('');
   if (loadAfter) {
     const skinsDate = toDateKey(document.getElementById('skinsDate')?.value);
     if (skinsDate && String(skinsDate).substring(0, 4) === String(season) && Array.from(sel.options).some(o => String(o.value) === String(skinsDate))) {
@@ -8781,6 +8782,25 @@ function getScheduledFrontBack(date, league = "Hugh's") {
   return ((thisMonth - startMonth) % 2 === 0) ? start9 : (start9 === 'Front' ? 'Back' : 'Front');
 }
 
+// Post-season nights never get a CTP 'Payment' row (post-season buy-in is EOY Skins), so they
+// have to be added to the CTP date list explicitly or CTPs can't be assigned for them.
+function getCtpDateKeys(baseDates, season) {
+  const keys = new Set(baseDates.filter(Boolean).map(d => String(d)));
+  const lp = query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND Season=${season} AND PostSeasonDt IS NOT NULL`)[0];
+  const ps = parsePostSeasonDates(lp?.PostSeasonDt);
+  if (ps) { keys.add(String(ps.week1)); keys.add(String(ps.week2)); }
+  return [...keys].sort().reverse();
+}
+
+// Post-season CTP context for a date: week 1 = front 9, week 2 = back 9; the players who can win
+// are those with EOY Skins paid for that week. Returns null for regular-season dates.
+function getPostSeasonCtpInfo(date) {
+  const ctx = getPostSeasonContextForDate(date);
+  if (!ctx) return null;
+  const payers = [...getEoySkinPlayersForWeek(ctx.season, ctx.week)].sort();
+  return { week: ctx.week, fb: ctx.week === 1 ? 'Front' : 'Back', payers };
+}
+
 function loadCtps() {
   if (!db) return;
   const date    = toDateKey(document.getElementById('ctpsDate').value);
@@ -8788,7 +8808,8 @@ function loadCtps() {
   const league  = "Hugh's";
   const season  = document.getElementById('ctpsSeason').value;
 
-  const fb = getScheduledFrontBack(date, league);
+  const psInfo = getPostSeasonCtpInfo(date);
+  const fb = psInfo ? psInfo.fb : getScheduledFrontBack(date, league);
   const repairedCarryovers = reconcilePreviousCtpCarryovers(date, season, league);
   if (repairedCarryovers) saveDBToServer();
 
@@ -8811,8 +8832,12 @@ function loadCtps() {
   }
 
   // Get CTP payers for this date
-  const payers = query(`SELECT Player FROM Payments WHERE Date=${date} AND Desc='CTP' AND Detail='Payment' AND League="${league}" ORDER BY Player`).map(r => r.Player);
-  const ctpPot = payers.length; // $1 per player
+  // Post-season: no new CTP money is collected; winners come from that week's EOY Skins players
+  // and the pot is just the regular-season carryover kitty.
+  const payers = psInfo
+    ? psInfo.payers
+    : query(`SELECT Player FROM Payments WHERE Date=${date} AND Desc='CTP' AND Detail='Payment' AND League="${league}" ORDER BY Player`).map(r => r.Player);
+  const ctpPot = psInfo ? 0 : payers.length; // $1 per player
 
   // Get current winners
   const winners = {};
@@ -8846,7 +8871,7 @@ function loadCtps() {
 
   let html = `
   <div style="margin-bottom:16px;font-size:13px;color:var(--gray)">
-    ${payers.length} players × $1 = <strong>$${ctpPot}</strong> total pot · ${fb} 9 · ${holes.length} CTP hole${holes.length>1?'s':''}${remainder > 0 ? ` · <span style="color:#b8860b">$${remainder.toFixed(2)} remainder → kitty</span>` : ''}
+    ${psInfo ? `Post Season week ${psInfo.week} · ${payers.length} eligible player${payers.length===1?'':'s'} · carryover kitty only` : `${payers.length} players × $1 = <strong>$${ctpPot}</strong> total pot`} · ${fb} 9 · ${holes.length} CTP hole${holes.length>1?'s':''}${remainder > 0 ? ` · <span style="color:#b8860b">$${remainder.toFixed(2)} remainder → kitty</span>` : ''}
   </div>
   <div class="card">
     <div class="card-header">CTP Winners — ${fmtDate(date)}</div>
