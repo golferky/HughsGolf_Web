@@ -87,7 +87,7 @@ const ctx = vm.createContext({
 ['psMdyToInt', 'psAddDaysMdy', 'parsePostSeasonDates', 'getPostSeasonWeek1Nine', 'getPostSeasonWeekForDate',
  'getPostSeasonWeekEntry', 'eoyWeeksFromComment', 'computeEoyGrossByWeek', 'getEoyUnassignedPayments', 'getEoySkinGrossPlayersForWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
  'getPostSeasonContextForDate', 'getPostSeasonCtpInfo', 'getPostSeasonWeekNoShows', 'getEoyRefundedWeeks', 'psWeekHasCtpResults',
- 'planPostSeasonRefunds', 'issuePostSeasonRefunds', 'psRefundPanelHtml', 'psWeekSkinPayout', 'psWeekScorerRows', 'getPostSeasonWeekPotPlayers', 'psSkinFingerprint', 'psWeekSkinState', 'psWeekPanelHtml', 'psWeekIsLegacyLocked', 'psNetHoles', 'psFindWinners', 'psComputeWeekWinners', 'calcEoySkins', 'loadSkins', 'loadCtps']
+ 'planPostSeasonRefunds', 'issuePostSeasonRefunds', 'psRefundPanelHtml', 'psWeekSkinPayout', 'psWeekScorerRows', 'getPostSeasonWeekPotPlayers', 'psSkinFingerprint', 'psWeekSkinState', 'psWeekPanelHtml', 'psNetHoles', 'psFindWinners', 'psComputeWeekWinners', 'calcEoySkins', 'loadSkins', 'loadCtps']
   .forEach(n => vm.runInContext((n === 'issuePostSeasonRefunds' ? 'async ' : '') + extract(n), ctx));
 
 const pool = w => Array.from(ctx.getEoySkinPlayersForWeek(2026, w)).sort();
@@ -247,23 +247,18 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   await refund([1, 2], ['Fay']);
   assert.strictEqual(refundRows.length, 2);
 
-  // ================= Stored Skins payouts are restated from the reduced pool after a refund
+  // ================= A refund NEVER changes stored Skin winner rows (paid or unpaid): the week is only marked for an officer
   reset();
   scores['20261006|Front'] = ['Ann', 'Dee'];
-  scoreRows = {
-    20260929: [{ Player: 'Ann', ...nines([3, 4, 4, 4, 4, 4, 4, 4, 4]) }, { Player: 'Fay', ...nines([4, 4, 4, 4, 4, 4, 4, 4, 4]) }],
-    20261006: [{ Player: 'Ann', ...nines([3, 4, 4, 4, 4, 4, 4, 4, 4]) }, { Player: 'Dee', ...nines([4, 4, 4, 4, 4, 4, 4, 4, 4]) }],
-  };
-  vm.runInContext('calcEoySkins(2026, true)', ctx);
-  // week 1: Ann + Fay scored (Ben no-show) -> $14 pot, 1 skin = $14; week 2: Ann + Dee -> $14
-  assert.deepStrictEqual(live().map(r => [r.Player, r.Date, r.Earned]), [['Ann', 20260929, 14], ['Ann', 20261006, 14]]);
-  await refund([1], ['Ben']);                     // Ben (no score) leaves the week 1 pool; restated from retained money
-  assert.deepStrictEqual(live().map(r => [r.Player, r.Date, r.Earned]), [['Ann', 20260929, 14], ['Ann', 20261006, 14]]);
-  // Fay was in week 1; refund her (she is a week 2 no-show only) -> week 2 stays; a NO-SHOW who somehow has stale winner rows is removed
-  skinRows.push({ Player: 'Cy', Date: 20261006, Detail: '#12', Earned: 99 });
+  skinRows = [{ Player: 'Ann', Date: 20260929, Detail: '#10', Earned: 14 }, { Player: 'Fay', Date: 20260929, Detail: '#11', Earned: 14 },
+              { Player: 'Cy', Date: 20261006, Detail: '#12', Earned: 99 }];           // Cy: a stale row for a player refunded below
+  const before = JSON.stringify(skinRows);
+  const nRuns = runs.length;
+  await refund([1], ['Ben']);
   await refund([2], ['Cy']);
-  assert(!live().some(r => r.Player === 'Cy'), 'refunded player cannot hold a week 2 skin');
-  assert(!live().some(r => r.Earned === 99));
+  assert.strictEqual(JSON.stringify(skinRows), before, 'refunds must not create, delete or update any Skin winner row');
+  assert(!runs.slice(nRuns).some(r => /'Skin'|Skin/.test(r.sql) && !/'EOY Skins'/.test(r.sql)), 'no Skin SQL issued by a refund');
+  assert.strictEqual(refundRows.length, 2, 'the refunds themselves were written');
 
   // ================= Money invariant: no pool or payout exceeds the money retained after refunds
   reset();
@@ -283,14 +278,10 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
     const weeksIn = [1, 2].filter(w => pool(w).includes(pl)).length;
     assert(weeksIn * 10 <= paid - ref + 1e-9, `${pl}: in ${weeksIn} weeks but retained only $${paid - ref}`);
   });
-  // Skins payouts never exceed that week's retained Skins money
-  scoreRows = { 20260929: [{ Player: 'Ann', ...nines([3, 4, 4, 4, 4, 4, 4, 4, 4]) }, { Player: 'Fay', ...nines([4, 4, 4, 4, 4, 4, 4, 4, 4]) }],
-                20261006: [{ Player: 'Ann', ...nines([3, 4, 4, 4, 4, 4, 4, 4, 4]) }, { Player: 'Dee', ...nines([4, 4, 4, 4, 4, 4, 4, 4, 4]) }] };
-  skinRows = [];
-  vm.runInContext('calcEoySkins(2026, true)', ctx);
-  [20260929, 20261006].forEach((d, i) => {
-    const payout = live().filter(r => r.Date === d).reduce((a, r) => a + r.Earned, 0);
-    assert(payout <= pool(i + 1).length * 7 + 0.01, `week ${i + 1} payout $${payout} exceeds retained skins money`);
+  // Whole-dollar Skins payouts (3 skins) never exceed that week's retained Skins money
+  [1, 2].forEach(w => {
+    const pay = ctx.psWeekSkinPayout(pool(w).length, 3, 7);
+    assert(pay.paid <= pool(w).length * 7 + 0.01, `week ${w} payout $${pay.paid} exceeds retained skins money`);
   });
 
   console.log('ok');

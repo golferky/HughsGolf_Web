@@ -51,7 +51,7 @@ const ctx = vm.createContext({
   courseData: { all18: {} },
   serverRun: (sql, params) => runs.push({ sql, params }),
   SERVER_RUN_QUEUE: Promise.resolve(), saveDBToServer: async () => {}, renderPostSeasonBreakdown() {}, loadPrizeMoney() {},
-  closePaymentModal() {}, loadPayments() {}, dismissEoyPaymentPrompt() {}, setTimeout() {},
+  closePaymentModal() {}, loadPayments() {}, dismissEoyPaymentPrompt() {}, setTimeout() {}, calcEoySkins() {},
   getSeasonSettings: () => settings,
 });
 ['psMdyToInt', 'psAddDaysMdy', 'parsePostSeasonDates', 'getPostSeasonWeek1Nine', 'getPostSeasonWeekEntry',

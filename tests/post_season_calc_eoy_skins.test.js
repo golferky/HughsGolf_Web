@@ -1,6 +1,7 @@
-// Regression test: calcEoySkins (the AUTOMATIC path: runs when scores are saved) calculates and stores post-season Skins
-// payouts PER WEEK in WHOLE DOLLARS from that week's paid-and-scored players. It never writes the Skins-kitty remainder
-// and never touches a week whose stored payouts still have cents (e.g. $44.33) - only an officer's Restate/Calculate does.
+// Regression test: calcEoySkins (the AUTOMATIC / silent path that runs after scores are saved) is READ-ONLY.
+// It may only compute a preview and mark a week "Needs Calculate" / "Restate Needed"; it never creates, deletes or
+// updates a Payments row and never saves the database. Only an officer's confirmed psSkinCommit writes winner rows
+// and the remainder. The whole-dollar helper (psWeekSkinPayout) is covered here too.
 // Week 1 = 9/29/2026 (Back 9), week 2 = 10/6/2026 (Front 9).
 // Run: node tests/post_season_calc_eoy_skins.test.js
 const fs = require('fs');
@@ -48,9 +49,11 @@ const scoresByDate = {
 let existingWinners = [];
 let legacyDates = new Set();         // dates whose stored payouts still have cents
 const runs = [];
+const alerts = [], confirms = [];
 function query(sql, params = []) {
   if (/Detail='Refund'/.test(sql)) return [];
-  if (/ABS\(CAST\(Earned/.test(sql)) return legacyDates.has(String(params[0])) ? [{ 1: 1 }] : [];
+  if (/SELECT Player, Detail FROM Payments WHERE Date IN/.test(sql)) return existingWinners.map(r => ({ Player: r.Player, Detail: r.Detail }));
+  if (/rowid AS ID/.test(sql)) return existingWinners.filter(r => String(r.Date) === String(params[0])).map(r => ({ ID: r.RowID, Player: r.Player, Detail: r.Detail, Earned: r.Earned ?? 4, DatePaid: r.DatePaid || '' }));
   if (/FROM Payments/.test(sql) && /'EOY Skins'/.test(sql)) return eoyRows;
   if (/SELECT PSWeek2Dt/.test(sql)) return [];
   if (/SELECT rowid as RowID/.test(sql)) return existingWinners;
@@ -62,15 +65,16 @@ const seq = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ctx = vm.createContext({
   window: {}, document: { getElementById: () => ({ value: 'Front' }) },
   query, parseInt, parseFloat, String, Set, Number, Math, Object, Array,
+  PS_SKIN_REM_DETAIL: 'PS Skin Remainder', PS_EOY_REM_DETAIL: 'Skins Kitty Remainder',
   serverRun: (sql, params) => runs.push({ sql, params }),
-  saveDBToServer() {}, alert() {}, confirm: () => true, applyCellClasses() {}, isPostSeasonEntryMode: () => true,
+  saveDBToServer: async () => { runs.push({ sql: 'SAVE' }); }, alert: m => alerts.push(m), confirm: () => { confirms.push(1); return true; }, applyCellClasses() {}, isPostSeasonEntryMode: () => true,
   ccRosterEligible: () => true, recalcPostSeasonEoyRefunds: () => ({ noShows: [] }),
   getSeasonSettings: () => ({ PostSeasonDt: '9/29/2026', PSWeek1Nine: 'Back', SkinsPS: 7, ClosestPS: 3, EOYSkins: 20 }),
   courseData: { front: { hcps: seq, pars: par4 }, back: { hcps: seq, pars: par4 }, all18: {} },
 });
 ['psMdyToInt', 'psAddDaysMdy', 'parsePostSeasonDates', 'getPostSeasonWeekForDate', 'getPostSeasonWeek1Nine',
  'getPostSeasonWeekEntry', 'eoyWeeksFromComment', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
- 'psWeekSkinPayout', 'psWeekScorerRows', 'psWeekIsLegacyLocked', 'psNetHoles', 'psFindWinners', 'psComputeWeekWinners', 'calcEoySkins']
+ 'psWeekSkinPayout', 'psWeekScorerRows', 'getPostSeasonWeekPotPlayers', 'psSkinFingerprint', 'psWeekSkinState', 'psNetHoles', 'psFindWinners', 'psComputeWeekWinners', 'calcEoySkins']
   .forEach(n => vm.runInContext(extract(n), ctx));
 
 const inserts = () => runs.filter(r => /^INSERT INTO Payments/.test(r.sql)).map(r => r.params);
@@ -88,52 +92,39 @@ for (let players = 0; players <= 40; players++) for (let skins = 0; skins <= 18;
   assert(Number.isInteger(p.each), 'each payout must be whole dollars');
 }
 
-// ---- Fresh automatic calculation: per-week whole-dollar payouts, Eve (unpaid) and Fay (no score) out of the pot
+// ---- calcEoySkins is READ-ONLY, silent or not: no INSERT / UPDATE / DELETE, no save, no confirm dialog
+const assertNoWrites = label => { assert.deepStrictEqual(runs, [], `${label}: calcEoySkins must not write or save anything, got ${JSON.stringify(runs)}`); assert.strictEqual(confirms.length, 0, `${label}: no confirm dialog`); };
 vm.runInContext(`calcEoySkins(2026, true)`, ctx);
-const ins = inserts();
-const w1 = ins.filter(p => p[1] === 20260929), w2 = ins.filter(p => p[1] === 20261006);
-// Week 1 (Back 9): Ann + Ben scored = $14 over 3 skins = $4 each (whole dollars; $2 is the remainder, NOT written here)
-assert.deepStrictEqual(w1.map(p => [p[0], p[2], p[3]]), [['Ann', '#10', 4], ['Ann', '#11', 4], ['Ben', '#12', 4]]);
-// Week 2 (Front 9): Ann + Cy + Dee = $21 over 1 skin = $21 (a combined pot would be $35 / 4 skins)
-assert.deepStrictEqual(w2.map(p => [p[0], p[2], p[3]]), [['Dee', '#1', 21]]);
-assert.strictEqual(ins.length, 4);
-assert(!w1.some(p => ['Cy', 'Dee'].includes(p[0])), 'week 2 players never win week 1 skins');
-assert(!w2.some(p => ['Ann', 'Ben'].includes(p[0])), 'week 1 winners never appear in week 2');
-assert(!ins.some(p => !Number.isInteger(p[3])), 'no cents payouts');
-const writesRemainder = () => runs.some(r => /Remainder/.test(r.sql) || (r.params || []).some(v => /Remainder|^Kitty$/.test(String(v))));
-assert(!writesRemainder(), 'the automatic path must never write a Skins-kitty remainder');
+assertNoWrites('silent, nothing stored');
+const needs = () => JSON.parse(JSON.stringify(ctx.window.psSkinNeeds));
+assert.deepStrictEqual(needs(), { 1: 'Needs Calculate', 2: 'Needs Calculate' }, 'scored weeks with no stored result are marked Needs Calculate');
 
-// ---- Existing whole-dollar results: restated per week; a stale row from the wrong week is removed
-runs.length = 0;
+// stored winners that are not whole dollars -> Restate Needed, still no writes (incl. the old "existing results" branch)
 existingWinners = [
-  { RowID: 1, Date: 20260929, Player: 'Ann', Detail: '#10' },
-  { RowID: 2, Date: 20260929, Player: 'Ann', Detail: '#11' },
-  { RowID: 3, Date: 20260929, Player: 'Ben', Detail: '#12' },
-  { RowID: 4, Date: 20261006, Player: 'Dee', Detail: '#1' },
-  { RowID: 5, Date: 20261006, Player: 'Ben', Detail: '#3' },   // Ben did not enter week 2
+  { RowID: 1, Date: 20260929, Player: 'Ann', Detail: '#10', Earned: 4.67 },
+  { RowID: 2, Date: 20260929, Player: 'Ann', Detail: '#11', Earned: 4.67 },
+  { RowID: 3, Date: 20260929, Player: 'Ben', Detail: '#12', Earned: 4.67 },
+  { RowID: 4, Date: 20261006, Player: 'Dee', Detail: '#1', Earned: 21 },
+  { RowID: 5, Date: 20261006, Player: 'Ben', Detail: '#3', Earned: 21 },          // Ben did not enter week 2: still NOT deleted automatically
 ];
 vm.runInContext(`calcEoySkins(2026, true)`, ctx);
-const deletes = runs.filter(r => /^DELETE/.test(r.sql)).map(r => r.params[0]);
-assert.deepStrictEqual(deletes, [5], 'only the ineligible week-2 row is removed');
-const updates = runs.filter(r => /^UPDATE Payments SET Earned/.test(r.sql));
-const upd = d => updates.find(u => u.sql.includes(`Date=${d}`)).params[0];
-assert.strictEqual(upd(20260929), 4, 'week 1 restated from the week 1 pot, whole dollars');
-assert.strictEqual(upd(20261006), 21, 'week 2 restated from the week 2 pot (1 skin left)');
-assert.strictEqual(inserts().length, 0);
-assert(!writesRemainder(), 'no remainder written');
+assertNoWrites('silent, stored cents + ineligible row');
+assert.strictEqual(needs()[1], 'Restate Needed', 'cents ($4.67) -> Restate Needed');
+assert.deepStrictEqual(Object.keys(ctx.window.skinWinnerCells).sort(), ['Ann-10', 'Ann-11', 'Ben-12', 'Ben-3', 'Dee-1'], 'grid shading comes from the stored rows');
 
-// ---- A week still stored with cents ($44.33) is LEFT ALONE by the automatic path; the other week still calculates
-runs.length = 0;
-existingWinners = [];
-legacyDates = new Set(['20260929']);
+// paid winner rows are never touched either
+existingWinners[0].DatePaid = '9/30/2026';
 vm.runInContext(`calcEoySkins(2026, true)`, ctx);
-assert(!runs.some(r => (r.params || []).includes(20260929) || /20260929/.test(r.sql)), 'legacy week 1 (cents) must not be deleted, updated or rewritten automatically');
-assert.deepStrictEqual(inserts().map(p => [p[0], p[1], p[2], p[3]]), [['Dee', 20261006, '#1', 21]], 'week 2 still calculates');
+assertNoWrites('silent, a paid row exists');
 
-// ---- Both weeks legacy: nothing at all is written
-runs.length = 0;
-legacyDates = new Set(['20260929', '20261006']);
-vm.runInContext(`calcEoySkins(2026, true)`, ctx);
-assert.strictEqual(runs.length, 0, 'nothing written when every week is still in cents');
+// non-silent (manual) call is also only a preview: no confirm, no writes, tells the officer where to act
+alerts.length = 0;
+vm.runInContext(`calcEoySkins(2026, false)`, ctx);
+assertNoWrites('non-silent');
+assert(alerts.length === 1 && /preview only, nothing was written/.test(alerts[0]) && /Calculate \/ Restate/.test(alerts[0]), alerts.join('|'));
+
+// the source has no write statements left inside calcEoySkins
+const src = extract('calcEoySkins');
+assert(!/serverRun\(|saveDBToServer\(|INSERT|DELETE|UPDATE/.test(src.replace(/\/\/.*$/gm, '')), 'calcEoySkins contains no write or save call');
 
 console.log('ok');

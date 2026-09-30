@@ -19580,10 +19580,6 @@ function getPostSeasonWeekPotPlayers(season, week) {
 
 // Old payouts were stored with cents ($44.33). Those weeks are LEFT ALONE by every automatic path; only an
 // officer's Restate / Calculate converts them.
-function psWeekIsLegacyLocked(date) {
-  return query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND CAST(Date AS INTEGER)=? AND ABS(CAST(Earned AS REAL) - ROUND(CAST(Earned AS REAL))) > 0.005 LIMIT 1`, [date]).length > 0;
-}
-
 // READ-ONLY state of one week's Skins money: pot players, stored winner rows, whole-dollar result, and whether the
 // remainder has been officially recorded (both ledger rows present, equal, and matching the current stored payouts).
 function psWeekSkinState(season, week) {
@@ -19726,10 +19722,14 @@ function psSkinCommitPlan(season, week, mode) {
   const errors = [];
   const st = psWeekSkinState(season, week);
   if (!st) return { errors: ['Post season dates are not set up.'] };
-  if (!['calculate', 'restate'].includes(mode)) errors.push('Unknown action.');
-  if (!st.potPlayers.length) errors.push(`Week ${week} has no paid-and-scored players yet.`);
+  if (!['calculate', 'restate', 'clear'].includes(mode)) errors.push('Unknown action.');
+  if (mode !== 'clear' && !st.potPlayers.length) errors.push(`Week ${week} has no paid-and-scored players yet.`);
   if (st.paidRows.length) errors.push(`Week ${week} has winner rows that are already paid (${st.paidRows.map(r => `${r.Player} ${r.Detail}`).join(', ')}). Paid rows are never changed.`);
   let winners = null, skins = st.stored.length;
+  if (mode === 'clear') {
+    if (errors.length) return { errors, st };
+    return { errors, st, mode, winners: [], skins: 0 };               // remove the week's unpaid winner rows + remainder rows
+  }
   if (mode === 'restate') {
     if (!st.stored.length) errors.push(`Week ${week} has no stored skin winners to restate. Use Calculate.`);
   } else if (!errors.length) {
@@ -19745,12 +19745,24 @@ function psSkinCommitPlan(season, week, mode) {
 }
 
 // Officer-confirmed Calculate / Restate: the ONLY place the Skins remainder is written. Never called on load or view.
-async function psSkinCommit(season, week, mode) {
+async function psSkinCommit(season, week, mode, opts) {
+  opts = opts || {};
   if (!db) return;
   if (!(currentUser?.role === 'admin' || currentUser?.role === 'developer')) { alert('Only officers can do this.'); return; }
   season = parseInt(season); week = parseInt(week);
   const plan = psSkinCommitPlan(season, week, mode);
   if (plan.errors.length) { alert('Not done:\n\n' + plan.errors.join('\n')); return; }
+  if (mode === 'clear') {
+    const { st } = plan;
+    if (!opts.confirmed && !confirm(`Clear Week ${week} Skins (${fmtDate(String(st.date))})?\n\nRemoves ${st.stored.length} unpaid stored skin winner row(s) and the recorded remainder. Nothing is added.`)) return;
+    serverRun(`DELETE FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND CAST(Date AS INTEGER)=?`, [st.date]);
+    serverRun(`DELETE FROM Payments WHERE League="Hugh's" AND Player='Kitty' AND CAST(Date AS INTEGER)=? AND (("Desc"='Skin' AND Detail=?) OR ("Desc"='EOY Skins' AND Detail=?))`, [st.date, PS_SKIN_REM_DETAIL, PS_EOY_REM_DETAIL]);
+    await SERVER_RUN_QUEUE;
+    await saveDBToServer();
+    try { loadSkins(); } catch (e) {}
+    try { loadPrizeMoney(); } catch (e) {}
+    return;
+  }
   const { st, payout, skins, fingerprint } = plan;
   const lines = [
     `${mode === 'restate' ? 'Restate' : 'Calculate'} Week ${week} Skins (${fmtDate(String(st.date))})`,
@@ -19932,13 +19944,10 @@ async function issuePostSeasonRefunds(season, weeks, players, opts) {
   plan.forEach(r => serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,Comment) VALUES ("Hugh's",?,?,'EOY Skins','Refund',?,?)`,
     [r.player, r.date, -r.amt, r.comment]));
   await SERVER_RUN_QUEUE;
-  // Restate stored post-season Skins payouts from the reduced pools (only when results already exist)
+  // Skins payouts are never changed here: a refund changes the pot, so the week shows "Needs Calculate / Restate
+  // Needed" (read-only marker) until an officer runs Calculate / Restate.
   const psDates = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
-  const hasSkinRows = psDates && query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND CAST(Date AS INTEGER) IN (${psDates.week1},${psDates.week2}) LIMIT 1`).length > 0;
-  if (hasSkinRows && (getEoySkinPlayersForWeek(season, 1).size || getEoySkinPlayersForWeek(season, 2).size)) {
-    calcEoySkins(season, true);
-    await SERVER_RUN_QUEUE;
-  }
+  calcEoySkins(season, true);                                     // read-only marker refresh
   await saveDBToServer();
   renderPostSeasonBreakdown(courseData.all18);
   try { loadPrizeMoney(); } catch (e) {}
@@ -20004,119 +20013,41 @@ function recalcPostSeasonEoyRefunds(season) {
   return { noShows, changed: false };
 }
 
+// READ-ONLY. Computes where each post-season week's Skins stand and marks it "Needs Calculate" / "Restate Needed"
+// (window.psSkinNeeds); it refreshes the grid's skin shading from the STORED winner rows. It never creates, deletes
+// or updates a Payments row (winner payouts, remainder rows or anything else) and never saves the database, whether
+// called silent or not, and from any score-save path. Only an officer's confirmed psSkinCommit (Calculate / Restate /
+// Clear) writes post-season Skin winner rows and the PS Skin Remainder rows.
 function calcEoySkins(season, silent=false) {
   const lp = getSeasonSettings(season);
   if (!lp?.PostSeasonDt) { if (!silent) alert('No post season date found for ' + season); return; }
-
-  // Get both post season dates
   const psDates = parsePostSeasonDates(lp.PostSeasonDt);
-  const psDate1 = psDates.week1;
-  const psDate2 = psDates.week2;
-
-  // EOY Skins payers this season
-  const eoyWeek1Players = getEoySkinPlayersForWeek(season, 1);
-  const eoyWeek2Players = getEoySkinPlayersForWeek(season, 2);
-  const eoyPlayers = new Set([...eoyWeek1Players, ...eoyWeek2Players]);
-  if (!eoyPlayers.size) { if (!silent) alert('No eligible EOY Skins payers found for ' + season); return; }
-
-  // Refunds depend on the current score rows, so update them before any skin-winner early return.
-  const refundInfo = recalcPostSeasonEoyRefunds(season);
+  if (!getEoySkinPlayersForWeek(season, 1).size && !getEoySkinPlayersForWeek(season, 2).size) {
+    if (!silent) alert('No eligible EOY Skins payers found for ' + season);
+    return;
+  }
+  const refundInfo = recalcPostSeasonEoyRefunds(season);           // read-only: who is a no-show
   window.eoyNoShows = refundInfo.noShows;
 
-  const skinPerPlayer = parseFloat(lp.SkinsPS || 7);
-  // Whole-dollar payouts only. A week whose stored payouts still have cents (e.g. $44.33) is LEFT ALONE here: only an
-  // officer's Restate / Calculate (psSkinCommit) converts it, so nothing real is changed automatically. This automatic
-  // path also never writes the Skins-kitty remainder.
-  const weekDate = { 1: psDate1, 2: psDate2 };
-  const lockedDates = new Set([1, 2].filter(w => psWeekIsLegacyLocked(weekDate[w])).map(w => weekDate[w]));
-  const openDates = [psDate1, psDate2].filter(d => !lockedDates.has(d));
-  if (!openDates.length) return;
-  const openList = openDates.join(',');
-  const weekPlayersFor = d => d === psDate1 ? eoyWeek1Players : eoyWeek2Players;
-
-  // Check if results already exist — just load them
-  const existingWinners = query(`SELECT rowid as RowID, Date, Player, Detail FROM Payments WHERE Date IN (${openList}) AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND League="Hugh's" ORDER BY Date, Player, Detail, rowid`);
-  if (existingWinners.length > 0) {
-    window.skinWinnerCells = {};
-    const seen = new Set();
-    const keptByDate = { [psDate1]: 0, [psDate2]: 0 };
-    let removed = 0;
-    existingWinners.forEach(r => {
-      const weekPlayers = weekPlayersFor(parseInt(r.Date));
-      const cellKey = `${r.Player}-${r.Detail.replace('#','')}`;
-      const rowKey = `${r.Date}-${cellKey}`;
-      if (!weekPlayers.has(r.Player) || seen.has(rowKey)) {
-        serverRun(`DELETE FROM Payments WHERE rowid=?`, [r.RowID]);
-        removed++;
-        return;
-      }
-      seen.add(rowKey);
-      keptByDate[parseInt(r.Date)] = (keptByDate[parseInt(r.Date)] || 0) + 1;
-      window.skinWinnerCells[cellKey] = true;
-    });
-    // Restate each open week's stored payout from THAT week's pot only (week 1 and week 2 never share a pot), whole dollars.
-    openDates.forEach(d => {
-      if (!keptByDate[d]) return;
-      const v = psWeekSkinPayout(psWeekScorerRows(d, weekPlayersFor(d)).length, keptByDate[d], skinPerPlayer).each;
-      serverRun(`UPDATE Payments SET Earned=? WHERE Date=${d} AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`, [v]);
-    });
-    if (removed || seen.size > 0) saveDBToServer();
-    if (seen.size > 0) return;
-  }
-
-  // Get course data
-  if (!courseData) return;
-  const weeksOpen = [1, 2].filter(w => !lockedDates.has(weekDate[w]));
-  const res = {};
-  weeksOpen.forEach(w => { res[w] = psComputeWeekWinners(season, w); });
-
-  // Calculate payouts — each week is its own pool, in whole dollars: week N's pot pays only week N's winners.
-  const pay = {};
-  weeksOpen.forEach(w => { pay[w] = psWeekSkinPayout(res[w].playerCount, res[w].winners.length, skinPerPlayer); });
-
-  // CC (League Championship) eligibility: every regular roster player who has scores in BOTH
-  // post-season weeks. The championship is funded by the $45 dues — EOY Skins payment doesn't matter.
-  const scoredPsWeek = d => new Set(query(`SELECT DISTINCT Player FROM Scores WHERE League="Hugh's" AND CAST(Date AS INTEGER)=? AND COALESCE(CAST(Gross AS REAL),0) > 0`, [d]).map(r => r.Player));
-  const ccW1 = scoredPsWeek(psDate1), ccW2 = scoredPsWeek(psDate2);
-  const ccPool = [...ccW1].filter(p => ccW2.has(p) && ccRosterEligible(p, season)).sort();
-
-  // Show confirmation dialog
-  const lines = [`EOY Skins ${season} Results`];
-  weeksOpen.forEach(w => lines.push(`Week ${w} (${res[w].fb} 9): ${res[w].playerCount} players · $${pay[w].pot} skins pot · ${res[w].winners.length} skins · $${pay[w].each} each (whole dollars) · $${pay[w].remainder} remainder (recorded only by an officer's Calculate/Restate)`));
-  lines.push('',
-    ccPool.length ? `CC Eligible (roster players with scores both weeks): ${ccPool.join(', ')}` : 'CC Eligible: nobody yet (roster players need scores both weeks)',
-    '', 'Winners:');
-  weeksOpen.forEach(w => res[w].winners.forEach(x => lines.push(`  Hole ${x.hole}: ${x.player} (net ${x.net})`)));
-  lines.push('', 'Payouts:');
-  weeksOpen.forEach(w => {
-    const tally = {};
-    res[w].winners.forEach(x => { tally[x.player] = (tally[x.player]||0) + 1; });
-    Object.entries(tally).sort((a,b)=>b[1]-a[1]).forEach(([p,c]) => {
-      lines.push(`  Week ${w} — ${p}: ${c} skin(s) = $${(c * pay[w].each).toFixed(2)}`);
-    });
+  // Per-week state from stored rows + current scores (read-only) -> what an officer still has to do
+  const needs = {}, lines = [`EOY Skins ${season} - preview only, nothing was written`];
+  [1, 2].forEach(w => {
+    const st = psWeekSkinState(season, w);
+    if (!st) return;
+    needs[w] = st.status === 'calculated' ? 'Calculated'
+             : st.status === 'restate' ? 'Restate Needed'
+             : st.potPlayers.length || st.stored.length ? 'Needs Calculate' : 'Not played yet';
+    lines.push(`Week ${w}: ${st.potPlayers.length} paid-and-scored players, ${st.stored.length} stored skin${st.stored.length === 1 ? '' : 's'} - ${needs[w]}`);
   });
-  lines.push('', 'Write results to Payments table?');
+  window.psSkinNeeds = needs;
 
-  if (!silent && !confirm(lines.join('\n'))) return;
-
-  // Write skin winner hole records for the open weeks only (legacy cent-format weeks are never touched here)
-  serverRun(`DELETE FROM Payments WHERE Date IN (${openList}) AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%'`);
-  weeksOpen.forEach(w => {
-    res[w].winners.forEach(x => {
-      serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned) VALUES ("Hugh's",?,?,'Skin',?,?)`,
-        [x.player, weekDate[w], `#${x.hole}`, pay[w].each]);
-    });
-  });
-
-  // Rebuild skinWinnerCells and refresh grid
-  const skinWinDateFilter = `Date IN (${psDate1},${psDate2})`;
+  // Grid shading comes from the stored winner rows only
   window.skinWinnerCells = {};
-  query(`SELECT Player, Detail FROM Payments WHERE ${skinWinDateFilter} AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`)
+  query(`SELECT Player, Detail FROM Payments WHERE Date IN (${psDates.week1},${psDates.week2}) AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`)
     .forEach(r => { window.skinWinnerCells[`${r.Player}-${r.Detail.replace('#','')}`] = true; });
+  try { applyCellClasses(isPostSeasonEntryMode() ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front)); } catch (e) {}
 
-  applyCellClasses(isPostSeasonEntryMode() ? courseData.all18 : (document.getElementById('entry9').value === 'Back' ? courseData.back : courseData.front));
-
-  if (!silent) alert(`✓ EOY Skins calculated!\n` + weeksOpen.map(w => `Week ${w}: ${res[w].winners.length} skins @ $${pay[w].each} each`).join('\n'));
+  if (!silent) alert(lines.join('\n') + '\n\nTo record or change payouts use Calculate / Restate on the Skins tab.');
 }
 
 function isDatePostSeason(dateStr) {
@@ -20593,8 +20524,17 @@ async function clearAllPsScores() {
   const dateClause = (d1 && d2) ? `Date IN (${d1},${d2})` : `Date=${d1||d2}`;
   const label = (d1 && d2) ? `dates ${d1} and ${d2}` : `date ${d1||d2}`;
   if (!confirm(`⚠️ Clear ALL scores for post season (${label})?\nAlso removes skin/CTP winners and EOY refunds for those dates (buy-in payments are kept) and resets Gallus import status. Cannot be undone.`)) return;
+  // Paid post-season Skin winners can never be removed: refuse before anything is deleted.
+  const _season = parseInt(String(d1 || d2).substring(0, 4));
+  const _paidSkin = query(`SELECT Player, Detail FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND ${dateClause} AND COALESCE(DatePaid,'')<>''`);
+  if (_paidSkin.length) { alert(`Not cleared: these post-season skin winners are already paid (${_paidSkin.map(r => r.Player + ' ' + r.Detail).join(', ')}). Paid rows are never changed.`); return; }
   serverRun(`DELETE FROM Scores WHERE ${dateClause} AND League="Hugh's"`, []);
-  serverRun(`DELETE FROM Payments WHERE ${dateClause} AND League="Hugh's" AND "Desc" IN ('Skin','CTP') AND Detail LIKE '#%'`, []);
+  serverRun(`DELETE FROM Payments WHERE ${dateClause} AND League="Hugh's" AND "Desc"='CTP' AND Detail LIKE '#%'`, []);
+  // Skin winners + the remainder rows are removed only through the officer action psSkinCommit (mode 'clear')
+  for (const w of [1, 2]) {
+    const st = psWeekSkinState(_season, w);
+    if (st && (st.stored.length || st.skinRem || st.eoyRem)) await psSkinCommit(_season, w, 'clear', { confirmed: true });
+  }
   serverRun(`DELETE FROM Payments WHERE ${dateClause} AND League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund'`, []);
   window.skinWinnerCells = {}; window.ctpWinnersByPlayer = {};
   serverRun(`UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE ${dateClause}`, []);
@@ -21870,8 +21810,8 @@ async function clearEntryGroup(groupNum) {
   const _psD2 = entryState._psDate2;
   const _dateClause = (_psD1 && _psD2) ? `Date IN (${_psD1},${_psD2})` : `Date=${date}`;
   serverRun(`DELETE FROM Scores WHERE Player IN (${playerList}) AND ${_dateClause} AND League="Hugh's"`, []);
-  // Post season: skin winners depend on everyone's scores — drop them so they recalculate
-  if (_psD1 && _psD2) serverRun(`DELETE FROM Payments WHERE ${_dateClause} AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%'`, []);
+  // Post season: skin winners depend on everyone's scores, but they are NOT deleted here. The weeks show
+  // "Needs Calculate" until an officer runs Calculate / Restate (psSkinCommit).
   serverRun(`UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE ResolvedName IN (${playerList}) AND ${_dateClause}`, []);
   await SERVER_RUN_QUEUE;
   buildEntryGrid();
@@ -22126,16 +22066,10 @@ function previewHalfSeasonWinners(season, half) {
 function saveSkinWinnersForDate(date) {
   const psContext = getPostSeasonContextForDate(date);
   if (psContext) {
-    const psDates = parsePostSeasonDates(psContext.postSeasonDt);
-    // Weeks still stored with cents ($44.33) are left alone until an officer Restates/Calculates them.
-    const openDates = [psDates.week1, psDates.week2].filter(d => !psWeekIsLegacyLocked(d));
-    if (openDates.length) serverRun(`DELETE FROM Payments
-      WHERE League="Hugh's"
-        AND "Desc"='Skin'
-        AND Detail LIKE '#%'
-        AND Date IN (${openDates.join(',')})`);
+    // Post season: NEVER writes. Winner payouts and the Skins remainder are recorded only by an officer's confirmed
+    // Calculate / Restate (psSkinCommit). This just refreshes the read-only "needs Calculate / Restate" marker.
     calcEoySkins(psContext.season, true);
-    return { ok: true, count: 0, total: 0, message: 'Post-season EOY skins recalculated.' };
+    return { ok: false, count: 0, total: 0, message: 'Post-season skins are recorded only by an officer Calculate / Restate.' };
   }
 
   const result = calcSkinWinnersForDate(date);
@@ -23270,8 +23204,8 @@ document.getElementById('entryClear')?.addEventListener('click', async ()=>{
     const backDate  = entryState._psBackDate  || entryState._psDate2 || date;
     serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Front' AND League=?`, [st.active, frontDate, league]);
     serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack='Back' AND League=?`, [st.active, backDate, league]);
-    // Skin winners depend on everyone's scores — drop them so they recalculate
-    serverRun(`DELETE FROM Payments WHERE Date IN (${parseInt(frontDate)},${parseInt(backDate)}) AND League=? AND "Desc"='Skin' AND Detail LIKE '#%'`, [league]);
+    // Skin winners depend on everyone's scores but are NOT deleted here: the weeks show "Needs Calculate" until an
+    // officer runs Calculate / Restate (psSkinCommit).
   } else {
     serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [st.active, date, league]);
     serverRun(`DELETE FROM Handicaps WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [st.active, date, league]);
