@@ -8149,7 +8149,29 @@ function loadSkins() {
   const skinWinCount = query(`SELECT COUNT(DISTINCT Detail || ':' || Player) as c FROM Payments p WHERE CAST(p.Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='Skin' AND Detail NOT IN ('Payment','') AND Player != 'Kitty'
     AND EXISTS (SELECT 1 FROM Scores s WHERE s.League=p.League AND CAST(s.Date AS INTEGER)=CAST(p.Date AS INTEGER) AND s.Player=p.Player AND s.Gross IS NOT NULL AND s.Gross != 0)`, [date])[0]?.c || 0;
 
-  document.getElementById('skinStatBoxes').innerHTML = `
+  // Post-season nights: buy-ins are 'EOY Skins' payments (not per-night 'Skin' payments) and
+  // the skins span both post-season weeks, so build the pots/winners from both dates.
+  let psInfo = null;
+  const psSeason = parseInt(String(date).substring(0, 4));
+  const psLp = getSeasonSettings(psSeason);
+  if (psLp?.PostSeasonDt) {
+    const psd = parsePostSeasonDates(psLp.PostSeasonDt);
+    if (psd && (parseInt(date) === psd.week1 || parseInt(date) === psd.week2)) {
+      const psPlayers = [...new Set([...getEoySkinPlayersForWeek(psSeason, 1), ...getEoySkinPlayersForWeek(psSeason, 2)])].sort();
+      const skinAmt = parseFloat(psLp.SkinsPS || 7), ctpAmt = parseFloat(psLp.ClosestPS || 3);
+      const winRows = query(`SELECT Player, Detail FROM Payments WHERE Date IN (${psd.week1},${psd.week2}) AND League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Player!='Kitty'`);
+      const pot = psPlayers.length * skinAmt;
+      psInfo = { dates: `${psd.week1},${psd.week2}`, players: psPlayers, skinAmt, ctpAmt, pot,
+                 ctpPot: psPlayers.length * ctpAmt, perSkin: winRows.length ? pot / winRows.length : 0 };
+    }
+  }
+  const dateFilter = psInfo ? `Date IN (${psInfo.dates})` : `CAST(p.Date AS INTEGER)=CAST(? AS INTEGER)`;
+
+  document.getElementById('skinStatBoxes').innerHTML = psInfo ? `
+    <div class="stat-box gold"><div class="val">${psInfo.players.length}</div><div class="lbl">Players In</div></div>
+    <div class="stat-box"><div class="val">$${psInfo.pot.toFixed(0)}</div><div class="lbl">Skin Pot</div></div>
+    <div class="stat-box"><div class="val">$${psInfo.ctpPot.toFixed(0)}</div><div class="lbl">CTP Pot</div></div>
+  ` : `
     <div class="stat-box gold"><div class="val">${participants}</div><div class="lbl">Players In</div></div>
     <div class="stat-box"><div class="val">$${skinPot}</div><div class="lbl">Skin Pot</div></div>
     <div class="stat-box"><div class="val">$${ctpPot}</div><div class="lbl">CTP Pot</div></div>
@@ -8159,7 +8181,7 @@ function loadSkins() {
   const skinWins = query(`
     SELECT DISTINCT p.Player, p.Detail, p.Earned, p.Comment
     FROM Payments p
-    WHERE CAST(p.Date AS INTEGER)=CAST(? AS INTEGER) AND p.Desc='Skin'
+    WHERE ${dateFilter} AND p.Desc='Skin'
       AND Detail NOT IN ('Payment','Carryover','')
       AND p.Player != 'Kitty'
       AND EXISTS (
@@ -8168,7 +8190,8 @@ function loadSkins() {
           AND s.Gross IS NOT NULL AND s.Gross != 0
       )
     ORDER BY CAST(REPLACE(Detail,'#','') AS INTEGER)
-  `, [date]);
+  `, psInfo ? [] : [date]);
+  if (psInfo) skinWins.forEach(w => { w.Earned = psInfo.perSkin; });
 
   const skinCarry = query(`SELECT Earned FROM Payments WHERE CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND Desc='Skin' AND Player='Kitty'`, [date])[0];
 
@@ -8233,6 +8256,14 @@ function loadSkins() {
     ORDER BY p.Player
   `, [date]);
 
+  if (psInfo) {
+    psInfo.players.forEach(pl => {
+      const ex = parts.find(r => r.Player === pl);
+      if (ex) { ex.skin_paid = ex.skin_paid || psInfo.skinAmt; ex.ctp_paid = ex.ctp_paid || psInfo.ctpAmt; }
+      else parts.push({ Player: pl, skin_paid: psInfo.skinAmt, ctp_paid: psInfo.ctpAmt });
+    });
+    parts.sort((a, b) => a.Player.localeCompare(b.Player));
+  }
   const tb = tbody('skinsParticipants');
   const pBtn = document.getElementById('skinsParticipantsToggle');
   if (pBtn) {
@@ -21073,10 +21104,14 @@ function renderPostSeasonBreakdown(nine) {
   const leaderboard = [...lbPlayers]
     .map(p => ({ name: p.name, phdcp: p.phdcp, inSkins: p.inSkins, ...p.totals }))
     .sort((a, b) => {
-      if (a.totalNet === '' && b.totalNet === '') return 0;
-      if (a.totalNet === '') return 1;
-      if (b.totalNet === '') return -1;
-      return a.totalNet - b.totalNet;
+      // Live: rank by completed nines first, then running net (blanks last)
+      const na = (a.frontComplete ? 1 : 0) + (a.backComplete ? 1 : 0);
+      const nb = (b.frontComplete ? 1 : 0) + (b.backComplete ? 1 : 0);
+      if (na !== nb) return nb - na;
+      if (a.runNet === '' && b.runNet === '') return 0;
+      if (a.runNet === '') return 1;
+      if (b.runNet === '') return -1;
+      return a.runNet - b.runNet;
     });
 
   const hasAnyScore = playerNets.some(p => p.nets18.some(n => n !== null));
@@ -21151,9 +21186,9 @@ function renderPostSeasonBreakdown(nine) {
     lbHtml += leaderboard.map((p, i) => {
       const isSubLb = season && !ccRosterEligible(p.name, season);
       const pos = isSubLb ? null : ++ccPos;
-      const net = p.totalNet !== '' ? p.totalNet : '—';
-      const gross = p.totalGross !== '' ? p.totalGross : '—';
-      const bg = pos === 1 && p.totalNet !== '' ? '#fff8e1' : i % 2 === 0 ? '#fafafa' : '#fff';
+      const net = p.runNet !== '' ? p.runNet : '—';
+      const gross = p.runGross !== '' ? p.runGross : '—';
+      const bg = pos === 1 && p.runNet !== '' ? '#fff8e1' : i % 2 === 0 ? '#fafafa' : '#fff';
       const medal = pos === null ? '—' : pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : `${pos}.`;
       return `<div style="${rowStyle};background:${bg}">
         <span style="font-weight:700;text-align:center">${medal}</span>
