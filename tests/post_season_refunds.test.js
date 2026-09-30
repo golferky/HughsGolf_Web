@@ -154,12 +154,37 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   await refund([1, 2], ['Fay']);
   assert.strictEqual(refundRows.length, 2, 'both-week refund is not repeated');
 
-  // ================= An untagged $10 is not assigned to any week: it funds no pool (and cannot be refunded as a week)
+  // ================= LEGACY untagged $20 (existing data): no week assignment, in both weeks' pools, refundable as a no-show
   reset();
-  payments.push({ Player: 'Gus', Earned: 10, Comment: '' });
+  payments = [{ Player: 'Old', Earned: 20, Comment: '' }, { Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' }];
+  scores = { '20260922|Front': ['Old', 'Ann'] };                 // week 1 played and Old scored; week 2 is in the future
+  assert(pool(1).includes('Old'), 'legacy payer with a week 1 score is in week 1\'s pools ($7 + $3)');
+  assert(pool(2).includes('Old'), 'week 2 needs no decision yet: legacy payer stays in week 2');
+  assert.deepStrictEqual(plain(ctx.getEoyUnassignedPayments(2026)), [], 'legacy payments are not "unassigned"');
+  assert(!/no week assigned/.test(ctx.psRefundPanelHtml(2026, 1)), 'no ⚠ needs-week warning for legacy payments');
+  assert.strictEqual(ctx.getPostSeasonWeekNoShows(2026, 2).played, false);
+  assert.deepStrictEqual(Array.from(ctx.getPostSeasonWeekNoShows(2026, 2).noShows), [], 'week 2 not played -> no no-shows yet');
+  // Week 1 played and a different legacy payer did not score -> no-show, refunded for week 1 only
+  payments.push({ Player: 'Ghost', Earned: 20, Comment: '' });
+  assert.deepStrictEqual(Array.from(ctx.getPostSeasonWeekNoShows(2026, 1).noShows), ['Ghost']);
+  assert(pool(1).includes('Ghost'), 'still pooled until refunded');
+  await refund([1], ['Ghost']);
+  assert.deepStrictEqual(plain(refundRows), [{ Player: 'Ghost', Date: 20260922, Earned: -10, Comment: 'Missed post-season week 1' }]);
+  assert(!pool(1).includes('Ghost') && pool(2).includes('Ghost'), 'refund leaves week 1 only; week 2 still funded');
+  // Week 2 gets played without Ghost -> now a week 2 no-show; refunded the same way
+  scores['20260929|Back'] = ['Old', 'Ann'];
+  assert.deepStrictEqual(Array.from(ctx.getPostSeasonWeekNoShows(2026, 2).noShows), ['Ghost']);
+  await refund([2], ['Ghost']);
+  assert(!pool(2).includes('Ghost'));
+  assert.strictEqual(refundRows.length, 2);
+  await refund([1, 2], ['Ghost']);
+  assert.strictEqual(refundRows.length, 2, 'never refunded twice');
+  // Legacy untagged $10: counted in the week they score; untagged $15 is still flagged
+  reset();
+  payments.push({ Player: 'Gus', Earned: 10, Comment: '' }, { Player: 'Odd', Earned: 15, Comment: '' });
   scores = { '20260922|Front': ['Ann'], '20260929|Back': ['Ann'] };
-  assert(!pool(1).includes('Gus') && !pool(2).includes('Gus'), 'unassigned payment is in no pool');
-  assert.deepStrictEqual(plain(ctx.getEoyUnassignedPayments(2026)).map(u => u.Player), ['Gus']);
+  assert(!pool(1).includes('Gus') && !pool(2).includes('Gus'), 'legacy $10 with no score yet is in no pool');
+  assert.deepStrictEqual(plain(ctx.getEoyUnassignedPayments(2026)).map(u => u.Player), ['Odd']);
   await refund([1], ['Gus']);
   assert.strictEqual(refundRows.length, 0, 'no week-1 entry to refund');
   // A $20 both-weeks payment refunded for week 1 stays in week 2 only
