@@ -22,7 +22,7 @@ function extract(name) {
 // Week 1 = 9/22/2026, week 2 = 9/29/2026. Par 3s: front 3 & 7, back 12 & 16.
 let week1Nine = 'Front';
 const eoyRows = [
-  { Player: 'Ann', Earned: 20, Comment: '' },            // both weeks
+  { Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' }, // both weeks
   { Player: 'Ben', Earned: 10, Comment: '(1st Week)' },   // week 1 only
   { Player: 'Cy', Earned: 10, Comment: '(2nd Week)' },    // week 2 only
   { Player: 'Dee', Earned: 10, Comment: '(2nd Week)' },   // week 2 only
@@ -48,7 +48,7 @@ const ctx = vm.createContext({
   getScheduledFrontBack: () => 'Front',   // regular-season logic; must NOT be used for post season
 });
 ['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeek1Nine', 'getPostSeasonWeekForDate',
- 'parsePostSeasonDates', 'getPostSeasonWeekEntry', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek', 'getPostSeasonContextForDate', 'getPostSeasonCtpInfo', 'loadCtps']
+ 'parsePostSeasonDates', 'getPostSeasonWeekEntry', 'eoyWeeksFromComment', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek', 'getPostSeasonContextForDate', 'getPostSeasonCtpInfo', 'loadCtps']
   .forEach(n => vm.runInContext(extract(n), ctx));
 
 function load(date) {

@@ -24,9 +24,9 @@ let settings, payments, refundRows, scores, ctpRows, skinRows, scoreRows;
 function reset() {
   settings = { PostSeasonDt: '9/22/2026', PSWeek1Nine: 'Front', EOYSkins: 20, SkinsPS: 7, ClosestPS: 3 };
   payments = [
-    { Player: 'Ann', Earned: 20, Comment: '' }, { Player: 'Ben', Earned: 10, Comment: '(1st Week)' },
+    { Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' }, { Player: 'Ben', Earned: 10, Comment: '(1st Week)' },
     { Player: 'Cy', Earned: 10, Comment: '(2nd Week)' }, { Player: 'Dee', Earned: 10, Comment: '(2nd Week)' },
-    { Player: 'Fay', Earned: 20, Comment: '' },
+    { Player: 'Fay', Earned: 20, Comment: '(Both Weeks)' },
   ];
   refundRows = []; ctpRows = []; skinRows = []; scoreRows = {};
   scores = { '20260922|Front': ['Ann', 'Fay'], '20260929|Back': ['Ann'] };   // Ben, Cy, Dee, Fay(wk2) are no-shows
@@ -78,7 +78,7 @@ const ctx = vm.createContext({
   getSeasonSettings: () => settings,
 });
 ['psMdyToInt', 'psAddDaysMdy', 'parsePostSeasonDates', 'getPostSeasonWeek1Nine', 'getPostSeasonWeekForDate',
- 'getPostSeasonWeekEntry', 'computeEoyGrossByWeek', 'getEoySkinGrossPlayersForWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
+ 'getPostSeasonWeekEntry', 'eoyWeeksFromComment', 'computeEoyGrossByWeek', 'getEoyUnassignedPayments', 'getEoySkinGrossPlayersForWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
  'getPostSeasonContextForDate', 'getPostSeasonCtpInfo', 'getPostSeasonWeekNoShows', 'getEoyRefundedWeeks', 'psWeekHasCtpResults',
  'planPostSeasonRefunds', 'issuePostSeasonRefunds', 'psRefundPanelHtml', 'psWeekSkinValue', 'calcEoySkins', 'loadSkins', 'loadCtps']
   .forEach(n => vm.runInContext((n === 'issuePostSeasonRefunds' ? 'async ' : '') + extract(n), ctx));
@@ -154,14 +154,19 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   await refund([1, 2], ['Fay']);
   assert.strictEqual(refundRows.length, 2, 'both-week refund is not repeated');
 
-  // ================= Partial payer ($10 untagged, in either week): refunding one week removes him from both
-  //  (the $10 he retains is zero after the refund) — a pool can never exceed retained money
+  // ================= An untagged $10 is not assigned to any week: it funds no pool (and cannot be refunded as a week)
   reset();
   payments.push({ Player: 'Gus', Earned: 10, Comment: '' });
   scores = { '20260922|Front': ['Ann'], '20260929|Back': ['Ann'] };
-  assert(pool(1).includes('Gus') && pool(2).includes('Gus'));
+  assert(!pool(1).includes('Gus') && !pool(2).includes('Gus'), 'unassigned payment is in no pool');
+  assert.deepStrictEqual(plain(ctx.getEoyUnassignedPayments(2026)).map(u => u.Player), ['Gus']);
   await refund([1], ['Gus']);
-  assert(!pool(1).includes('Gus') && !pool(2).includes('Gus'), '$10 refunded -> no retained money for any week');
+  assert.strictEqual(refundRows.length, 0, 'no week-1 entry to refund');
+  // A $20 both-weeks payment refunded for week 1 stays in week 2 only
+  reset();
+  scores = { '20260922|Front': ['Ann'], '20260929|Back': ['Ann', 'Fay'] };
+  await refund([1], ['Fay']);
+  assert(!pool(1).includes('Fay') && pool(2).includes('Fay'));
 
   // ================= Legacy combined refund rows are read correctly (no double refund of a legacy "both weeks" row)
   reset();
@@ -230,7 +235,7 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   // ================= Money invariant: no pool or payout exceeds the money retained after refunds
   reset();
   scores = { '20260922|Front': ['Ann', 'Fay'], '20260929|Back': ['Ann', 'Dee'] };
-  payments.push({ Player: 'Gus', Earned: 10, Comment: '' });
+  payments.push({ Player: 'Gus', Earned: 10, Comment: '(1st Week)' });
   await refund([1], ['Ben']); await refund([2], ['Cy', 'Fay']); await refund([1], ['Gus']);
   const paidTotal = payments.reduce((a, p) => a + p.Earned, 0);
   const refunded = -refundRows.reduce((a, r) => a + r.Earned, 0);

@@ -22,7 +22,7 @@ function extract(name) {
 // Season 2026: week 1 = 9/22 (Front), week 2 = 9/29 (Back).
 //  Ann: both weeks. Ben: week 1 only. Cy, Dee: week 2 only. Eve scores in week 1 but never paid.
 const eoyRows = [
-  { Player: 'Ann', Earned: 20, Comment: '' },
+  { Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' },
   { Player: 'Ben', Earned: 10, Comment: '(1st Week)' },
   { Player: 'Cy', Earned: 10, Comment: '(2nd Week)' },
   { Player: 'Dee', Earned: 10, Comment: '(2nd Week)' },
@@ -66,7 +66,7 @@ const ctx = vm.createContext({
   courseData: { front: { hcps: seq, pars: par4 }, back: { hcps: seq, pars: par4 }, all18: {} },
 });
 ['psMdyToInt', 'psAddDaysMdy', 'parsePostSeasonDates', 'getPostSeasonWeekForDate', 'getPostSeasonWeek1Nine',
- 'getPostSeasonWeekEntry', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek', 'psWeekSkinValue', 'calcEoySkins']
+ 'getPostSeasonWeekEntry', 'eoyWeeksFromComment', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek', 'psWeekSkinValue', 'calcEoySkins']
   .forEach(n => vm.runInContext(extract(n), ctx));
 
 const inserts = () => runs.filter(r => /^INSERT INTO Payments/.test(r.sql)).map(r => r.params);

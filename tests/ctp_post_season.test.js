@@ -21,7 +21,7 @@ function extract(name) {
 // Fake DB: season 2025, post season starts 9/17/2025 (week 2 = 9/24/2025)
 let week1Nine = 'Front';
 const eoyRows = [
-  { Player: 'Alice', Earned: 20, Comment: '' },
+  { Player: 'Alice', Earned: 20, Comment: '(Both Weeks)' },
   { Player: 'Bob', Earned: 10, Comment: '(1st Week)' },
   { Player: 'Cara', Earned: 10, Comment: '(2nd Week)' },
 ];
@@ -35,7 +35,7 @@ function query(sql) {
 }
 
 const ctx = vm.createContext({ query, parseInt, parseFloat, Set, Date, String, Number });
-['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeek1Nine', 'parsePostSeasonDates', 'getPostSeasonWeekForDate', 'getPostSeasonWeekEntry', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
+['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeek1Nine', 'parsePostSeasonDates', 'getPostSeasonWeekForDate', 'getPostSeasonWeekEntry', 'eoyWeeksFromComment', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
  'getPostSeasonContextForDate', 'getCtpDateKeys', 'getPostSeasonCtpInfo']
   .forEach(n => vm.runInContext(extract(n), ctx));
 

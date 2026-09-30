@@ -22,7 +22,7 @@ function extract(name) {
 // Season 2026: week 1 = 9/22, week 2 = 9/29.
 //  Ann: both weeks ($20 untagged). Ben: week 1 only. Cy: week 2 only. Dee: week 2 only.
 const eoyRows = [
-  { Player: 'Ann', Earned: 20, Comment: '' },
+  { Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' },
   { Player: 'Ben', Earned: 10, Comment: '(1st Week)' },
   { Player: 'Cy', Earned: 10, Comment: '(2nd Week)' },
   { Player: 'Dee', Earned: 10, Comment: '(2nd Week)' },
@@ -54,7 +54,7 @@ const ctx = vm.createContext({
   toDateKey: v => String(v), syncCtpsToSkinsDate() {},
   fmtMoney: v => '$' + Number(v).toFixed(2), tbody: id => { els[id] = { innerHTML: '', appendChild(c) { this.innerHTML += c.innerHTML; } }; return els[id]; },
 });
-['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeekForDate', 'parsePostSeasonDates', 'getPostSeasonWeekEntry', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek', 'loadSkins']
+['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeekForDate', 'parsePostSeasonDates', 'getPostSeasonWeekEntry', 'eoyWeeksFromComment', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek', 'loadSkins']
   .forEach(n => vm.runInContext(extract(n), ctx));
 
 function load(date) {
