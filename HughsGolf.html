@@ -4757,12 +4757,14 @@ function loadPrizeMoney(options = {}) {
               const weekBadge = _needsWeek ? `<span style="color:#c62828;font-size:11px;font-weight:700;margin-right:4px" title="Not counted in any week's Skins/CTP pool until assigned">⚠ Needs week</span>` : '';
               const legacyBadge = _legacyBoth ? `<span style="color:#666;font-size:11px;margin-right:4px" title="Existing untagged payment: counts for both weeks. After a week is played, a no-show can be refunded for that week.">Legacy · both weeks</span>`
                 : _legacyOne ? `<span style="color:#666;font-size:11px;margin-right:4px" title="Existing untagged single-week payment: counts for the week the player has a score in.">Legacy · week by score</span>` : '';
-              const noteText = weekBadge + legacyBadge + (r.Comment ? r.Comment : (r.DatePaid ? r.DatePaid : ''));
-              const assignBtns = _needsWeek ? ['1','2','both'].map(c => _btn('#2e7d32', c === 'both' ? 'Both' : 'Wk ' + c, `assignEoyPaymentWeeks(${r.ID},${season},'${c}')`, `Assign this $${parseFloat(r.Earned).toFixed(2)} payment to ${c === 'both' ? 'both weeks ($20)' : 'week ' + c + ' ($10)'}`)).join('') : '';
+              const _oddAmount = _needsWeek && Math.abs(parseFloat(r.Earned) - _entryTotal) >= 0.005 && Math.abs(parseFloat(r.Earned) - 2 * _entryTotal) >= 0.005;
+              const correctionNote = _oddAmount ? `<div style="color:#c62828;font-size:10px;font-weight:600">$${parseFloat(r.Earned).toFixed(2)} is not $${_entryTotal.toFixed(0)} or $${(2 * _entryTotal).toFixed(0)} — needs a separate payment correction (delete and re-enter)</div>` : '';
+              const noteText = weekBadge + legacyBadge + (r.Comment ? r.Comment : (r.DatePaid ? r.DatePaid : '')) + correctionNote;
+              const assignBtns = (_needsWeek && !_oddAmount) ? ['1','2','both'].map(c => _btn('#2e7d32', c === 'both' ? 'Both' : 'Wk ' + c, `assignEoyPaymentWeeks(${r.ID},${season},'${c}')`, `Assign this $${parseFloat(r.Earned).toFixed(2)} payment to ${c === 'both' ? 'both weeks ($20)' : 'week ' + c + ' ($10)'}`)).join('') : '';
               const refundBtns = _assigned ? getEoyRefundButtonWeeks(_wks, _refunded, eoyScoredByWeek, r.Player).map(w => _btn('#e65100', `↩ Wk ${w}`, `refundEoyPayment('${_safe}',${season},'${w}')`, `Refund week ${w}: $${_entryTotal.toFixed(2)} ($7 Skins + $3 CTP). Only for a player with no week ${w} score.`)).join('') : '';
               const actBtns = isOfficerOrDev && paid ? `
                 ${assignBtns}
-                ${_btn('#1565c0', '✏ Week', `editEoyPayment(${r.ID},${season})`, 'Change the week assignment')}
+                ${canEditEoyPaymentWeeks({ Player: r.Player, Earned: r.Earned, Comment: r.Comment }, _entryTotal, eoyScoredByWeek) ? _btn('#1565c0', '✏ Week', `editEoyPayment(${r.ID},${season})`, 'Fix a wrong week assignment (never reduces the amount — use ↩ Wk to refund)') : ''}
                 ${refundBtns}
                 ${_btn('#c62828', '✕ Del', `deleteEoyPayment(${r.ID},${season},'${_safe}')`, 'Delete payment record')}` : '';
               return `<tr style="background:${!paid?'#fff3e0':(i%2===0?'#fff':'#fce4ec')}">
@@ -19408,22 +19410,59 @@ function showEoyPaymentPrompt(player, season, ctx) {
     </div>`;
 }
 
+// Weeks a payment row covers, for edit rules. Tagged rows: their week(s) when the amount is $10 per week; legacy untagged
+// $20 = both weeks; legacy untagged $10 = the first week the player has a score in; anything else covers no known week.
+function getEoyPaymentCoveredWeeks(row, weekAmt, scoredByWeek) {
+  const earned = parseFloat(row.Earned || 0), wks = eoyWeeksFromComment(row.Comment);
+  if (wks.length) return Math.abs(earned - weekAmt * wks.length) < 0.005 ? wks : [];
+  if (Math.abs(earned - 2 * weekAmt) < 0.005) return [1, 2];
+  if (Math.abs(earned - weekAmt) < 0.005) return [1, 2].filter(w => scoredByWeek[w] && scoredByWeek[w].has(row.Player)).slice(0, 1);
+  return [];
+}
+
+// Should the Prize Money table show "✏ Week" for this payment? ONLY for a valid tagged single-week $10 payment whose
+// week this player has not played: it may be moved to the other week and stays exactly $10. Never for legacy untagged
+// rows, both-weeks rows, "Needs week" rows (assign those with the Wk buttons, or correct an odd amount separately),
+// or any payment covering a week the player scored in.
+function canEditEoyPaymentWeeks(row, weekAmt, scoredByWeek) {
+  const earned = parseFloat(row.Earned || 0), wks = eoyWeeksFromComment(row.Comment);
+  if (wks.length !== 1 || Math.abs(earned - weekAmt) >= 0.005) return false;
+  return !(scoredByWeek[wks[0]] && scoredByWeek[wks[0]].has(row.Player));
+}
+
+// Move a valid, unplayed $10 single-week payment between Week 1 and Week 2. The dollar amount is NEVER changed by
+// this editor (in either direction): it only rewrites the week tag. Anything else is refused with no database change:
+// odd amounts need a separate payment correction, reductions are refunds (↩ Wk buttons), "Needs week" rows are
+// assigned with the Wk buttons.
 function editEoyPayment(rowId, season) {
   if (!db) return;
   const rows = query(`SELECT rowid as ID, Player, Earned, COALESCE(Comment,'') as Comment FROM Payments WHERE rowid=?`, [rowId]);
   if (!rows.length) { alert('Payment not found.'); return; }
-  const r = rows[0];
-  const cur = eoyWeeksFromComment(r.Comment);
-  const choice = prompt(`Change the week for ${r.Player}'s EOY Skins payment ($${parseFloat(r.Earned).toFixed(2)}, ${cur.length ? (cur.length === 2 ? 'both weeks' : 'week ' + cur[0]) : 'no week assigned'}).\n\nEvery $10 must be assigned to a week. The amount is set from the choice.\n\n  Type 1 for Week 1 only ($10)\n  Type 2 for Week 2 only ($10)\n  Type both for Both Weeks ($20)`, cur.length === 2 ? 'both' : cur[0] ? String(cur[0]) : '');
+  const r = rows[0], earned = parseFloat(r.Earned || 0);
+  const entry = getPostSeasonWeekEntry(season);
+  if (!entry.ok) { alert(entry.reason); return; }
+  const wks = eoyWeeksFromComment(r.Comment);
+  const isSingleWeekEntry = wks.length === 1 && Math.abs(earned - entry.total) < 0.005;
+  if (!isSingleWeekEntry) {
+    const odd = Math.abs(earned - entry.total) >= 0.005 && Math.abs(earned - 2 * entry.total) >= 0.005;
+    alert(`Not changed: the week editor never changes a dollar amount and only moves a valid $${entry.total.toFixed(2)} single-week payment between Week 1 and Week 2.\n\n` +
+      (odd ? `${r.Player}'s $${earned.toFixed(2)} payment is not exactly $${entry.total.toFixed(0)} or $${(entry.total * 2).toFixed(0)}, so it needs a separate payment correction (delete and re-enter it at the right amount).`
+           : `To assign a "Needs week" payment use its Wk 1 / Wk 2 / Both buttons; to give money back use the ↩ Wk 1 / ↩ Wk 2 refund button.`));
+    return;
+  }
+  const cur = wks[0], other = cur === 1 ? 2 : 1;
+  const scoredByWeek = { 1: getPostSeasonWeekNoShows(season, 1).scored, 2: getPostSeasonWeekNoShows(season, 2).scored };
+  if (scoredByWeek[cur].has(r.Player)) {
+    alert(`Not changed: ${r.Player} has a week ${cur} score, so the week ${cur} payment cannot be moved.\n\nIf money is owed back, use the ↩ Wk refund button (only available for a week the player did not play).`);
+    return;
+  }
+  const choice = prompt(`Move ${r.Player}'s $${earned.toFixed(2)} payment from week ${cur} to week ${other}?\n\nThe amount stays $${earned.toFixed(2)}. Type ${other} to confirm.`, String(other));
   if (choice === null) return;
-  const pay = eoyPaymentForWeeks(season, String(choice).trim().toLowerCase());
-  if (pay.error) { alert(pay.error); return; }
-  // Other payments by this player must not already cover the chosen weeks
-  const g = computeEoyGrossByWeek(season);
+  if (String(choice).trim() !== String(other)) { alert(`Not changed: this editor only moves the payment to week ${other} (the amount is never changed).`); return; }
+  // The player must not already have another payment covering the target week
   const others = query(`SELECT rowid as ID, CAST(Earned AS REAL) as Earned, COALESCE(Comment,'') as Comment FROM Payments WHERE League="Hugh's" AND Player=? AND "Desc"='EOY Skins' AND Detail='Payment' AND rowid<>? AND Date >= ${season}0101 AND Date < ${season + 1}0101`, [r.Player, rowId]);
-  const clash = pay.weeks.filter(w => others.some(o => eoyWeeksFromComment(o.Comment).includes(w)));
-  if (clash.length) { alert(`${r.Player} already has another payment for week ${clash.join(' and ')}.`); return; }
-  serverRun(`UPDATE Payments SET Earned=?, Comment=? WHERE rowid=?`, [pay.amt, pay.comment, rowId]);
+  if (others.some(o => eoyWeeksFromComment(o.Comment).includes(other))) { alert(`${r.Player} already has another payment for week ${other}.`); return; }
+  serverRun(`UPDATE Payments SET Comment=? WHERE rowid=?`, [eoyCommentForWeeks([other]), rowId]);     // comment only — Earned is untouched
   SERVER_RUN_QUEUE.then(() => { saveDBToServer(); loadPrizeMoney(); });
 }
 

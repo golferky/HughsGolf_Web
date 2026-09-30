@@ -58,7 +58,7 @@ const ctx = vm.createContext({
  'eoyWeeksFromComment', 'eoyCommentForWeeks', 'eoyPaymentForWeeks', 'eoyPaymentConflict', 'computeEoyGrossByWeek',
  'getEoyUnassignedPayments', 'getEoySkinGrossPlayersForWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
  'getPostSeasonWeekNoShows', 'getEoyRefundedWeeks', 'psWeekHasCtpResults', 'planPostSeasonRefunds', 'issuePostSeasonRefunds',
- 'refundEoyPayment', 'getEoyRefundButtonWeeks', 'quickPayEoySkins', 'assignEoyPaymentWeeks', 'editEoyPayment', 'readEoyPaymentChoice', 'confirmPaymentForPlayer']
+ 'refundEoyPayment', 'getEoyRefundButtonWeeks', 'getEoyPaymentCoveredWeeks', 'canEditEoyPaymentWeeks', 'quickPayEoySkins', 'assignEoyPaymentWeeks', 'editEoyPayment', 'readEoyPaymentChoice', 'confirmPaymentForPlayer']
   .forEach(n => vm.runInContext((n === 'issuePostSeasonRefunds' ? 'async ' : '') + extract(n), ctx));
 
 const pool = w => Array.from(ctx.getEoySkinPlayersForWeek(2026, w)).sort();
@@ -152,21 +152,24 @@ const lastAlert = () => alerts.pop() || '';
     'the entry-screen payment modal uses the same week check');
   chosenWeek = ''; Object.keys(checks).forEach(k => delete checks[k]);
 
-  // ================= Edit: choose the week; amount is derived; no typed amount
-  runs.length = 0; payments = [{ ID: 10, Player: 'Kay', Earned: 20, Comment: '' }, { ID: 11, Player: 'Lou', Earned: 10, Comment: '(1st Week)' }];
-  promptAnswer = '';
-  ctx.editEoyPayment(10, 2026);
-  assert(/Choose Week 1, Week 2 or Both/.test(lastAlert())); assert.strictEqual(updates().length, 0, 'blank choice is refused');
-  promptAnswer = '7';
-  ctx.editEoyPayment(10, 2026);
-  assert(/Choose Week 1/.test(lastAlert())); assert.strictEqual(updates().length, 0, 'a typed amount is not accepted');
-  promptAnswer = 'both';
-  ctx.editEoyPayment(10, 2026);
-  assert.deepStrictEqual(plain(updates().map(u => u.params)), [[20, '(Both Weeks)', 10]]);
-  runs.length = 0; payments.push({ ID: 12, Player: 'Lou', Earned: 10, Comment: '' });
-  promptAnswer = '1';
-  ctx.editEoyPayment(12, 2026);                                  // Lou already has week 1
-  assert(/already has another payment for week 1/.test(lastAlert())); assert.strictEqual(updates().length, 0);
+  // ================= Week editor: moves a valid unplayed $10 single-week payment only; the amount is never changed
+  runs.length = 0; payments = [{ ID: 10, Player: 'Kay', Earned: 20, Comment: '' }, { ID: 11, Player: 'Lou', Earned: 10, Comment: '(1st Week)' },
+                               { ID: 12, Player: 'Lou', Earned: 10, Comment: '(2nd Week)' }, { ID: 13, Player: 'Mo', Earned: 10, Comment: '(1st Week)' }];
+  scores = {};
+  promptAnswer = '2';
+  ctx.editEoyPayment(10, 2026);                                  // legacy $20 is not editable here
+  assert(/never changes a dollar amount/.test(lastAlert())); assert.strictEqual(runs.length, 0);
+  for (const bad of ['', '7', 'both', '1', 'x']) {               // Mo (Week 1 $10) may only be moved to week 2
+    promptAnswer = bad; runs.length = 0;
+    ctx.editEoyPayment(13, 2026);
+    assert(/only moves the payment to week 2/.test(lastAlert()), `choice "${bad}" refused`); assert.strictEqual(runs.length, 0);
+  }
+  promptAnswer = '2'; runs.length = 0;
+  ctx.editEoyPayment(13, 2026);
+  assert.deepStrictEqual(plain(runs.map(r => [r.sql, r.params])), [['UPDATE Payments SET Comment=? WHERE rowid=?', ['(2nd Week)', 13]]], 'comment only; Earned untouched');
+  runs.length = 0;
+  ctx.editEoyPayment(11, 2026);                                  // Lou already has a week 2 payment (ID 12)
+  assert(/already has another payment for week 2/.test(lastAlert())); assert.strictEqual(runs.length, 0);
 
   // ================= Old typed-amount refund is gone: fixed, week-scoped, guarded
   assert(!/Enter refund amount/.test(html) && !/Reason for refund \(e\.g\./.test(html), 'typed-amount refund prompts removed');
@@ -232,6 +235,90 @@ const lastAlert = () => alerts.pop() || '';
   const tbl = html.slice(html.indexOf('const _untagged = paid'), html.indexOf('const _untagged = paid') + 5200);
   assert(/getEoyRefundButtonWeeks\(_wks, _refunded, eoyScoredByWeek, r\.Player\)/.test(tbl));
   assert(/eoyScoredByWeek = \{ 1: getPostSeasonWeekNoShows\(season, 1\)\.scored, 2: getPostSeasonWeekNoShows\(season, 2\)\.scored \}/.test(html));
+
+  // ================= "✏ Week": only a valid unplayed $10 single-week payment; the dollar amount never changes
+  reset();
+  ctx.prompt = () => promptAnswer;
+  const sbw = () => ({ 1: ctx.getPostSeasonWeekNoShows(2026, 1).scored, 2: ctx.getPostSeasonWeekNoShows(2026, 2).scored });
+  const canEdit = row => ctx.canEditEoyPaymentWeeks(row, 10, sbw());
+  const noDbChange = () => assert.strictEqual(runs.length, 0, 'a refused edit makes no database change');
+  const anyUpdateTouchesAmount = () => runs.some(r => /Earned/.test(r.sql));
+
+  // 1. legacy / both-weeks rows: no button
+  scores = {};
+  assert.strictEqual(canEdit({ Player: 'Ann', Earned: 20, Comment: '' }), false, 'legacy untagged $20: no ✏ Week');
+  assert.strictEqual(canEdit({ Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' }), false, 'tagged both-weeks $20: no ✏ Week');
+  assert.strictEqual(canEdit({ Player: 'Ann', Earned: 10, Comment: '' }), false, 'legacy untagged $10: no ✏ Week');
+  // 2. "Needs week" rows (odd amounts, mis-tagged amounts) get no editor; only valid unplayed $10 single-week entries do
+  assert.strictEqual(canEdit({ Player: 'Odd', Earned: 15, Comment: '' }), false, 'untagged $15: no ✏ Week');
+  assert.strictEqual(canEdit({ Player: 'Odd', Earned: 15, Comment: '(1st Week)' }), false, 'tagged $15: no ✏ Week');
+  assert.strictEqual(canEdit({ Player: 'Odd', Earned: 10, Comment: '(Both Weeks)' }), false, '$10 tagged both: no ✏ Week');
+  assert.strictEqual(canEdit({ Player: 'Xi', Earned: 10, Comment: '(1st Week)' }), true, 'unplayed $10 Week 1 entry');
+  assert.strictEqual(canEdit({ Player: 'Xi', Earned: 10, Comment: '(2nd Week)' }), true, 'unplayed $10 Week 2 entry');
+  scores = { '20260922|Front': ['Wes'], '20260929|Back': ['Zoe'] };
+  assert.strictEqual(canEdit({ Player: 'Wes', Earned: 10, Comment: '(1st Week)' }), false, 'scored Week 1 -> no ✏ Week');
+  assert.strictEqual(canEdit({ Player: 'Zoe', Earned: 10, Comment: '(2nd Week)' }), false, 'scored Week 2 -> no ✏ Week');
+  assert.strictEqual(canEdit({ Player: 'Wes', Earned: 10, Comment: '(2nd Week)' }), true, 'Wes has not played Week 2');
+  const tblE = html.slice(html.indexOf('const _untagged = paid'), html.indexOf('const _untagged = paid') + 6200);
+  assert(/canEditEoyPaymentWeeks\(\{ Player: r\.Player, Earned: r\.Earned, Comment: r\.Comment \}, _entryTotal, eoyScoredByWeek\) \? _btn\('#1565c0', '✏ Week'/.test(tblE));
+  // odd amounts: no assign buttons, a "separate payment correction" note instead
+  assert(/_oddAmount/.test(tblE) && /separate payment correction/.test(tblE) && /_needsWeek && !_oddAmount/.test(tblE));
+
+  // 3. scored Week 1 player cannot edit away the Week 1 payment; a legacy $20 cannot be cut
+  payments = [{ ID: 20, Player: 'Wes', Earned: 10, Comment: '(1st Week)' }];
+  scores = { '20260922|Front': ['Wes'] };
+  runs.length = 0; promptAnswer = '2';
+  ctx.editEoyPayment(20, 2026);
+  assert(/has a week 1 score/.test(lastAlert())); noDbChange();
+  payments = [{ ID: 21, Player: 'Wes', Earned: 20, Comment: '' }];
+  runs.length = 0; promptAnswer = '2';
+  ctx.editEoyPayment(21, 2026);
+  assert(/never changes a dollar amount/.test(lastAlert())); noDbChange();
+
+  // 4. unplayed $10 payment moves between weeks, still $10 (only the comment is written)
+  payments = [{ ID: 22, Player: 'Xi', Earned: 10, Comment: '(1st Week)' }, { ID: 26, Player: 'Yu', Earned: 10, Comment: '(2nd Week)' }];
+  scores = {};
+  runs.length = 0; promptAnswer = '2';
+  ctx.editEoyPayment(22, 2026);
+  assert.deepStrictEqual(plain(updates().map(u => u.params)), [['(2nd Week)', 22]], 'Week 1 -> Week 2, amount untouched');
+  assert.strictEqual(runs.length, 1); assert.strictEqual(anyUpdateTouchesAmount(), false);
+  runs.length = 0; promptAnswer = '1';
+  ctx.editEoyPayment(26, 2026);
+  assert.deepStrictEqual(plain(updates().map(u => u.params)), [['(1st Week)', 26]], 'Week 2 -> Week 1, amount untouched');
+  assert.strictEqual(anyUpdateTouchesAmount(), false);
+  scores = { '20260929|Back': ['Zoe'] };                         // another player having played Week 2 doesn't matter
+  runs.length = 0; promptAnswer = '2';
+  ctx.editEoyPayment(22, 2026);
+  assert.strictEqual(updates().length, 1);
+
+  // 5. ANY $20 -> $10 edit is refused, points to the refund button, and changes nothing
+  scores = {};
+  for (const [label, row] of [['legacy untagged $20', { ID: 23, Player: 'Ann', Earned: 20, Comment: '' }],
+                              ['tagged both-weeks $20', { ID: 24, Player: 'Ann', Earned: 20, Comment: '(Both Weeks)' }]]) {
+    for (const choice of ['1', '2', 'both']) {
+      payments = [row]; runs.length = 0; promptAnswer = choice;
+      ctx.editEoyPayment(row.ID, 2026);
+      const m = lastAlert();
+      assert(/never changes a dollar amount/.test(m) && /↩ Wk 1 \/ ↩ Wk 2 refund button/.test(m), `${label} -> ${choice} must be refused with refund guidance, got: ${m}`);
+      noDbChange();
+    }
+  }
+
+  // 6. a $15 row: editing is refused (in either direction, any choice) and the database is unchanged
+  for (const row of [{ ID: 25, Player: 'Odd', Earned: 15, Comment: '' }, { ID: 27, Player: 'Odd', Earned: 15, Comment: '(1st Week)' }]) {
+    for (const choice of ['1', '2', 'both', '']) {
+      payments = [row]; runs.length = 0; promptAnswer = choice;
+      ctx.editEoyPayment(row.ID, 2026);
+      const m = lastAlert();
+      assert(/separate payment correction/.test(m) && /\$15\.00/.test(m), `$15 row (${row.Comment || 'untagged'}) choice "${choice}" must be refused, got: ${m}`);
+      noDbChange();
+    }
+  }
+  assert.strictEqual(payments[0].Earned, 15, '$15 stays $15');
+  // a $10 row tagged both weeks is also not editable here (assign it with the Wk buttons instead)
+  payments = [{ ID: 28, Player: 'Short', Earned: 10, Comment: '(Both Weeks)' }]; runs.length = 0; promptAnswer = '1';
+  ctx.editEoyPayment(28, 2026);
+  assert(/Wk 1 \/ Wk 2 \/ Both buttons/.test(lastAlert())); noDbChange();
 
   console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });
