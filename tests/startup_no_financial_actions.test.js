@@ -54,7 +54,7 @@ function makeEl() {
 const par = { Name: 'Boone Links' };
 for (let i = 1; i <= 18; i++) par['Hole' + i] = [4, 4, 3, 4, 5, 4, 3, 4, 5][(i - 1) % 9];
 for (let i = 1; i <= 18; i++) par['HCP' + i] = i;
-const seasonRow = { League: "Hugh's", Season: 2026, PostSeasonDt: '9/22/2026', SkinsPS: 7, ClosestPS: 3, EOYSkins: 20,
+const seasonRow = { League: "Hugh's", Season: 2026, PostSeasonDt: '9/29/2026', SkinsPS: 7, ClosestPS: 3, EOYSkins: 20,
                     PSWeek1Nine: 'Front', PSWeek2Dt: null, Course: 'Boone Links', Start9: 'F', Cost: 45, Skins: 2, Closest: 1 };
 function answer(sql) {
   if (/PRAGMA table_info/.test(sql)) return [];
@@ -163,7 +163,7 @@ function assertQuiet(name, { rec }) {
   assert.strictEqual(vm.runInContext('!currentUser', b.ctx), true, 'B: nobody is logged in (login screen)');
   assert(b.rec.calls.includes('onDbLoaded') && b.rec.calls.includes('initEntry') && b.rec.calls.includes('buildEntryGrid'),
     'B: the startup path (onDbLoaded -> initEntry -> buildEntryGrid) actually ran, so this test exercises the bug');
-  assert.strictEqual(vm.runInContext(`document.getElementById('entryDate').value`, b.ctx), '20260922', 'B: default entry date is the post-season date');
+  assert.strictEqual(vm.runInContext(`document.getElementById('entryDate').value`, b.ctx), '20260929', 'B: default entry date is the post-season date');
   assertQuiet('B (DB loaded, not logged in)', b);
 
   // ================= C. calcEoySkins itself: silent mode never alerts; explicit (non-silent) use still tells the officer

@@ -33,6 +33,7 @@ function build(week1Fb) {
     B: slot('Ben', true, false, pack(w1.ben, blank())),
     C: slot('Cy', false, true, pack(blank(), w2.cy)),
     D: slot('Dee', false, true, pack(blank(), w2.dee)),
+    E: slot('Eve', true, true, pack(blank(), blank())),     // paid both weeks but has NO score: in neither pot
   };
 }
 
@@ -45,7 +46,7 @@ const ctx = vm.createContext({
   getSeasonSettings: () => ({ SkinsPS: 7, ClosestPS: 3 }),
   ccRosterEligible: () => false, psRefundPanelHtml: () => '', entryState: {}, courseData: { all18: {} },
 });
-['psWeekForHoleIndex', 'psWeekSkinValue', 'getPostSeasonEntryTotals', 'renderPostSeasonBreakdown']
+['psWeekForHoleIndex', 'psWeekSkinPayout', 'getPostSeasonEntryTotals', 'renderPostSeasonBreakdown']
   .forEach(n => vm.runInContext(extract(n), ctx));
 const nine = { nums: Array.from({ length: 18 }, (_, i) => i + 1), hcps: [...Array(2)].flatMap(() => [1,2,3,4,5,6,7,8,9]) };
 
@@ -63,26 +64,33 @@ function render(week, week1Fb = 'Front') {
 }
 const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div>\\s*<div[^>]*>${label}`)) || [])[1];
 
-// ---- Week 1 (Front): Ann + Ben -> $14 skins, $6 CTP, 3 skins won = $4.67 each
+// ---- Week 1 (Front): Ann + Ben paid-and-scored -> $14 skins, $6 CTP (Eve paid, no score: in neither pot);
+//      3 skins won -> $4 each whole dollars, $2 remainder preview
 let r = render(1);
 assert.strictEqual(stat(r.out, 'Skins Pot'), '14');
 assert.strictEqual(stat(r.out, 'CTP Pot'), '6');
 assert.strictEqual(stat(r.out, 'Players In'), '2');
 assert(/2 Players Entered/.test(r.out));
+assert(/1 paid player with no score yet/.test(r.out), 'Eve is reported as paid but not scored');
+assert(!r.players.includes('Eve'), 'Eve is not counted in the pot players');
+assert.strictEqual(stat(r.out, 'Remainder → Skins kitty \\(preview\\)'), '2');
 ['Ann', 'Ben'].forEach(n => assert(r.players.includes(n)));
 ['Cy', 'Dee'].forEach(n => assert(!r.players.includes(n), n + ' is not in week 1'));
 assert(/Week 1 Skins Results \(Front 9\)/.test(r.out));
-assert.strictEqual((r.skins.match(/\$4\.67/g) || []).length, 3, 'three week-1 skins at $4.67');
+assert.strictEqual((r.skins.match(/\$4\.00/g) || []).length, 3, 'three week-1 skins at $4 (whole dollars)');
+assert(!/\$4\.67/.test(r.out), 'no cents payouts');
 assert(r.skins.includes('Ben') && !r.skins.includes('Dee') && !r.skins.includes('Cy'), 'week 1 winners only');
 assert(!/\$21\.00/.test(r.out) && !/\$8\.75/.test(r.out), 'no week 2 / combined values');
 
-// ---- Week 2 (Back): Ann + Cy + Dee -> $21 skins, $9 CTP, 1 skin = $21.00
+// ---- Week 2 (Back): Ann + Cy + Dee -> $21 skins, $9 CTP, 1 skin = $21.00, no remainder
 r = render(2);
 assert.strictEqual(stat(r.out, 'Skins Pot'), '21');
 assert.strictEqual(stat(r.out, 'CTP Pot'), '9');
 assert.strictEqual(stat(r.out, 'Players In'), '3');
 ['Ann', 'Cy', 'Dee'].forEach(n => assert(r.players.includes(n)));
 assert(!r.players.includes('Ben'), 'Ben is not in week 2');
+assert(!r.players.includes('Eve'), 'Eve (paid, no score) is not a week 2 pot player');
+assert.strictEqual(stat(r.out, 'Remainder → Skins kitty \\(preview\\)'), '0');
 assert(/Week 2 Skins Results \(Back 9\)/.test(r.out));
 assert.strictEqual((r.skins.match(/\$21\.00/g) || []).length, 1);
 assert(r.skins.includes('Dee') && !r.skins.includes('Ben') && !r.skins.includes('Ann'), 'week 2 winners only');
@@ -91,7 +99,7 @@ assert(r.skins.includes('Dee') && !r.skins.includes('Ben') && !r.skins.includes(
 r = render(1, 'Back');
 assert(/Week 1 Skins Results \(Back 9\)/.test(r.out));
 assert.strictEqual(stat(r.out, 'Skins Pot'), '14');
-assert.strictEqual((r.skins.match(/\$4\.67/g) || []).length, 3);
+assert.strictEqual((r.skins.match(/\$4\.00/g) || []).length, 3);
 r = render(2, 'Back');
 assert(/Week 2 Skins Results \(Front 9\)/.test(r.out));
 assert.strictEqual(stat(r.out, 'Skins Pot'), '21');
