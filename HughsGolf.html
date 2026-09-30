@@ -19669,7 +19669,7 @@ function recalcPostSeasonEoyRefunds(season) {
 
 function calcEoySkins(season, silent=false) {
   const lp = getSeasonSettings(season);
-  if (!lp?.PostSeasonDt) { alert('No post season date found for ' + season); return; }
+  if (!lp?.PostSeasonDt) { if (!silent) alert('No post season date found for ' + season); return; }
 
   // Get both post season dates
   const psDates = parsePostSeasonDates(lp.PostSeasonDt);
@@ -19680,7 +19680,7 @@ function calcEoySkins(season, silent=false) {
   const eoyWeek1Players = getEoySkinPlayersForWeek(season, 1);
   const eoyWeek2Players = getEoySkinPlayersForWeek(season, 2);
   const eoyPlayers = new Set([...eoyWeek1Players, ...eoyWeek2Players]);
-  if (!eoyPlayers.size) { alert('No eligible EOY Skins payers found for ' + season); return; }
+  if (!eoyPlayers.size) { if (!silent) alert('No eligible EOY Skins payers found for ' + season); return; }
 
   // Refunds depend on the current score rows, so update them before any skin-winner early return.
   const refundInfo = recalcPostSeasonEoyRefunds(season);
@@ -20462,16 +20462,10 @@ function buildEntryGrid() {
   // Post season obeys the same rule: future date is locked unless the "allow future scores" box is checked
   const blockFutureScores = isFuture && !allowFutureScores;
 
-  // If scores exist for this date but no skin winners recorded yet, calculate now
-  // (must happen before skinWinnerCells cache is built below)
-  if (date && !blockFutureScores) {
-    const hasScores = query(`SELECT 1 FROM Scores WHERE League="Hugh's" AND Date=${date} LIMIT 1`).length > 0;
-    const hasWinners = query(`SELECT 1 FROM Payments WHERE League="Hugh's" AND "Desc"='Skin' AND Detail LIKE '#%' AND Date=${date} LIMIT 1`).length > 0;
-    if (hasScores && !hasWinners) {
-      const result = saveSkinWinnersForDate(date);
-      if (result?.ok) SERVER_RUN_QUEUE.then(() => saveDBToServer());
-    }
-  }
+  // NOTE: building/rendering the grid never calculates or writes skin winners, payouts, refunds or payments.
+  // buildEntryGrid runs on every page load (initEntry -> onDbLoaded, before login), so anything financial here
+  // would fire on a plain reload. Winners are recalculated only by explicit actions (saving scores, Gallus import,
+  // marking paid, admin buttons).
 
   // Find the next upcoming date (first future schedule date)
   const nextDate = query(`SELECT MIN(Date) as d FROM Schedule WHERE League="Hugh's" AND CAST(Date AS INTEGER) > ${todayInt}`)[0]?.d;
@@ -20676,7 +20670,7 @@ function buildEntryGrid() {
   entryDirty = false;
   entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
   try { applyCellClasses(nine); } catch (e) { console.warn('applyCellClasses failed after entry build:', e); }
-  if (isPostSeason) calcEoySkins(season, true); // true = silent (no confirm/alert)
+  // (no calcEoySkins here — see the note above; it used to run on every grid build, including a page reload)
   if (blockFutureScores) {
     // Always disable score inputs for future dates
     document.querySelectorAll('#entryGrid input.eg-input').forEach(inp => {
