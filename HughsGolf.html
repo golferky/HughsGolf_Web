@@ -9150,7 +9150,12 @@ function loadWhatsNewTab() {
 function warnIfUnpaidScorers(date) {
   const league = "Hugh's";
   const scored  = query(`SELECT DISTINCT Player FROM Scores WHERE League=? AND Date=?`, [league, date]).map(r => r.Player);
-  const paidSet = new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League=? AND Date=? AND Desc IN ('Skin','CTP') AND Detail='Payment'`, [league, date]).map(r => r.Player));
+  // Post-season nights are paid through EOY Skins (tagged to a week), not per-night Skin/CTP rows: a scorer is "paid in"
+  // when they are in that week's paid pool (paid for the week, net of refunds). Regular-season nights are unchanged.
+  const psCtx = getPostSeasonContextForDate(date);
+  const paidSet = psCtx
+    ? getEoySkinPlayersForWeek(psCtx.season, psCtx.week)
+    : new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League=? AND Date=? AND Desc IN ('Skin','CTP') AND Detail='Payment'`, [league, date]).map(r => r.Player));
   const unpaid  = scored.filter(p => !paidSet.has(p));
   if (!unpaid.length) return true;
   return confirm(
