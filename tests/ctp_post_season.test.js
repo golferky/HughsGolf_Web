@@ -26,6 +26,7 @@ const eoyRows = [
   { Player: 'Cara', Earned: 10, Comment: '(2nd Week)' },
 ];
 function query(sql) {
+  if (/Detail='Refund'/.test(sql)) return [];
   if (/FROM SeasonSettings WHERE League="Hugh's" AND Season=\d+ AND PostSeasonDt IS NOT NULL/.test(sql)) return [{ PostSeasonDt: '9/17/2025' }];
   if (/SELECT PostSeasonDt, EOYSkins as EoySkins FROM SeasonSettings/.test(sql)) return [{ PostSeasonDt: '9/17/2025', EoySkins: 20 }];
   if (/SELECT \* FROM SeasonSettings/.test(sql)) return [{ EOYSkins: 20, PSWeek1Nine: week1Nine }];
@@ -34,7 +35,7 @@ function query(sql) {
 }
 
 const ctx = vm.createContext({ query, parseInt, parseFloat, Set, Date, String, Number });
-['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeek1Nine', 'parsePostSeasonDates', 'getPostSeasonWeekForDate', 'getEoySkinPlayersForWeek',
+['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeek1Nine', 'parsePostSeasonDates', 'getPostSeasonWeekForDate', 'getPostSeasonWeekEntry', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
  'getPostSeasonContextForDate', 'getCtpDateKeys', 'getPostSeasonCtpInfo']
   .forEach(n => vm.runInContext(extract(n), ctx));
 

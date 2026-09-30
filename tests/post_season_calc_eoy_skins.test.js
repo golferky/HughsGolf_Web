@@ -47,6 +47,7 @@ const scoresByDate = {
 let existingWinners = [];
 const runs = [];
 function query(sql, params = []) {
+  if (/Detail='Refund'/.test(sql)) return [];
   if (/FROM Payments/.test(sql) && /'EOY Skins'/.test(sql)) return eoyRows;
   if (/SELECT PSWeek2Dt/.test(sql)) return [];
   if (/SELECT rowid as RowID/.test(sql)) return existingWinners;
@@ -65,7 +66,7 @@ const ctx = vm.createContext({
   courseData: { front: { hcps: seq, pars: par4 }, back: { hcps: seq, pars: par4 }, all18: {} },
 });
 ['psMdyToInt', 'psAddDaysMdy', 'parsePostSeasonDates', 'getPostSeasonWeekForDate', 'getPostSeasonWeek1Nine',
- 'getEoySkinPlayersForWeek', 'psWeekSkinValue', 'calcEoySkins']
+ 'getPostSeasonWeekEntry', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek', 'psWeekSkinValue', 'calcEoySkins']
   .forEach(n => vm.runInContext(extract(n), ctx));
 
 const inserts = () => runs.filter(r => /^INSERT INTO Payments/.test(r.sql)).map(r => r.params);

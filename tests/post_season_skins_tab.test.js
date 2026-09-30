@@ -32,6 +32,7 @@ const winnersByDate = {
   20260929: [{ Player: 'Dee', Detail: '#11', Earned: 44, Comment: '' }],
 };
 function query(sql, params = []) {
+  if (/Detail='Refund'/.test(sql)) return [];
   if (/SELECT \* FROM SeasonSettings/.test(sql)) return [{ PostSeasonDt: '9/22/2026', SkinsPS: 7, ClosestPS: 3, EOYSkins: 20 }];
   if (/SELECT PSWeek2Dt/.test(sql)) return [];
   if (/FROM Payments/.test(sql) && /'EOY Skins'/.test(sql)) return eoyRows;
@@ -53,7 +54,7 @@ const ctx = vm.createContext({
   toDateKey: v => String(v), syncCtpsToSkinsDate() {},
   fmtMoney: v => '$' + Number(v).toFixed(2), tbody: id => { els[id] = { innerHTML: '', appendChild(c) { this.innerHTML += c.innerHTML; } }; return els[id]; },
 });
-['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeekForDate', 'parsePostSeasonDates', 'getEoySkinPlayersForWeek', 'loadSkins']
+['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeekForDate', 'parsePostSeasonDates', 'getPostSeasonWeekEntry', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek', 'loadSkins']
   .forEach(n => vm.runInContext(extract(n), ctx));
 
 function load(date) {

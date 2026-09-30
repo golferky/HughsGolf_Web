@@ -30,6 +30,7 @@ const eoyRows = [
 const course = { Hole1: 4, Hole2: 4, Hole3: 3, Hole4: 4, Hole5: 5, Hole6: 4, Hole7: 3, Hole8: 4, Hole9: 5,
                  Hole10: 4, Hole11: 4, Hole12: 3, Hole13: 4, Hole14: 5, Hole15: 4, Hole16: 3, Hole17: 4, Hole18: 5 };
 function query(sql) {
+  if (/Detail='Refund'/.test(sql)) return [];
   if (/SELECT \* FROM SeasonSettings/.test(sql)) return [{ PostSeasonDt: '9/22/2026', PSWeek1Nine: week1Nine, EOYSkins: 20, ClosestPS: 3 }];
   if (/SELECT PostSeasonDt, EOYSkins as EoySkins FROM SeasonSettings/.test(sql)) return [{ PostSeasonDt: '9/22/2026', EoySkins: 20 }];
   if (/SELECT PSWeek2Dt/.test(sql)) return [];
@@ -47,7 +48,7 @@ const ctx = vm.createContext({
   getScheduledFrontBack: () => 'Front',   // regular-season logic; must NOT be used for post season
 });
 ['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeek1Nine', 'getPostSeasonWeekForDate',
- 'parsePostSeasonDates', 'getEoySkinPlayersForWeek', 'getPostSeasonContextForDate', 'getPostSeasonCtpInfo', 'loadCtps']
+ 'parsePostSeasonDates', 'getPostSeasonWeekEntry', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek', 'getPostSeasonContextForDate', 'getPostSeasonCtpInfo', 'loadCtps']
   .forEach(n => vm.runInContext(extract(n), ctx));
 
 function load(date) {
