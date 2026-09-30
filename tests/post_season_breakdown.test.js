@@ -43,7 +43,7 @@ const ctx = vm.createContext({
   window: {}, document: { getElementById: id => els[id] },
   parseInt, parseFloat, String, Set, Math, Number, Object, Array,
   getSeasonSettings: () => ({ SkinsPS: 7, ClosestPS: 3 }),
-  ccRosterEligible: () => false, entryState: {}, courseData: { all18: {} },
+  ccRosterEligible: () => false, psRefundPanelHtml: () => '', entryState: {}, courseData: { all18: {} },
 });
 ['psWeekForHoleIndex', 'psWeekSkinValue', 'getPostSeasonEntryTotals', 'renderPostSeasonBreakdown']
   .forEach(n => vm.runInContext(extract(n), ctx));
