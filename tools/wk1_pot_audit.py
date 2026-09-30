@@ -15,6 +15,13 @@ It replays the exact rules in HughsGolf.html:
       -> Week 1 pot = (eligible players with >=1 hole score on the Week 1 date) x SkinsPS,
          payout per skin = pot / number of stored Week 1 skin rows
 and prints every payer, refund, score row and the exact reason a player is (not) in the pot.
+
+Sections 7-9 add the Week 1 MONEY WALK used to design the whole-dollar payout / Skins-kitty change:
+  7. EOY collected, Week 1 pot, stored vs whole-dollar payouts, remainder, current EOY-pool and Skins-kitty math
+  8. exact before/after balances if the remainder were moved to the Skins kitty (simulated on an IN-MEMORY copy,
+     never on the file) and whether that dollar is counted twice, disappears, or is counted exactly once
+  9. every existing Player='Kitty' Skin row (Detail / Comment) and what the "carryover" readers would show for the
+     post-season dates, so a new remainder row cannot be mistaken for a regular carryover
 """
 import os, sqlite3, sys, datetime
 from pathlib import Path
@@ -165,6 +172,128 @@ if n:
           else f"stored payout {sorted(stored)} != ${exp_now:.2f} that current data produces -> STALE (a recalculation would change it)")
 else:
     print("   no stored week 1 skin rows")
+# =====================================================================================================
+# 7-9: WEEK 1 MONEY WALK (still read-only: the only writes below go to an in-memory COPY, never the file)
+# =====================================================================================================
+import math
+from decimal import Decimal
+
+lo, hi = season * 10000 + 101, (season + 1) * 10000 + 101
+money = lambda v: ("-$" if v < 0 else "$") + f"{abs(v):,.2f}"
+L = "League=\"Hugh's\""
+
+def scalar(c, sql, p=()):
+    return float(c.execute(sql, p).fetchone()[0] or 0)
+
+def balances(c):
+    """The same SQL the Prize Money tab uses (loadPrizeMoney), evaluated for the whole season."""
+    b = {}
+    b["eoy_payments"] = scalar(c, f"SELECT COALESCE(SUM(Earned),0) FROM Payments WHERE {L} AND \"Desc\"='EOY Skins' AND Detail='Payment' AND Date >= ? AND Date < ?", (lo, hi))
+    b["eoy_transfers"] = scalar(c, f"SELECT COALESCE(SUM(Earned),0) FROM Payments WHERE {L} AND \"Desc\"='EOY Skins' AND Detail='Pool Transfer' AND Date >= ? AND Date < ?", (lo, hi))
+    b["eoy_collected"] = round(b["eoy_payments"] + b["eoy_transfers"], 2)
+    b["eoy_paid_out"] = scalar(c, f"SELECT COALESCE(SUM(Earned),0) FROM Payments WHERE {L} AND \"Desc\"='EOY Skins' AND Detail NOT IN ('Payment','Refund','Pool Transfer') AND Date >= ? AND Date < ?", (lo, hi))
+    b["eoy_balance"] = round(b["eoy_collected"] - b["eoy_paid_out"], 2)
+    b["skin_collected"] = scalar(c, f"SELECT COALESCE(SUM(Earned),0) FROM Payments WHERE {L} AND Desc='Skin' AND Detail='Payment' AND Date >= ? AND Date < ?", (lo, hi))
+    b["skin_paid_out"] = scalar(c, f"SELECT COALESCE(SUM(Earned),0) FROM Payments WHERE {L} AND Desc='Skin' AND Detail LIKE '#%' AND Player != 'Kitty' AND Date >= ? AND Date < ? AND Date NOT IN (?,?)", (lo, hi, week1, week2))
+    b["skin_transfer_out"] = scalar(c, f"SELECT COALESCE(SUM(Earned),0) FROM Payments WHERE {L} AND Desc='Skin' AND Detail='Pool Transfer' AND Date >= ? AND Date < ?", (lo, hi))
+    b["skin_kitty"] = round(b["skin_collected"] - b["skin_paid_out"] - b["skin_transfer_out"], 2)
+    b["combined"] = round(b["eoy_balance"] + b["skin_kitty"], 2)
+    return b
+
+print("=" * 78); print("7. WEEK 1 MONEY WALK  (whole season; same SQL as the Prize Money tab; 'as of' date = end of season)")
+base = balances(con)
+ev = q(f"SELECT COUNT(*) n, COALESCE(SUM(CAST(Earned AS REAL)),0) t FROM Payments WHERE {L} AND \"Desc\"='EOY Skins' AND Detail='Payment' AND Date >= ? AND Date < ?", (lo, hi))[0]
+refund_total = scalar(con, f"SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) FROM Payments WHERE {L} AND \"Desc\"='EOY Skins' AND Detail='Refund' AND Date >= ? AND Date < ?", (lo, hi))
+print(f"   a) EOY Skins collected: {ev['n']} payment rows = {money(ev['t'])}   (refund rows total {money(refund_total)}; the tab's EOY math does NOT subtract them)")
+print(f"      Week 1 gross payers x ${weekamt:g} = {len(gross1)} x {weekamt:g} = {money(len(gross1) * weekamt)}   (Week 1 share; the rest is Week 2 / unassigned)")
+pot = round(len(pot_players) * skin, 2)
+print(f"   b) Week 1 paid players in the pot: {len(pot_players)}  x ${skin:g} Skins = pot {money(pot)}")
+print(f"      (eligible for week 1 AND >=1 hole score on {week1}; their ${ctp:g} x {len(pot_players)} = {money(len(pot_players) * ctp)} is the week 1 CTP pot)")
+print("   c) STORED Week 1 skin winner payouts:")
+stored_rows = q("SELECT rowid AS ID, Player, Detail, CAST(Earned AS REAL) Earned, COALESCE(DatePaid,'') DatePaid FROM Payments "
+                f"WHERE {L} AND \"Desc\"='Skin' AND Detail LIKE '#%' AND Player!='Kitty' AND CAST(Date AS INTEGER)=? "
+                "ORDER BY CAST(REPLACE(Detail,'#','') AS INTEGER)", (week1,))
+n = len(stored_rows)
+stored_total = round(sum(r["Earned"] for r in stored_rows), 2)
+proposed_each = int(Decimal(str(pot)) // n) if n else 0          # whole dollars, rounded DOWN
+remainder = round(pot - proposed_each * n, 2)                    # zero winners -> the whole pot
+for r in stored_rows:
+    print(f"      rowid {r['ID']:<7} {r['Player']:<24} {r['Detail']:<5} stored {money(r['Earned']):>9}   DatePaid={r['DatePaid'] or '(unpaid)'}")
+if not n: print("      (none)")
+print(f"      skins won (stored rows): {n}   stored total {money(stored_total)}   vs pot {money(pot)}: "
+      + (f"stored payouts EXCEED the pot by {money(stored_total - pot)}" if stored_total > pot + .005 else f"stored payouts are {money(pot - stored_total)} under the pot"))
+print("   d) WHOLE-DOLLAR proposed payout (floor of pot / skins won):")
+if n:
+    print(f"      each = floor({money(pot)} / {n}) = {money(proposed_each)};  total paid {money(proposed_each * n)}")
+    for r in stored_rows:
+        print(f"      {r['Player']:<24} {r['Detail']:<5} {money(r['Earned']):>9} -> {money(proposed_each):>9}   "
+              + ("PAID - must NOT be edited" if r["DatePaid"] else "unpaid - safe to restate"))
+else:
+    print("      no outright skins stored for week 1 -> each = $0.00 and the WHOLE pot is the remainder")
+print(f"   e) PROPOSED remainder to Skins kitty: {money(remainder)}")
+print(f"      check: paid {money(proposed_each * n)} + remainder {money(remainder)} = {money(proposed_each * n + remainder)} vs pot {money(pot)}: "
+      f"{'OK' if abs(proposed_each * n + remainder - pot) < .005 else 'MISMATCH'};  no payout exceeds the pot: {'OK' if proposed_each * n <= pot + .005 else 'VIOLATED'}")
+print("   f) CURRENT EOY-pool balance (loadPrizeMoney):")
+print(f"      EOY 'Payment' rows {money(base['eoy_payments'])} + EOY 'Pool Transfer' rows {money(base['eoy_transfers'])} = collected {money(base['eoy_collected'])}")
+print(f"      - EOY-desc paid out (Detail not Payment/Refund/Pool Transfer) {money(base['eoy_paid_out'])}  =  EOY pool balance {money(base['eoy_balance'])}")
+print("      NOTE: post-season skin winners are Desc='Skin', so they are NOT in 'EOY-desc paid out': the EOY balance still contains the")
+print("      week 1 pot that is paid to winners.")
+print("   g) CURRENT Skins-kitty balance (loadPrizeMoney):")
+print(f"      Skin 'Payment' rows {money(base['skin_collected'])} - winners paid out (post-season dates excluded by psKittyExclude) {money(base['skin_paid_out'])}"
+      f" - Skin 'Pool Transfer' rows {money(base['skin_transfer_out'])}  =  Skins kitty {money(base['skin_kitty'])}")
+print(f"      Combined (EOY pool + Skins kitty) = {money(base['combined'])}")
+
+print("=" * 78); print("8. BEFORE / AFTER IF THE REMAINDER WERE MOVED TO THE SKINS KITTY  (simulated on an IN-MEMORY copy; the file is untouched)")
+R = remainder if remainder > 0 else 1.00
+print(f"   Transfer amount used: {money(R)}" + ("" if remainder > 0 else "   (no remainder today, so a hypothetical $1.00 is used)"))
+INS = f"INSERT INTO Payments (League,Player,Date,\"Desc\",Detail,Earned,DatePaid,Comment) VALUES (\"Hugh's\",'Kitty',?,?,?,?,?,?)"
+def scenario(title, rows, extra_kitty=0.0):
+    m = sqlite3.connect(":memory:"); con.backup(m)               # reading the read-only file into memory
+    print(f"   {title}")
+    try:
+        for r in rows: m.execute(INS, r)
+        a = balances(m)
+    except sqlite3.Error as e:
+        print(f"      could not simulate: {e}"); m.close(); return
+    m.close()
+    k_after = round(a["skin_kitty"] + extra_kitty, 2)
+    dk, de = round(k_after - base["skin_kitty"], 2), round(a["eoy_balance"] - base["eoy_balance"], 2)
+    print(f"      Skins kitty : {money(base['skin_kitty']):>10} -> {money(k_after):>10}   (change {money(dk)})")
+    print(f"      EOY pool    : {money(base['eoy_balance']):>10} -> {money(a['eoy_balance']):>10}   (change {money(de)})")
+    print(f"      Combined    : {money(base['combined']):>10} -> {money(round(k_after + a['eoy_balance'], 2)):>10}")
+    if abs(dk - R) < .005 and abs(de + R) < .005: v = "COUNTED EXACTLY ONCE (kitty +R, EOY pool -R: the dollar moved)"
+    elif abs(dk - R) < .005 and abs(de) < .005:   v = "COUNTED TWICE (kitty +R while the EOY pool still contains the same dollar)"
+    elif abs(dk) < .005 and abs(de) < .005:       v = "DISAPPEARS from the kitty (current formulas ignore the row; the dollar stays only in the EOY balance)"
+    elif abs(dk) < .005 and abs(de + R) < .005:   v = "DISAPPEARS (EOY pool -R, nothing credited to the kitty)"
+    else:                                         v = "OTHER - review the numbers above"
+    print(f"      VERDICT: {v}")
+scenario("Option A   new row Desc='Skin' Player='Kitty' Detail='PS Skin Remainder' +R, CURRENT formulas (no code change):",
+         [(week1, "Skin", "PS Skin Remainder", R, None, "audit simulation")])
+scenario("Option A2  same row, IF the kitty formula were changed to add it (kitty +R added arithmetically), EOY pool untouched:",
+         [(week1, "Skin", "PS Skin Remainder", R, None, "audit simulation")], extra_kitty=R)
+scenario("Option B   existing 'Pool Transfer' rows with NEGATIVE amounts: Skin -R (credits the kitty) + EOY Skins -R (debits the pool), CURRENT formulas:",
+         [(week1, "Skin", "Pool Transfer", -R, None, "audit simulation: to Skin kitty"),
+          (week1, "EOY Skins", "Pool Transfer", -R, None, "audit simulation: from EOY pool")])
+print("   (Simulations only. Today the app can transfer Skin -> EOY; the reverse direction is not in the UI.)")
+
+print("=" * 78); print("9. EVERY EXISTING Player='Kitty' ROW WITH Desc='Skin'   (Desc='EOY Skins' shown for comparison)")
+for desc in ("Skin", "EOY Skins"):
+    rows9 = q("SELECT rowid AS ID, Date, Detail, CAST(Earned AS REAL) Earned, COALESCE(DatePaid,'') DatePaid, COALESCE(Comment,'') Comment "
+              f"FROM Payments WHERE {L} AND Player='Kitty' AND \"Desc\"=? ORDER BY Date, rowid", (desc,))
+    print(f"   Desc='{desc}': {len(rows9)} rows (all seasons)")
+    for r in rows9:
+        flags = []
+        if int(r["Date"]) in (week1, week2): flags.append("<-- ON A POST-SEASON DATE")
+        if not (lo <= int(r["Date"]) < hi): flags.append("(other season)")
+        print(f"      rowid {r['ID']:<7} Date={r['Date']} Detail={r['Detail']!r:<24} Earned={money(r['Earned']):>9} DatePaid={r['DatePaid']!r} Comment={r['Comment']!r} {' '.join(flags)}")
+details = sorted({r["Detail"] for r in q(f"SELECT Detail FROM Payments WHERE {L} AND Player='Kitty' AND \"Desc\"='Skin'")})
+print(f"   distinct Detail values among Skin/Kitty rows: {details or 'none'}")
+print(f"   would Detail 'PS Skin Remainder' collide with an existing Detail? {'YES' if 'PS Skin Remainder' in details else 'no'}")
+for d in (week1, week2):
+    hit = q("SELECT Earned FROM Payments WHERE CAST(Date AS INTEGER)=? AND Desc='Skin' AND Player='Kitty'", (d,))
+    print(f"   'Carryover to next week' reader (Skins tab / PDF: Desc='Skin' AND Player='Kitty' on {d}) finds: "
+          + (f"{money(float(hit[0]['Earned']))} -> that row IS shown as a carryover today" if hit
+             else "nothing -> a NEW Skin/Kitty row on this date WOULD be shown as 'Carryover to next week' unless that reader is changed"))
 print("=" * 78)
 con.close()
 _after = (db_file.stat().st_size, db_file.stat().st_mtime_ns)
