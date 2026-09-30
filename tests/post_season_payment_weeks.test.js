@@ -196,14 +196,12 @@ const lastAlert = () => alerts.pop() || '';
   // Not paid for that week -> nothing to refund
   await ctx.refundEoyPayment('Cy', 2026, '1');
   assert(/no week 1 entry to refund/.test(lastAlert())); assert.strictEqual(inserts().length, 0);
-  // CTP results for the week block it
+  // Recorded CTP results for the week do NOT block a refund (a player with no score was never in the paid-and-scored pot)
   ctpRows.push({ Date: 20261006, Player: 'Kitty', Detail: 'Carryover3-Front' });
-  await ctx.refundEoyPayment('Ann', 2026, '2');
-  assert(/CTP results are already recorded/.test(lastAlert())); assert.strictEqual(inserts().length, 0);
-  ctpRows.length = 0;
   // Both weeks for a $20 entry: one fixed $10 row per week, never typed
   await ctx.refundEoyPayment('Ann', 2026, 'both');
   assert.deepStrictEqual(plain(inserts().map(r => [r.params[1], r.params[2]])), [[20260929, -10], [20261006, -10]]);
+  ctpRows.length = 0;
 
   // The Prize Money table no longer offers a typed refund; it offers per-week buttons and assign buttons
   const table = html.slice(html.indexOf('const _untagged = paid'), html.indexOf('const _untagged = paid') + 5200);

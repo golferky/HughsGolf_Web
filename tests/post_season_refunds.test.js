@@ -86,7 +86,7 @@ const ctx = vm.createContext({
 });
 ['psMdyToInt', 'psAddDaysMdy', 'parsePostSeasonDates', 'getPostSeasonWeek1Nine', 'getPostSeasonWeekForDate',
  'getPostSeasonWeekEntry', 'eoyWeeksFromComment', 'computeEoyGrossByWeek', 'getEoyUnassignedPayments', 'getEoySkinGrossPlayersForWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
- 'getPostSeasonContextForDate', 'getPostSeasonCtpInfo', 'getPostSeasonWeekNoShows', 'getEoyRefundedWeeks', 'psWeekHasCtpResults',
+ 'getPostSeasonContextForDate', 'getPostSeasonCtpInfo', 'getPostSeasonWeekNoShows', 'getEoyRefundedWeeks', 'getEoyRefundRows', 'psWeekHasCtpResults',
  'planPostSeasonRefunds', 'issuePostSeasonRefunds', 'psRefundPanelHtml', 'psWeekSkinPayout', 'psWeekScorerRows', 'getPostSeasonWeekPotPlayers', 'psSkinFingerprint', 'psWeekSkinState', 'psWeekPanelHtml', 'psNetHoles', 'psFindWinners', 'psComputeWeekWinners', 'calcEoySkins', 'loadSkins', 'loadCtps']
   .forEach(n => vm.runInContext((n === 'issuePostSeasonRefunds' ? 'async ' : '') + extract(n), ctx));
 
@@ -219,33 +219,27 @@ const stat = (out, label) => (out.match(new RegExp(`>\\$?(\\d+)</div><div class=
   assert.strictEqual(refundRows.length, 1);
   assert(/1 player × \$3 = <strong>\$3<\/strong>/.test(ctpHtml('20261006')), 'CTP pot = paid-and-scored only (Ann)');
 
-  // ================= Refund AFTER CTP results exist: blocked with a clear explanation, nothing written
+  // ================= Refund AFTER CTP results exist: still available (no score = never in the paid-and-scored pot)
   reset();
-  ctpRows.push({ Date: 20261006, Player: 'Dee', Detail: '#12' });        // week 2 winner recorded
+  ctpRows.push({ Date: 20261006, Player: 'Dee', Detail: '#12' });        // week 2 CTP winner recorded
+  const ctpBefore = JSON.stringify(ctpRows);
+  assert(!/Blocked|CTPs tab/.test(ctx.psRefundPanelHtml(2026, 2)), 'the panel still offers the refund after CTP results');
   await refund([2], ['Cy']);
-  assert.strictEqual(refundRows.length, 0);
-  let msg = alerts.pop();
-  assert(/CTP results are already recorded/.test(msg) && /reset/i.test(msg) && /CTPs tab/.test(msg));
-  assert.deepStrictEqual(pool(2), ['Ann', 'Cy', 'Dee', 'Fay'], 'pool unchanged when blocked');
-  assert(/Blocked/.test(ctx.psRefundPanelHtml(2026, 2)) && /CTPs tab/.test(ctx.psRefundPanelHtml(2026, 2)));
-  // Week 1 (no CTP results) is unaffected by week 2's CTP results
-  await refund([1], ['Ben']);
-  assert.strictEqual(refundRows.length, 1);
-  // A carryover ("No Winner") record also blocks
-  reset();
-  ctpRows.push({ Date: 20260929, Player: 'Kitty', Detail: 'Carryover12-Back' });
-  await refund([1], ['Ben']);
-  assert.strictEqual(refundRows.length, 0);
-  // both-week request is all-or-nothing when one week is blocked
+  assert.strictEqual(refundRows.length, 1, 'the no-show refund is recorded');
+  assert.strictEqual(JSON.stringify(ctpRows), ctpBefore, 'CTP results are untouched');
+  assert(!alerts.some(a => /CTP results are already recorded/.test(a)));
+  // A carryover ("No Winner") record does not block either, and a both-weeks request is not all-or-nothing on CTP state
   reset();
   scores = { '20260929|Back': ['Ann'], '20261006|Front': ['Ann'] };
-  ctpRows.push({ Date: 20261006, Player: 'Ann', Detail: '#16' });
-  await refund([1, 2], ['Fay']);
-  assert.strictEqual(refundRows.length, 0);
-  // Reset CTPs -> refund now works
-  ctpRows = [];
+  ctpRows.push({ Date: 20260929, Player: 'Kitty', Detail: 'Carryover12-Back' }, { Date: 20261006, Player: 'Ann', Detail: '#16' });
   await refund([1, 2], ['Fay']);
   assert.strictEqual(refundRows.length, 2);
+  // the safeguards still hold after CTP results: a player with a score is refused, and nobody is refunded twice
+  const n2 = refundRows.length;
+  await refund([1, 2], ['Ann']);                                   // Ann has scores both weeks
+  assert(/has a week 1 score|has a week 2 score/.test(alerts[alerts.length - 1] || '')); assert.strictEqual(refundRows.length, n2);
+  await refund([1, 2], ['Fay']);                                   // already refunded both weeks
+  assert.strictEqual(refundRows.length, n2, 'no double refund');
 
   // ================= A refund NEVER changes stored Skin winner rows (paid or unpaid): the week is only marked for an officer
   reset();

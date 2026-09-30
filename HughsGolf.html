@@ -4486,6 +4486,9 @@ function loadPrizeMoney(options = {}) {
     ORDER BY Date DESC, Player
   `);
 
+  // Refunds owed back to players (separate from winnings; read-only summary)
+  const eoyRefundSum = getEoyRefundSummary(season);
+
   // ── EOY Skins pool ──────────────────────────────────────────────────────
   const eoyFromPayments  = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
   const eoyFromTransfers = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Pool Transfer' AND Date >= ${season}0101 AND Date < ${seasonEnd}`)[0]?.t || 0);
@@ -4623,9 +4626,11 @@ function loadPrizeMoney(options = {}) {
         <div style="font-size:22px;font-weight:700;color:#1b5e20;font-family:'DM Mono',monospace">$${totalKitty.toFixed(2)}</div>
       </div>
       <div style="background:#ffebee;border:1px solid #c62828;border-radius:8px;padding:12px 20px;min-width:140px;cursor:pointer" onclick="document.getElementById('heldDetail').style.display=document.getElementById('heldDetail').style.display==='none'?'block':'none'">
-        <div style="font-size:11px;color:#c62828;font-weight:600;margin-bottom:4px">HELD (UNPAID) ▾</div>
+        <div style="font-size:11px;color:#c62828;font-weight:600;margin-bottom:4px">WINNINGS HELD / UNPAID ▾</div>
         <div style="font-size:22px;font-weight:700;color:#c62828;font-family:'DM Mono',monospace">$${heldBalance.toFixed(2)}</div>
+        <div style="font-size:9px;color:#888;margin-top:2px">Skin / CTP winners only — refunds are separate</div>
       </div>
+      ${eoyRefundsOwedTileHtml(eoyRefundSum)}
       <div style="background:#fff8e1;border:1px solid #f57f17;border-radius:8px;padding:12px 20px;min-width:200px">
         <div style="font-size:11px;color:#f57f17;font-weight:600;margin-bottom:4px">CLUB CHAMPIONSHIP (est.)</div>
         <div style="font-size:11px;color:#5d4037;line-height:1.6">
@@ -4695,6 +4700,7 @@ function loadPrizeMoney(options = {}) {
         <tbody>${ctpDetailRows || '<tr><td colspan="3" style="padding:8px;color:#999;font-size:12px">No CTP kitty</td></tr>'}</tbody>
       </table>
     </div>
+    ${eoyRefundsDetailHtml(season, eoyRefundSum, isOfficerOrDev)}
     <div id="heldDetail" style="display:none;margin-bottom:12px;max-width:700px">
       ${(currentUser?.role==='admin'||currentUser?.role==='developer') && heldDetailRows.length ? `
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
@@ -19911,8 +19917,8 @@ function planPostSeasonRefunds(season, weeks, players, opts) {
   [...weeks].forEach(w => {
     info[w] = getPostSeasonWeekNoShows(season, w);
     if (!opts.allowUnplayed && !info[w].played) errors.push(`Week ${w} has no scores yet, so nobody can be marked a no-show.`);
-    else if (psWeekHasCtpResults(info[w].date))
-      errors.push(`Week ${w} CTP results are already recorded. A refund changes that week's CTP pot, so reset the week ${w} CTP winners/carryovers on the CTPs tab first, then refund, then re-assign the CTPs.`);
+    // NOTE: recorded CTP / Skin results do NOT block a refund. Only a player with NO score for the week can be refunded,
+    // and such a player was never in the paid-and-scored pot, so the refund cannot change any stored CTP or Skin payout.
   });
   if (errors.length) return { plan: [], errors };
   const plan = [];
@@ -19953,6 +19959,84 @@ async function issuePostSeasonRefunds(season, weeks, players, opts) {
   try { loadPrizeMoney(); } catch (e) {}
 }
 
+// ── Refunds are money owed BACK to players, kept completely separate from Skin / CTP winnings ─────────────────
+// A refund row (Desc 'EOY Skins', Detail 'Refund', Earned negative, dated the week it refunds) is "owed / unpaid" until an
+// officer marks it paid, which sets its DatePaid; only then is it "disbursed". Recording a refund never sets DatePaid.
+// EOY Collected stays gross: nothing here changes it.
+function getEoyRefundRows(season) {
+  const psDates = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
+  return query(`SELECT rowid AS ID, Player, Date, CAST(Earned AS REAL) AS Earned, COALESCE(Comment,'') AS Comment, COALESCE(DatePaid,'') AS DatePaid
+    FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ${season}0101 AND Date < ${season + 1}0101
+    ORDER BY Date, Player, rowid`).map(r => ({
+      ID: r.ID, Player: r.Player, Date: parseInt(r.Date), amount: Math.abs(parseFloat(r.Earned || 0)), Comment: r.Comment, DatePaid: String(r.DatePaid ?? ''),
+      paid: String(r.DatePaid ?? '') !== '', week: psDates && parseInt(r.Date) === psDates.week2 ? 2 : 1 }));
+}
+
+// READ-ONLY summary: recorded refunds (unpaid / paid) plus confirmed no-shows whose refund has not been recorded yet.
+// A no-show = paid for a PLAYED week with no score for it. Nothing is written here, ever (no automatic refunds).
+function getEoyRefundSummary(season) {
+  const rows = getEoyRefundRows(season);
+  const unpaid = rows.filter(r => !r.paid), paid = rows.filter(r => r.paid);
+  const entry = getPostSeasonWeekEntry(season);
+  const refunds = getEoyRefundsByPlayer(season);
+  const psDates = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
+  const notRecorded = [];
+  [1, 2].forEach(w => {
+    const ns = getPostSeasonWeekNoShows(season, w);
+    if (!ns.played) return;
+    ns.noShows.forEach(p => { if (!refunds.get(p)?.weeks.has(w)) notRecorded.push({ Player: p, week: w, amount: entry.total, Date: w === 1 ? psDates?.week1 : psDates?.week2 }); });
+  });
+  const sum = a => Math.round(a.reduce((t, r) => t + r.amount, 0) * 100) / 100;
+  return { unpaid, paid, notRecorded, unpaidTotal: sum(unpaid), paidTotal: sum(paid), notRecordedTotal: sum(notRecorded),
+           owedTotal: Math.round((sum(unpaid) + sum(notRecorded)) * 100) / 100 };
+}
+
+// Officer action: a recorded refund was actually paid out. Sets DatePaid only (amount untouched); idempotent.
+async function markEoyRefundPaid(rowId, season) {
+  if (!db) return;
+  if (!(currentUser?.role === 'admin' || currentUser?.role === 'developer')) { alert('Only officers can mark a refund paid.'); return; }
+  const r = query(`SELECT rowid AS ID, Player, Date, CAST(Earned AS REAL) AS Earned, COALESCE(DatePaid,'') AS DatePaid FROM Payments WHERE rowid=? AND "Desc"='EOY Skins' AND Detail='Refund'`, [rowId])[0];
+  if (!r) { alert('Refund not found.'); return; }
+  if (r.DatePaid !== '') { alert(`${r.Player}'s refund is already marked paid (${r.DatePaid}).`); return; }
+  const amt = Math.abs(parseFloat(r.Earned || 0));
+  if (!confirm(`Mark ${r.Player}'s $${amt.toFixed(2)} refund as PAID?\n\nDo this only after the money has actually been given back.`)) return;
+  serverRun(`UPDATE Payments SET DatePaid=? WHERE rowid=? AND "Desc"='EOY Skins' AND Detail='Refund' AND (DatePaid IS NULL OR DatePaid='')`, [new Date().toLocaleString(), rowId]);
+  await SERVER_RUN_QUEUE;
+  await saveDBToServer();
+  try { loadPrizeMoney(); } catch (e) {}
+}
+
+// Prize Money pieces (read-only HTML): the "REFUNDS OWED / UNPAID" tile and its detail list.
+function eoyRefundsOwedTileHtml(sum) {
+  return `<div style="background:#fff3e0;border:1px solid #e65100;border-radius:8px;padding:12px 20px;min-width:160px;cursor:pointer" onclick="document.getElementById('refundsDetail').style.display=document.getElementById('refundsDetail').style.display==='none'?'block':'none'">
+        <div style="font-size:11px;color:#e65100;font-weight:600;margin-bottom:4px">REFUNDS OWED / UNPAID ▾</div>
+        <div style="font-size:22px;font-weight:700;color:#e65100;font-family:'DM Mono',monospace">$${sum.owedTotal.toFixed(2)}</div>
+        <div style="font-size:9px;color:#888;margin-top:2px">recorded unpaid $${sum.unpaidTotal.toFixed(2)} · no-show, not yet recorded $${sum.notRecordedTotal.toFixed(2)} · paid out $${sum.paidTotal.toFixed(2)}</div>
+      </div>`;
+}
+function eoyRefundsDetailHtml(season, sum, isOfficer) {
+  const esc = n => String(n).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const th = t => `<th style="padding:5px 10px;text-align:left;font-size:11px">${t}</th>`;
+  const td = (t, extra = '') => `<td style="padding:4px 10px;font-size:12px;${extra}">${t}</td>`;
+  const btn = (bg, label, fn) => `<button onclick="${fn}" style="padding:2px 8px;font-size:10px;background:${bg};color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600">${label}</button>`;
+  const dateOf = d => (typeof fmtDate === 'function' && d) ? fmtDate(String(d)) : String(d || '');
+  const owedRows = [
+    ...sum.unpaid.map(r => `<tr style="background:#fff">${td(r.Player, 'font-weight:600')}${td('Week ' + r.week + ' (' + dateOf(r.Date) + ')')}${td('$' + r.amount.toFixed(2), "text-align:right;font-family:'DM Mono',monospace")}${td('<b style="color:#e65100">Recorded — unpaid</b>')}${td(isOfficer ? btn('#2e7d32', '💵 Mark paid', `markEoyRefundPaid(${r.ID},${season})`) : '')}</tr>`),
+    ...sum.notRecorded.map(r => `<tr style="background:#fffaf0">${td(r.Player, 'font-weight:600')}${td('Week ' + r.week + ' (' + dateOf(r.Date) + ')')}${td('$' + r.amount.toFixed(2), "text-align:right;font-family:'DM Mono',monospace")}${td('<span style="color:#888">No-show — refund not recorded yet</span>')}${td(isOfficer ? btn('#e65100', '↩ Record refund', `refundEoyPayment('${esc(r.Player)}',${season},'${r.week}')`) : '')}</tr>`),
+  ].join('') || `<tr><td colspan="5" style="padding:8px;color:#999;font-size:12px">No refunds owed</td></tr>`;
+  const paidRows = sum.paid.map(r => `<tr style="background:#f1f8e9">${td(r.Player, 'font-weight:600')}${td('Week ' + r.week + ' (' + dateOf(r.Date) + ')')}${td('$' + r.amount.toFixed(2), "text-align:right;font-family:'DM Mono',monospace")}${td('<b style="color:#2e7d32">Disbursed</b> · paid ' + r.DatePaid)}${td('')}</tr>`).join('');
+  return `<div id="refundsDetail" style="display:none;margin-bottom:12px;max-width:760px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">Refunds are money owed back to players who paid but did not play. They are <b>separate from Skin / CTP winnings</b>, and a refund only counts as disbursed once it is marked paid.</div>
+      <table style="border-collapse:collapse;width:100%">
+        <thead><tr style="background:#e65100;color:white">${th('Player')}${th('Week')}${th('Amount')}${th('Status')}${th('')}</tr></thead>
+        <tbody>${owedRows}</tbody>
+        <tfoot><tr style="background:#fff3e0;font-weight:700">${td('Owed / unpaid')}${td('')}${td('$' + sum.owedTotal.toFixed(2), "text-align:right;font-family:'DM Mono',monospace")}${td('')}${td('')}</tr></tfoot>
+      </table>
+      ${paidRows ? `<div style="font-weight:700;font-size:12px;margin:10px 0 4px;color:#2e7d32">Refunds disbursed: $${sum.paidTotal.toFixed(2)}</div>
+      <table style="border-collapse:collapse;width:100%"><tbody>${paidRows}</tbody></table>` : ''}
+    </div>`;
+}
+
 // Refund section for the entry-screen Prize Breakdown (officers only): the selected week's no-shows
 // (gross-paid for that week, no score once the week has been played), with per-player, whole-week and both-week
 // buttons. Refunded players stay listed as "Refunded" and cannot be refunded again.
@@ -19971,20 +20055,19 @@ function psRefundPanelHtml(season, week) {
   if (!entry.ok) return wrap(`<div style="color:#c62828">${entry.reason}</div>`);
   if (!cur.played) return wrap(`<div style="color:#888">Week ${week} has no scores yet — no-show refunds become available once the week has been played.</div>`);
   if (!cur.noShows.length) return wrap(`<div style="color:#2e7d32">No no-shows for week ${week}.</div>`);
-  const ctpBlocked = psWeekHasCtpResults(cur.date);
-  const otherBlocked = other.played && psWeekHasCtpResults(other.date);
-  const notice = ctpBlocked ? `<div style="color:#c62828;margin-bottom:6px">Week ${week} CTP results are already recorded. Reset that week's CTP winners/carryovers on the CTPs tab, then refund, then re-assign the CTPs.</div>` : '';
+  const refundRows = getEoyRefundRows(season);
+  const recordedFor = p => refundRows.find(r => r.Player === p && r.week === week);
   const rows = cur.noShows.map(p => {
     const done = getEoyRefundedWeeks(season, p);
-    const alsoOther = other.played && !otherBlocked && other.noShows.includes(p) && !done.has(other.week);
-    const acts = done.has(week) ? '<span style="color:#888;font-size:11px">Refunded</span>'
-      : ctpBlocked ? '<span style="color:#888;font-size:11px">Blocked</span>'
+    const alsoOther = other.played && other.noShows.includes(p) && !done.has(other.week);
+    const rec = recordedFor(p);
+    const acts = done.has(week) ? (rec && rec.paid ? `<span style="color:#2e7d32;font-size:11px">Refunded · paid ${rec.DatePaid}</span>` : '<span style="color:#e65100;font-size:11px">Refunded · unpaid ($' + (rec ? rec.amount.toFixed(2) : entry.total.toFixed(2)) + ' owed)</span>')
       : btn(`↩ Refund week ${week}`, [week], [p], '#e65100') + (alsoOther ? btn('↩ Refund both weeks', [1, 2], [p], '#c62828') : '');
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #ffe0b2"><span style="font-weight:600">${p}</span><span>${acts}</span></div>`;
   }).join('');
   const pending = cur.noShows.filter(p => !getEoyRefundedWeeks(season, p).has(week));
-  const bulk = (!ctpBlocked && pending.length > 1) ? `<div style="margin-top:6px;text-align:right">${btn(`↩ Refund all week ${week} no-shows`, [week], pending, '#e65100')}</div>` : '';
-  return wrap(notice + rows + bulk);
+  const bulk = pending.length > 1 ? `<div style="margin-top:6px;text-align:right">${btn(`↩ Refund all week ${week} no-shows`, [week], pending, '#e65100')}</div>` : '';
+  return wrap(rows + bulk);
 }
 
 function recalcPostSeasonEoyRefunds(season) {

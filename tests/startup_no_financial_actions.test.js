@@ -121,7 +121,7 @@ async function loadPage({ dbAvailable }) {
 
   // Spy on every financial entry point (function declarations are writable globals).
   const financial = ['calcEoySkins', 'saveSkinWinnersForDate', 'calcSkinWinnersForDate', 'recalcPostSeasonEoyRefunds',
-    'issuePostSeasonRefunds', 'refundEoyPayment', 'assignEoyPaymentWeeks', 'quickPayEoySkins', 'showEoyPaymentPrompt',
+    'issuePostSeasonRefunds', 'refundEoyPayment', 'markEoyRefundPaid', 'assignEoyPaymentWeeks', 'quickPayEoySkins', 'showEoyPaymentPrompt',
     'editEoyPayment', 'deleteEoyPayment', 'confirmPayment', 'confirmPaymentForPlayer', 'toggleEntryPaid', 'buildEntryGrid', 'initEntry', 'onDbLoaded'];
   financial.forEach(n => vm.runInContext(`if (typeof ${n} === 'function') { const __o = ${n}; ${n} = function () { __rec(${JSON.stringify(n)}); return __o.apply(this, arguments); }; }`, Object.assign(ctx, { __rec: n => rec.calls.push(n) })));
   vm.runInContext(`{ const __s = serverRun; serverRun = function (sql, p) { __sr(String(sql)); return __s.apply(this, arguments); }; }`, Object.assign(ctx, { __sr: sql => rec.serverRun.push(sql) }));
@@ -140,7 +140,7 @@ async function loadPage({ dbAvailable }) {
 }
 
 const financialCalls = ['calcEoySkins', 'saveSkinWinnersForDate', 'calcSkinWinnersForDate', 'recalcPostSeasonEoyRefunds', 'issuePostSeasonRefunds',
-  'refundEoyPayment', 'assignEoyPaymentWeeks', 'quickPayEoySkins', 'showEoyPaymentPrompt', 'editEoyPayment', 'deleteEoyPayment',
+  'refundEoyPayment', 'markEoyRefundPaid', 'assignEoyPaymentWeeks', 'quickPayEoySkins', 'showEoyPaymentPrompt', 'editEoyPayment', 'deleteEoyPayment',
   'confirmPayment', 'confirmPaymentForPlayer', 'toggleEntryPaid'];
 const paymentWrites = rec => rec.serverRun.filter(sql => /Payments/i.test(sql));
 function assertQuiet(name, { rec }) {
