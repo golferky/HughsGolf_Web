@@ -8786,19 +8786,22 @@ function getScheduledFrontBack(date, league = "Hugh's") {
 // have to be added to the CTP date list explicitly or CTPs can't be assigned for them.
 function getCtpDateKeys(baseDates, season) {
   const keys = new Set(baseDates.filter(Boolean).map(d => String(d)));
-  const lp = query(`SELECT PostSeasonDt FROM LeagueParms WHERE Name="Hugh's" AND Season=${season} AND PostSeasonDt IS NOT NULL`)[0];
+  const lp = query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND Season=${season} AND PostSeasonDt IS NOT NULL`)[0];
   const ps = parsePostSeasonDates(lp?.PostSeasonDt);
   if (ps) { keys.add(String(ps.week1)); keys.add(String(ps.week2)); }
   return [...keys].sort().reverse();
 }
 
-// Post-season CTP context for a date: week 1 = front 9, week 2 = back 9; the players who can win
+// Post-season CTP context for a date: week 1 = PSWeek1Nine (default front), week 2 = the other nine; the players who can win
 // are those with EOY Skins paid for that week. Returns null for regular-season dates.
 function getPostSeasonCtpInfo(date) {
   const ctx = getPostSeasonContextForDate(date);
   if (!ctx) return null;
   const payers = [...getEoySkinPlayersForWeek(ctx.season, ctx.week)].sort();
-  return { week: ctx.week, fb: ctx.week === 1 ? 'Front' : 'Back', payers };
+  // Sandbox: Week 1 may be the Back 9 (SeasonSettings.PSWeek1Nine); Week 2 is the other nine.
+  const w1 = getPostSeasonWeek1Nine(ctx.season);
+  const fb = ctx.week === 1 ? w1 : (w1 === 'Back' ? 'Front' : 'Back');
+  return { week: ctx.week, fb, payers };
 }
 
 function loadCtps() {

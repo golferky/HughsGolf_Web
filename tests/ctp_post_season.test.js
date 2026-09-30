@@ -19,21 +19,22 @@ function extract(name) {
 }
 
 // Fake DB: season 2025, post season starts 9/17/2025 (week 2 = 9/24/2025)
+let week1Nine = 'Front';
 const eoyRows = [
   { Player: 'Alice', Earned: 20, Comment: '' },
   { Player: 'Bob', Earned: 10, Comment: '(1st Week)' },
   { Player: 'Cara', Earned: 10, Comment: '(2nd Week)' },
 ];
 function query(sql) {
-  if (/SELECT PostSeasonDt FROM LeagueParms/.test(sql)) return [{ PostSeasonDt: '9/17/2025' }];
-  if (/PostSeasonDt, "EOY Skins"/.test(sql)) return [{ PostSeasonDt: '9/17/2025', EoySkins: 20 }];
-  if (/"EOY Skins" as amt/.test(sql)) return [{ amt: 20 }];
+  if (/FROM SeasonSettings WHERE League="Hugh's" AND Season=\d+ AND PostSeasonDt IS NOT NULL/.test(sql)) return [{ PostSeasonDt: '9/17/2025' }];
+  if (/SELECT PostSeasonDt, EOYSkins as EoySkins FROM SeasonSettings/.test(sql)) return [{ PostSeasonDt: '9/17/2025', EoySkins: 20 }];
+  if (/SELECT \* FROM SeasonSettings/.test(sql)) return [{ EOYSkins: 20, PSWeek1Nine: week1Nine }];
   if (/FROM Payments/.test(sql) && /EOY Skins/.test(sql)) return eoyRows;
   return [];
 }
 
-const ctx = vm.createContext({ query, parseInt, Set, Date, String, Number });
-['parsePostSeasonDates', 'getPostSeasonWeekForDate', 'getEoySkinPlayersForWeek',
+const ctx = vm.createContext({ query, parseInt, parseFloat, Set, Date, String, Number });
+['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeek1Nine', 'parsePostSeasonDates', 'getPostSeasonWeekForDate', 'getEoySkinPlayersForWeek',
  'getPostSeasonContextForDate', 'getCtpDateKeys', 'getPostSeasonCtpInfo']
   .forEach(n => vm.runInContext(extract(n), ctx));
 
@@ -53,5 +54,10 @@ assert.deepStrictEqual(Array.from(w2.payers), ['Alice', 'Cara']);
 
 // 4. Regular-season date is not post season
 assert.strictEqual(vm.runInContext(`getPostSeasonCtpInfo('20250910')`, ctx), null);
+
+// 5. Sandbox: when Week 1 is the Back 9, CTP sides swap
+week1Nine = 'Back';
+assert.strictEqual(vm.runInContext(`getPostSeasonCtpInfo('20250917')`, ctx).fb, 'Back');
+assert.strictEqual(vm.runInContext(`getPostSeasonCtpInfo('20250924')`, ctx).fb, 'Front');
 
 console.log('ok');
