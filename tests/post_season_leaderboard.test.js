@@ -25,7 +25,7 @@ const nine = { nums: Array.from({ length: 18 }, (_, i) => i + 1), hcps: Array.fr
 const blank = () => Array(18).fill('');
 const holes = (back, front) => { const h = blank(); back.forEach((v, i) => h[9 + i] = String(v)); (front || []).forEach((v, i) => h[i] = String(v)); return h; };
 
-const entryState = {
+const entryState = { _psWeek1Fb: 'Back',
   a: { regular: 'Low Net', phdcp: 4, inSkins: true, holes: holes([4, 4, 4, 4, 4, 4, 4, 4, 4]) },       // back 9 only, gross 36 net 32
   b: { regular: 'High Net', phdcp: 4, inSkins: true, holes: holes([5, 5, 5, 5, 5, 5, 5, 5, 5]) },      // back 9 only, gross 45 net 41
   c: { regular: 'Full Round', phdcp: 4, inSkins: true, holes: holes([5, 5, 5, 5, 5, 5, 5, 5, 5], [5, 5, 5, 5, 5, 5, 5, 5, 5]) }, // gross 90 net 82
@@ -38,7 +38,7 @@ const ctx = vm.createContext({
   getSeasonSettings: () => ({ SkinsPS: 7, ClosestPS: 3 }), query: () => [],
   ccRosterEligible: () => true, psRefundPanelHtml: () => '',
 });
-['psLeaderboardRanks', 'psLeaderboardShotsBack', 'psCcPrizeSchedule', 'psLeaderboardCcPotential', 'psWeekSkinPayout', 'getPostSeasonEntryTotals', 'renderPostSeasonBreakdown'].forEach(n => vm.runInContext(extract(n), ctx));
+['psWeekForHoleIndex', 'psLeaderboardRanks', 'psLeaderboardShotsBack', 'psCcMissedWeek', 'psCcPrizeSchedule', 'psLeaderboardCcPotential', 'psWeekSkinPayout', 'getPostSeasonEntryTotals', 'renderPostSeasonBreakdown'].forEach(n => vm.runInContext(extract(n), ctx));
 vm.runInContext('renderPostSeasonBreakdown(courseData.all18)', ctx);
 const out = panel.innerHTML;
 

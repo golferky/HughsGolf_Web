@@ -21616,6 +21616,13 @@ function psLeaderboardCcPotential(leaderboard, ranks, schedule) {
   });
 }
 
+// League Championship needs a score in BOTH post-season weeks. Returns the first week (1 or 2) that is already over (closed)
+// in which the player has no score, or 0 when they are still in the running. Display/eligibility only: never writes anything.
+function psCcMissedWeek(wkScored, closed) {
+  for (const w of [1, 2]) if (closed[w] && !(wkScored && wkScored[w])) return w;
+  return 0;
+}
+
 function renderPostSeasonBreakdown(nine) {
   const panel = document.getElementById('psBreakdownPanel');
   if (!panel) return;
@@ -21667,12 +21674,20 @@ function renderPostSeasonBreakdown(nine) {
       return raw - strokesAt(hi, phdcp);
     });
     const totals = getPostSeasonEntryTotals(st);
-    return { name: st.sub || st.regular, phdcp, gross18, nets18, totals, inSkins: !!st.inSkins };
+    const wkScored = { 1: nets18.some((n, hi) => n !== null && psWeekForHoleIndex(hi, week1Fb) === 1),
+                       2: nets18.some((n, hi) => n !== null && psWeekForHoleIndex(hi, week1Fb) === 2) };
+    return { name: st.sub || st.regular, phdcp, gross18, nets18, totals, inSkins: !!st.inSkins, wkScored };
   };
   const playerNets = players.map(buildNets);
   const lbPlayers = allSlots
     .filter(st => st.inSkins || (season && ccRosterEligible(st.sub || st.regular, season)))
     .map(buildNets);
+  // A week is "closed" once it is over: Week 1 when anyone has Week 2 scores or its date has passed; Week 2 once its date has
+  // passed. A roster player with no score in a closed week can no longer win the League Championship (both weeks required).
+  const psDatesCc = (lp && lp.PostSeasonDt && typeof parsePostSeasonDates === 'function') ? parsePostSeasonDates(lp.PostSeasonDt) : null;
+  const _td = new Date(), todayInt = _td.getFullYear() * 10000 + (_td.getMonth() + 1) * 100 + _td.getDate();
+  const ccClosed = { 1: lbPlayers.some(p => p.wkScored[2]) || !!(psDatesCc && todayInt > psDatesCc.week1),
+                     2: !!(psDatesCc && todayInt > psDatesCc.week2) };
 
   // Skins: per hole, find min net; winner only if unique
   const skinWins = [];
@@ -21699,7 +21714,7 @@ function renderPostSeasonBreakdown(nine) {
 
   // Leaderboard — sort by totalNet ascending (blanks last)
   const leaderboard = [...lbPlayers]
-    .map(p => ({ name: p.name, phdcp: p.phdcp, inSkins: p.inSkins, ...p.totals }))
+    .map(p => ({ name: p.name, phdcp: p.phdcp, inSkins: p.inSkins, ccMissed: psCcMissedWeek(p.wkScored, ccClosed), ...p.totals }))
     .sort((a, b) => {
       // Live: rank by completed nines first, then running net (blanks last)
       const na = (a.frontComplete ? 1 : 0) + (a.backComplete ? 1 : 0);
@@ -21789,7 +21804,7 @@ function renderPostSeasonBreakdown(nine) {
   let lbHtml = '';
   if (hasAnyScore) {
     lbHtml = `<div style="font-weight:700;font-size:12px;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">🏆 Leaderboard</div>`;
-    const lbRanks = psLeaderboardRanks(leaderboard, p => !season || ccRosterEligible(p.name, season));
+    const lbRanks = psLeaderboardRanks(leaderboard, p => (!season || ccRosterEligible(p.name, season)) && !p.ccMissed);
     const lbBack = psLeaderboardShotsBack(leaderboard, lbRanks);
     const lbDues = !season ? 0 : parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${season + 1}0101`)[0]?.t || 0);
     const lbCc = psLeaderboardCcPotential(leaderboard, lbRanks, psCcPrizeSchedule(lp, lbDues));
@@ -21806,7 +21821,7 @@ function renderPostSeasonBreakdown(nine) {
       const medal = pos === null ? '—' : (pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : '') + (tied ? `T${pos}` : (pos > 3 ? `${pos}.` : ''));
       return `<div style="${rowStyle};grid-template-columns:44px 1fr auto 52px 64px;background:${bg}">
         <span style="font-weight:700;text-align:center">${medal}</span>
-        <span style="font-weight:600">${p.name} <span style="color:#aaa;font-size:11px">(hdcp ${p.phdcp})</span>${!p.inSkins ? ' <span style="color:#1565c0;font-size:10px;font-weight:600" title="Plays for the League Championship but did not buy into EOY Skins">NO SKINS</span>' : ''}${isSubLb ? ' <span style="color:#999;font-size:10px;font-weight:600" title="Subs can\'t compete for the League Championship">SUB · not CC</span>' : ''}</span>
+        <span style="font-weight:600">${p.name} <span style="color:#aaa;font-size:11px">(hdcp ${p.phdcp})</span>${!p.inSkins ? ' <span style="color:#1565c0;font-size:10px;font-weight:600" title="Plays for the League Championship but did not buy into EOY Skins">NO SKINS</span>' : ''}${isSubLb ? ' <span style="color:#999;font-size:10px;font-weight:600" title="Subs can\'t compete for the League Championship">SUB · not CC</span>' : (p.ccMissed ? ` <span style="color:#999;font-size:10px;font-weight:600" title="The League Championship needs scores in both post-season weeks">NOT CC · no Week ${p.ccMissed}</span>` : '')}</span>
         <span style="font-family:'DM Mono',monospace;font-weight:700;color:#1a4d1a">Net ${net} <span style="color:#aaa;font-size:11px">/ ${gross}</span></span>
         <span style="font-family:'DM Mono',monospace;font-weight:700;text-align:right">${back}</span>
         <span style="font-family:'DM Mono',monospace;font-weight:700;text-align:right">${cc}</span>

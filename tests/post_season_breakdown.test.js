@@ -46,7 +46,7 @@ const ctx = vm.createContext({
   getSeasonSettings: () => ({ SkinsPS: 7, ClosestPS: 3 }), query: () => [],
   ccRosterEligible: () => false, psRefundPanelHtml: () => '', entryState: {}, courseData: { all18: {} },
 });
-['psWeekForHoleIndex', 'psLeaderboardRanks', 'psLeaderboardShotsBack', 'psCcPrizeSchedule', 'psLeaderboardCcPotential', 'psWeekSkinPayout', 'getPostSeasonEntryTotals', 'renderPostSeasonBreakdown']
+['psWeekForHoleIndex', 'psLeaderboardRanks', 'psLeaderboardShotsBack', 'psCcMissedWeek', 'psCcPrizeSchedule', 'psLeaderboardCcPotential', 'psWeekSkinPayout', 'getPostSeasonEntryTotals', 'renderPostSeasonBreakdown']
   .forEach(n => vm.runInContext(extract(n), ctx));
 const nine = { nums: Array.from({ length: 18 }, (_, i) => i + 1), hcps: [...Array(2)].flatMap(() => [1,2,3,4,5,6,7,8,9]) };
 
