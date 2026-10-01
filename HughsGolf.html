@@ -22781,10 +22781,17 @@ async function clearPlayerNine(key, nine) {
   const tn = document.getElementById(`net-${key}`);
   if (tn) { tn.textContent = t.runNet; tn.className = 'eg-net' + (t.runNet !== '' && t.runNet < t.runPar ? ' under' : ''); }
   window.skinWinnerCells = {}; window.ctpWinnersByPlayer = {};
-  await SERVER_RUN_QUEUE;
-  loadScores();                                       // recent scores / score tables
-  renderPostSeasonBreakdown(courseData.all18);        // leaderboard, pots, skins results and payouts below
-  try { applyCellClasses(courseData.all18); } catch (e) { console.warn('applyCellClasses failed after clearing a nine:', e); }   // skin / birdie cell highlights
+  // Refresh everything below RIGHT NOW from the in-memory state (it does not depend on the server round trip), then once more
+  // after the queued DELETEs finish. Each step is isolated so one failure (or a slow/blocked server write) can never leave the
+  // leaderboard, pots and skins panels showing the cleared player's old scores.
+  psRefreshAfterClear();
+  try { await SERVER_RUN_QUEUE; } catch (e) { console.warn('clearPlayerNine: server queue failed:', e); }
+  psRefreshAfterClear();
+}
+function psRefreshAfterClear() {
+  try { renderPostSeasonBreakdown(courseData.all18); } catch (e) { console.warn('clearPlayerNine: breakdown refresh failed:', e); }   // leaderboard, pots, skins results, payouts
+  try { loadScores(); } catch (e) { console.warn('clearPlayerNine: loadScores failed:', e); }                                            // recent scores / score tables
+  try { applyCellClasses(courseData.all18); } catch (e) { console.warn('clearPlayerNine: cell classes failed:', e); }                   // skin / birdie highlights
 }
 
 function onScoreInput(e) {

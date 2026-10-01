@@ -24,7 +24,7 @@ const ctx = vm.createContext({
   getPostSeasonEntryTotals: st => ({ frontGross: st.holes.slice(0, 9).every(v => v === '') ? '' : 36, backGross: st.holes.slice(9).every(v => v === '') ? '' : 36, runGross: 36, runNet: 30, runPar: 36 }),
   loadScores: () => calls.push(['loadScores']), renderPostSeasonBreakdown: n => calls.push(['breakdown', n]), applyCellClasses: n => calls.push(['classes', n]),
 });
-['psNineTotalCell', 'psSetNineTotal'].forEach(n => vm.runInContext(extract(n), ctx));
+['psNineTotalCell', 'psSetNineTotal', 'psRefreshAfterClear'].forEach(n => vm.runInContext(extract(n), ctx));
 vm.runInContext('async ' + extract('clearPlayerNine'), ctx);
 const st = () => ctx.entryState.k1;
 const writes = () => runs.map(r => r[0].split(' ').slice(0, 3).join(' '));
@@ -52,6 +52,28 @@ const writes = () => runs.map(r => r[0].split(' ').slice(0, 3).join(' '));
   const names = calls.map(c => c[0]);
   assert(names.includes('loadScores') && names.includes('breakdown') && names.includes('classes'), 'tables, leaderboard/pots/skins and highlights refresh: ' + names);
 
+  // the panels refresh immediately (before the server queue settles), and again after it
+  {
+    let release; const events = [];
+    ctx.SERVER_RUN_QUEUE = new Promise(r => { release = r; });          // a slow / stuck server write
+    ctx.renderPostSeasonBreakdown = n => events.push('breakdown');
+    ctx.loadScores = () => events.push('loadScores');
+    ctx.applyCellClasses = () => events.push('classes');
+    st().holes = Array(18).fill('4'); paidRows = []; runs.length = 0;
+    const p = ctx.clearPlayerNine('k1', 'Front');
+    await new Promise(r => setImmediate(r));
+    assert.deepStrictEqual(events, ['breakdown', 'loadScores', 'classes'], 'refreshed while the server write is still pending');
+    assert.strictEqual(cells['out-k1'].textContent, '');
+    release(); await p;
+    assert.strictEqual(events.length, 6, 'and refreshed again once the queue settles');
+    // a failing step (or a rejected queue) never blocks the others
+    events.length = 0; ctx.loadScores = () => { throw new Error('boom'); }; ctx.SERVER_RUN_QUEUE = Promise.reject(new Error('queue down'));
+    st().holes = Array(18).fill('4');
+    await ctx.clearPlayerNine('k1', 'Back');
+    assert.deepStrictEqual(events, ['breakdown', 'classes', 'breakdown', 'classes'], 'breakdown + highlights still refresh when loadScores throws / queue rejects');
+    ctx.SERVER_RUN_QUEUE = Promise.resolve(); ctx.loadScores = () => calls.push(['loadScores']);
+    st().holes = [...Array(9).fill(''), ...Array(9).fill('4')];   // restore: Front cleared, Back still scored
+  }
   // Back 9 = Week 1 date
   runs.length = 0;
   await ctx.clearPlayerNine('k1', 'Back');
