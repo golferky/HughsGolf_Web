@@ -21374,16 +21374,8 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
     // Pre-create post season totals cells (needed inside hole loop)
     if (isPostSeason) {
       const psTotals = getPostSeasonEntryTotals(st);
-      const outTd = document.createElement('td');
-      outTd.className = 'eg-gross';
-      outTd.id = `out-${key}`;
-      outTd.style.fontWeight='700';
-      outTd.textContent = psTotals.frontGross;
-      const inTd = document.createElement('td');
-      inTd.className = 'eg-gross';
-      inTd.id = `in-${key}`;
-      inTd.style.fontWeight='700';
-      inTd.textContent = psTotals.backGross;
+      const outTd = psNineTotalCell(`out-${key}`, key, 'Front', psTotals.frontGross);
+      const inTd = psNineTotalCell(`in-${key}`, key, 'Back', psTotals.backGross);
       const tgTd = document.createElement('td');
       tgTd.className = 'eg-gross';
       tgTd.id = `gross-${key}`;
@@ -22666,6 +22658,64 @@ function checkPendingGallusForPlayer(playerName, key) {
   }
 }
 
+// ── Post-season: clear ONE player's scores for ONE nine (the ✕ next to their OUT / IN total) ──
+// OUT = Front 9, IN = Back 9. The ✕ shows only while that nine has a score and is hidden for the "player" role.
+function psNineTotalCell(id, key, nine, total) {
+  const td = document.createElement('td');
+  td.className = 'eg-gross';
+  td.id = id;
+  td.style.cssText = 'font-weight:700;position:relative';
+  const hide = currentUser?.role === 'player';
+  td.innerHTML = `<span class="psv">${total}</span><button class="psclr" type="button" onclick="clearPlayerNine('${String(key).replace(/'/g, "\\'")}','${nine}')" title="Clear this player's ${nine} 9 scores" style="position:absolute;right:1px;top:1px;padding:0 3px;font-size:9px;line-height:12px;border:none;background:transparent;color:#c62828;cursor:pointer;${hide ? 'display:none;' : ''}visibility:${String(total) !== '' ? 'visible' : 'hidden'}">✕</button>`;
+  return td;
+}
+function psSetNineTotal(td, v) {
+  if (!td) return;
+  const span = td.querySelector && td.querySelector('.psv');
+  if (span) span.textContent = v; else td.textContent = v;
+  const btn = td.querySelector && td.querySelector('.psclr');
+  if (btn) btn.style.visibility = String(v) !== '' ? 'visible' : 'hidden';
+}
+// Clears the saved score row for that player + week date + nine (and their CTP wins for that week, which need the score),
+// empties the cells, and refreshes the totals, leaderboard, pots and skins panels below. Other players, the other nine, buy-in
+// payments and committed Skin results are not touched: the week shows "Needs Calculate / Restate Needed" until an officer
+// restates it. Refused when this player already has a PAID winner row for that week (paid rows never change).
+async function clearPlayerNine(key, nine) {
+  const st = entryState[key];
+  const player = st && st.active;
+  if (!player || (nine !== 'Front' && nine !== 'Back')) return;
+  const league = "Hugh's";
+  const week1Fb = entryState._psWeek1Fb || 'Front';
+  const week = nine === week1Fb ? 1 : 2;
+  const date = nine === 'Front' ? (entryState._psFrontDate || entryState._psDate1) : (entryState._psBackDate || entryState._psDate2);
+  if (!date) return alert('No post season date found for that nine.');
+  const paid = query(`SELECT "Desc", Detail FROM Payments WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc" IN ('Skin','CTP') AND Detail LIKE '#%' AND COALESCE(DatePaid,'')<>''`, [league, player, date]);
+  if (paid.length) { alert(`Not cleared: ${player} already has paid winnings for Week ${week} (${paid.map(r => r.Desc + ' ' + r.Detail).join(', ')}). Paid rows are never changed.`); return; }
+  if (!confirm(`Clear ${player}'s Week ${week} (${nine} 9) scores?\n\nOnly this player and this nine are cleared. Other players, the other nine and buy-in payments are kept. Skin results for the week will need an officer to Recalculate / Restate.`)) return;
+  const start = nine === 'Front' ? 0 : 9;
+  for (let i = start; i < start + 9; i++) st.holes[i] = '';
+  if (nine === 'Front') st._lastSavedFrontSig = null; else st._lastSavedBackSig = null;   // re-entering the nine saves again
+  serverRun(`DELETE FROM Scores WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack=?`, [league, player, date, nine]);
+  serverRun(`DELETE FROM Payments WHERE League=? AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc"='CTP' AND Detail LIKE '#%' AND COALESCE(DatePaid,'')=''`, [league, player, date]);
+  serverRun(`UPDATE GallusImport SET ImportedToScores=0, Reconciled=0 WHERE ResolvedName=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack=?`, [player, date, nine]);
+  // empty the cells in place (other players' unsaved typing is untouched), then refresh everything derived from them
+  document.querySelectorAll(`#entryGrid input.eg-input[data-slotkey="${CSS.escape(String(key))}"]`).forEach(inp => {
+    const hi = parseInt(inp.dataset.hi);
+    if (hi >= start && hi < start + 9) inp.value = '';
+  });
+  const t = getPostSeasonEntryTotals(st);
+  psSetNineTotal(document.getElementById(`out-${key}`), t.frontGross);
+  psSetNineTotal(document.getElementById(`in-${key}`), t.backGross);
+  const tg = document.getElementById(`gross-${key}`); if (tg) tg.textContent = t.runGross;
+  const tn = document.getElementById(`net-${key}`);
+  if (tn) { tn.textContent = t.runNet; tn.className = 'eg-net' + (t.runNet !== '' && t.runNet < t.runPar ? ' under' : ''); }
+  window.skinWinnerCells = {}; window.ctpWinnersByPlayer = {};
+  await SERVER_RUN_QUEUE;
+  loadScores();                                       // recent scores / score tables
+  renderPostSeasonBreakdown(courseData.all18);        // leaderboard, pots, skins results and payouts below
+  try { applyCellClasses(courseData.all18); } catch (e) { console.warn('applyCellClasses failed after clearing a nine:', e); }   // skin / birdie cell highlights
+}
+
 function onScoreInput(e) {
   const inp = e.target;
   // Strip non-numeric characters
@@ -22694,8 +22744,8 @@ function onScoreInput(e) {
     const outEl = document.getElementById(`out-${key}`);
     const inEl = document.getElementById(`in-${key}`);
     const nEl = document.getElementById(`net-${key}`);
-    if (outEl) outEl.textContent = psTotals.frontGross;
-    if (inEl) inEl.textContent = psTotals.backGross;
+    psSetNineTotal(outEl, psTotals.frontGross);
+    psSetNineTotal(inEl, psTotals.backGross);
     const tgEl = document.getElementById(`gross-${key}`);
     if (tgEl) tgEl.textContent = psTotals.runGross;
     if (nEl) {
@@ -23199,8 +23249,8 @@ function distributeScores(key, scoreDigits, firstInp) {
     const outEl = document.getElementById(`out-${key}`);
     const inEl = document.getElementById(`in-${key}`);
     const nEl = document.getElementById(`net-${key}`);
-    if (outEl) outEl.textContent = psTotals.frontGross;
-    if (inEl) inEl.textContent = psTotals.backGross;
+    psSetNineTotal(outEl, psTotals.frontGross);
+    psSetNineTotal(inEl, psTotals.backGross);
     const tgEl = document.getElementById(`gross-${key}`);
     if (tgEl) tgEl.textContent = psTotals.runGross;
     if (nEl) {
