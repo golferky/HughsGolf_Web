@@ -81,7 +81,7 @@ function render(states, season = '2026') {
     getSeasonSettings: () => ({ SkinsPS: 7, ClosestPS: 3 }), psRefundPanelHtml: () => '',
   });
   vm.runInContext([constLine('SUBS_CC_ELIGIBLE'), constLine('CC_SUB_EXCEPTIONS'), extract('isSeasonRosterPlayer'), extract('isCcSubException'), extract('ccRosterEligible'),
-    extract('psWeekSkinPayout'), extract('getPostSeasonEntryTotals'), extract('renderPostSeasonBreakdown')].join('\n'), ctx);
+    extract('psLeaderboardRanks'), extract('psWeekSkinPayout'), extract('getPostSeasonEntryTotals'), extract('renderPostSeasonBreakdown')].join('\n'), ctx);
   vm.runInContext('renderPostSeasonBreakdown(courseData.all18)', ctx);
   return panel.innerHTML;
 }
@@ -104,9 +104,9 @@ assert(!/SUB · not CC/.test(howard), 'Howard is eligible: no "SUB · not CC" la
 assert(/SUB · not CC/.test(other), 'another sub keeps "SUB · not CC"');
 assert(/🥇|🥈|🥉|\d+\./.test(howard.replace(/Howard Gorman[\s\S]*$/, '')) , 'Howard gets a championship position');
 assert(/<span[^>]*text-align:center">—<\/span>/.test(other), 'the ineligible sub gets no position');
-// positions are consecutive across eligible players only
+// positions count eligible players only; the three players level on net share 2nd (tied places), the sub is "—"
 const positions = [...out.matchAll(/<span style="font-weight:700;text-align:center">([^<]+)<\/span>/g)].map(m => m[1]);
-assert.deepStrictEqual(positions, ['🥇', '🥈', '🥉', '4.', '—'].filter((_, i) => true).slice(0, positions.length).map((p, i, a) => p), 'eligible players are numbered 1,2,3,4 in order; the ineligible sub is "—"');
+assert.deepStrictEqual(positions, ['🥇', '🥈T2', '🥈T2', '🥈T2', '—'], 'eligible players ranked 1,T2,T2,T2; the ineligible sub is "—"');
 assert.strictEqual(positions.filter(p => p === '—').length, 1);
 
 // In any other season he is a plain sub again
