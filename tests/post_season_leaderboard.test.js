@@ -38,7 +38,7 @@ const ctx = vm.createContext({
   getSeasonSettings: () => ({ SkinsPS: 7, ClosestPS: 3 }),
   ccRosterEligible: () => true, psRefundPanelHtml: () => '',
 });
-['psLeaderboardRanks', 'psWeekSkinPayout', 'getPostSeasonEntryTotals', 'renderPostSeasonBreakdown'].forEach(n => vm.runInContext(extract(n), ctx));
+['psLeaderboardRanks', 'psLeaderboardShotsBack', 'psWeekSkinPayout', 'getPostSeasonEntryTotals', 'renderPostSeasonBreakdown'].forEach(n => vm.runInContext(extract(n), ctx));
 vm.runInContext('renderPostSeasonBreakdown(courseData.all18)', ctx);
 const out = panel.innerHTML;
 
