@@ -21567,6 +21567,20 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
 }
 
 // ── Post-Season Prize Breakdown ───────────────────────────────────────────────
+// Display-only leaderboard places: eligible players level on completed nines and running net share a place
+// (1, 2, 2, 4 ...); ineligible players (subs) and players with no score get null. Never affects payouts or placement.
+function psLeaderboardRanks(leaderboard, isEligible) {
+  const key = p => ((p.frontComplete ? 1 : 0) + (p.backComplete ? 1 : 0)) + '|' + p.runNet;
+  const ranks = []; let count = 0, last = null;
+  leaderboard.forEach((p, i) => {
+    if (!isEligible(p)) { ranks[i] = null; return; }
+    count++;
+    ranks[i] = (p.runNet !== '' && last && last.key === key(p)) ? last.rank : count;
+    last = { key: key(p), rank: ranks[i] };
+  });
+  return ranks;
+}
+
 function renderPostSeasonBreakdown(nine) {
   const panel = document.getElementById('psBreakdownPanel');
   if (!panel) return;
@@ -21740,15 +21754,16 @@ function renderPostSeasonBreakdown(nine) {
   let lbHtml = '';
   if (hasAnyScore) {
     lbHtml = `<div style="font-weight:700;font-size:12px;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">🏆 Leaderboard</div>`;
-    let ccPos = 0;
+    const lbRanks = psLeaderboardRanks(leaderboard, p => !season || ccRosterEligible(p.name, season));
     lbHtml += leaderboard.map((p, i) => {
       const isSubLb = season && !ccRosterEligible(p.name, season);
-      const pos = isSubLb ? null : ++ccPos;
+      const pos = lbRanks[i];
+      const tied = pos !== null && p.runNet !== '' && lbRanks.some((r, j) => j !== i && r === pos);
       const net = p.runNet !== '' ? p.runNet : '—';
       const gross = p.runGross !== '' ? p.runGross : '—';
       const bg = pos === 1 && p.runNet !== '' ? '#fff8e1' : i % 2 === 0 ? '#fafafa' : '#fff';
-      const medal = pos === null ? '—' : pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : `${pos}.`;
-      return `<div style="${rowStyle};background:${bg}">
+      const medal = pos === null ? '—' : (pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : '') + (tied ? `T${pos}` : (pos > 3 ? `${pos}.` : ''));
+      return `<div style="${rowStyle};grid-template-columns:44px 1fr auto;background:${bg}">
         <span style="font-weight:700;text-align:center">${medal}</span>
         <span style="font-weight:600">${p.name} <span style="color:#aaa;font-size:11px">(hdcp ${p.phdcp})</span>${!p.inSkins ? ' <span style="color:#1565c0;font-size:10px;font-weight:600" title="Plays for the League Championship but did not buy into EOY Skins">NO SKINS</span>' : ''}${isSubLb ? ' <span style="color:#999;font-size:10px;font-weight:600" title="Subs can\'t compete for the League Championship">SUB · not CC</span>' : ''}</span>
         <span style="font-family:'DM Mono',monospace;font-weight:700;color:#1a4d1a">Net ${net} <span style="color:#aaa;font-size:11px">/ ${gross}</span></span>
