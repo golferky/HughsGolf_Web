@@ -22683,6 +22683,7 @@ function onScoreInput(e) {
   entryDirty = true;
   // Profile check on first hole entry per player per session
   if (entryState[key]?.active) checkPlayerProfileCompletion(entryState[key].active);
+  if (isPS && parseInt(val) > 0) maybeOfferPostSeasonWeekSkins(key, hi);   // unpaid for this week? offer that week's skins
 
   const st   = entryState[key];
   const gross = calcGross(st.holes);
@@ -23650,6 +23651,67 @@ function confirmPayment() {
   buildEntryGrid();
 }
 
+// ── Post-season: offer the week's skins to a player who is scoring without having paid for that week ──
+// Pure helpers (tested): whether to offer, and the wording. Offering never writes anything: "Pay" just opens the normal
+// payment modal with that single week preselected, and the officer confirms the payment there as usual.
+const _psWeekOffersSeen = new Set();
+function psShouldOfferWeekSkins(player, week, grossPaidPlayers, seen) {
+  if (!player || (week !== 1 && week !== 2)) return false;
+  if (grossPaidPlayers.has(player)) return false;      // already paid for this week (refunded players are handled by refunds)
+  const k = player + '|' + week;
+  if (seen.has(k)) return false;                       // ask once per player per week per session
+  seen.add(k);
+  return true;
+}
+function psWeekOfferText(player, week, missedOtherWeek, weekAmt) {
+  const amt = '$' + (Number.isInteger(weekAmt) ? weekAmt : weekAmt.toFixed(2));
+  return {
+    title: `${player} hasn't paid for Week ${week}`,
+    body: `Post-season Skins & CTP are optional (${amt} per week). Add ${player} to Week ${week} Skins & CTP only?`,
+    note: missedOtherWeek ? `${player} has no Week ${missedOtherWeek} score, so they can't win the League Championship (both weeks are required).` : '',
+    payLabel: `Pay ${amt} — Week ${week} only`,
+  };
+}
+function maybeOfferPostSeasonWeekSkins(key, hi) {
+  try {
+    const st = entryState[key];
+    const player = st && st.active;
+    const grid = document.getElementById('entryGrid');
+    const season = parseInt(grid && grid.dataset.postSeasonSeason);
+    if (!player || !season || !db) return;
+    const week1Fb = entryState._psWeek1Fb || 'Front';
+    const week = psWeekForHoleIndex(hi, week1Fb);
+    const gross = computeEoyGrossByWeek(season).weeks[week];
+    if (!psShouldOfferWeekSkins(player, week, gross, _psWeekOffersSeen)) return;
+    const other = week === 1 ? 2 : 1;
+    const hasOther = st.holes.some((v, i) => parseInt(v) > 0 && psWeekForHoleIndex(i, week1Fb) === other);
+    const missedOther = (week === 2 && !hasOther) ? 1 : 0;      // Week 1 is over once Week 2 is being scored
+    const entry = getPostSeasonWeekEntry(season);
+    const txt = psWeekOfferText(player, week, missedOther, entry.ok ? entry.total : 10);
+    document.getElementById('psWeekOfferTitle').textContent = txt.title;
+    document.getElementById('psWeekOfferBody').textContent = txt.body;
+    const noteEl = document.getElementById('psWeekOfferNote');
+    noteEl.textContent = txt.note; noteEl.style.display = txt.note ? 'block' : 'none';
+    const payBtn = document.getElementById('psWeekOfferPay');
+    payBtn.textContent = txt.payLabel;
+    payBtn.onclick = () => { closePostSeasonWeekOffer(); openPaymentModalForWeek(key, week); };
+    document.getElementById('psWeekOfferModal').style.display = 'flex';
+  } catch (e) { console.warn('week skins offer failed', e); }
+}
+function closePostSeasonWeekOffer() { document.getElementById('psWeekOfferModal').style.display = 'none'; }
+// Opens the regular payment modal with ONLY this week preselected ($ per week, assigned to the week); nothing is paid until
+// the officer presses Pay there (eoyPaymentForWeeks / eoyPaymentConflict still validate it).
+function openPaymentModalForWeek(key, week) {
+  openPaymentModal(key);
+  const radios = [...document.querySelectorAll('input[name="payEoyWk"]')];
+  const r = radios.find(x => x.value === String(week));
+  if (!r) return;
+  ['payEoyCheck', 'payEoyAmt'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = false; });
+  radios.forEach(x => { x.disabled = false; x.checked = x === r; });
+  document.getElementById('payEoyCheck').checked = true;
+  r.onchange ? r.onchange() : r.dispatchEvent(new Event('change'));
+}
+
 function closePaymentModal() {
   document.getElementById('paymentModal').style.display = 'none';
   paySlotKey = null;
@@ -23942,6 +24004,17 @@ function buildTableList() {
     <input id="payPickerSearch" type="text" placeholder="Type player name..." style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:'DM Sans',sans-serif;margin-bottom:8px">
     <div id="payPickerList" style="max-height:260px;overflow-y:auto;border:1px solid #eee;border-radius:6px"></div>
     <button onclick="document.getElementById('payPlayerPickerModal').style.display='none'" style="width:100%;margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:6px;background:white;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px">Cancel</button>
+  </div>
+</div>
+<div id="psWeekOfferModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:white;border-radius:12px;padding:24px;min-width:320px;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+    <div style="font-family:'Bebas Neue',cursive;font-size:24px;color:var(--green);margin-bottom:8px" id="psWeekOfferTitle"></div>
+    <div style="font-size:13px;margin-bottom:10px" id="psWeekOfferBody"></div>
+    <div style="font-size:12px;color:#8a5a00;background:#fff8e1;border:1px solid #ffe08a;border-radius:6px;padding:8px 10px;margin-bottom:10px;display:none" id="psWeekOfferNote"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button onclick="closePostSeasonWeekOffer()" style="padding:8px 14px;border:1px solid #ccc;border-radius:6px;background:white;cursor:pointer">Not now</button>
+      <button id="psWeekOfferPay" style="padding:8px 14px;border:none;border-radius:6px;background:var(--green);color:white;font-weight:600;cursor:pointer"></button>
+    </div>
   </div>
 </div>
 <div id="paymentModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;align-items:center;justify-content:center">
