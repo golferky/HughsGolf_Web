@@ -81,7 +81,7 @@ function render(states, season = '2026') {
     getSeasonSettings: () => ({ SkinsPS: 7, ClosestPS: 3 }), psRefundPanelHtml: () => '',
   });
   vm.runInContext([constLine('SUBS_CC_ELIGIBLE'), constLine('CC_SUB_EXCEPTIONS'), extract('isSeasonRosterPlayer'), extract('isCcSubException'), extract('ccRosterEligible'),
-    extract('psLeaderboardRanks'), extract('psLeaderboardShotsBack'), extract('psWeekSkinPayout'), extract('getPostSeasonEntryTotals'), extract('renderPostSeasonBreakdown')].join('\n'), ctx);
+    extract('psLeaderboardRanks'), extract('psLeaderboardShotsBack'), extract('psCcPrizeSchedule'), extract('psLeaderboardCcPotential'), extract('psWeekSkinPayout'), extract('getPostSeasonEntryTotals'), extract('renderPostSeasonBreakdown')].join('\n'), ctx);
   vm.runInContext('renderPostSeasonBreakdown(courseData.all18)', ctx);
   return panel.innerHTML;
 }
@@ -110,6 +110,10 @@ assert.deepStrictEqual(positions, ['🥇', '🥈T2', '🥈T2', '🥈T2', '—'],
 assert.strictEqual(positions.filter(p => p === '—').length, 1);
 // shots back: own column with a header; leader "Leader", the others negative (-1), the sub blank
 assert(/>Back<\/span>/.test(out), 'Back column header');
+assert(/>CC \$<\/span>/.test(out), 'CC $ column header');
+// fixture: Brad 1st ($100), three tied for 2nd split 2nd+3rd ($50+$25)/3 = $25, sub none
+assert.strictEqual((out.match(/color:#1a4d1a" title="Potential League Championship prize at the current standings">\$100<\/span>/g) || []).length, 1);
+assert.strictEqual((out.match(/standings">\$25<\/span>/g) || []).length, 3);
 assert.strictEqual((out.match(/>Leader<\/span>/g) || []).length, 1);
 assert.strictEqual((out.match(/title="Shots behind the leader">-1<\/span>/g) || []).length, 3, 'three players are -1');
 assert(!/>\+\d/.test(out.replace(/<[^>]*>/g, m => '')), 'no positive shots back');
