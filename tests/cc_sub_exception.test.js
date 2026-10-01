@@ -108,6 +108,11 @@ assert(/<span[^>]*text-align:center">—<\/span>/.test(other), 'the ineligible s
 const positions = [...out.matchAll(/<span style="font-weight:700;text-align:center">([^<]+)<\/span>/g)].map(m => m[1]);
 assert.deepStrictEqual(positions, ['🥇', '🥈T2', '🥈T2', '🥈T2', '—'], 'eligible players ranked 1,T2,T2,T2; the ineligible sub is "—"');
 assert.strictEqual(positions.filter(p => p === '—').length, 1);
+// shots back: own column with a header; leader "Leader", the others negative (-1), the sub blank
+assert(/>Back<\/span>/.test(out), 'Back column header');
+assert.strictEqual((out.match(/>Leader<\/span>/g) || []).length, 1);
+assert.strictEqual((out.match(/title="Shots behind the leader">-1<\/span>/g) || []).length, 3, 'three players are -1');
+assert(!/>\+\d/.test(out.replace(/<[^>]*>/g, m => '')), 'no positive shots back');
 
 // In any other season he is a plain sub again
 out = render(states, '2025');
