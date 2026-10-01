@@ -20642,6 +20642,38 @@ async function clearAllPsScores() {
   loadGallusQueue && loadGallusQueue();
 }
 
+// Post-season grid: a week whose date is still in the future is locked (its nine's score fields are disabled) unless
+// "LOCAL TEST: ALLOW FUTURE SCORES" is on. Returns the locked nines; display only. The server-side future-date block remains
+// the backstop for any write that gets past this.
+function psFutureLockedNines(meta, todayInt, overrideOn) {
+  if (overrideOn || !meta) return [];
+  const week1Fb = meta._psWeek1Fb || 'Front';
+  const nines = [
+    { nine: 'Front', date: parseInt(meta._psFrontDate || (week1Fb === 'Front' ? meta._psDate1 : meta._psDate2)) },
+    { nine: 'Back',  date: parseInt(meta._psBackDate  || (week1Fb === 'Back'  ? meta._psDate1 : meta._psDate2)) },
+  ];
+  return nines
+    .filter(n => n.date > todayInt)
+    .map(n => ({ nine: n.nine, date: n.date, week: n.nine === week1Fb ? 1 : 2 }));
+}
+// Seed buttons write scores too: seed 1 writes the Front 9 date, seed 2 the Back 9 date, the 18H Gallus seed both. A seed is
+// locked while any date it would write is in the future and the override is off (the server block stays the backstop).
+function psTodayInt() { const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); }
+function psSeedLock(which, meta, todayInt, overrideOn) {
+  if (overrideOn || !meta) return { locked: false, weeks: [], message: '' };
+  const frontDate = parseInt(meta._psFrontDate || meta._psDate1), backDate = parseInt(meta._psBackDate || meta._psDate2);
+  const dates = String(which) === '1' ? [frontDate] : String(which) === '2' ? [backDate] : [frontDate, backDate];
+  const week1 = parseInt(meta._psDate1), week2 = parseInt(meta._psDate2);
+  const weeks = [...new Set(dates.filter(d => d > todayInt).map(d => d === week2 ? 2 : d === week1 ? 1 : (d > week1 ? 2 : 1)))].sort();
+  const names = weeks.map(w => 'Week ' + w);
+  return { locked: weeks.length > 0, weeks,
+    message: weeks.length ? `${names.join(' and ')} ${names.length > 1 ? 'are' : 'is'} future-dated. Enable Local Test: Allow Future Scores to enter test scores.` : '' };
+}
+function psFutureLockMessage(locked) {
+  const weeks = [...new Set(locked.map(l => l.week))].sort().map(w => 'Week ' + w);
+  return `${weeks.join(' and ')} ${weeks.length > 1 ? 'are' : 'is'} future-dated. Enable Local Test: Allow Future Scores to enter test scores.`;
+}
+
 function buildEntryGrid() {
   if (!db || !courseData) return;
   selectedEntrySlotKey = null;
@@ -20751,19 +20783,19 @@ function buildEntryGrid() {
       <div style="display:flex;gap:16px;align-items:center;padding-top:6px;border-top:1px solid rgba(255,255,255,.2);flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:11px;font-weight:700;color:rgba(255,255,255,.7);white-space:nowrap">Week 1</span>
-          <button onclick="seedPostSeasonTestScores(1)" style="${btnStyle}" title="Seed Week 1 (Front 9)">🧪 Seed</button>
+          <button data-seed="1" onclick="seedPostSeasonTestScores(1)" style="${btnStyle}" title="Seed Week 1 (Front 9)">🧪 Seed</button>
           <button onclick="clearPostSeasonTestScores(1)" style="${clrStyle}" title="Clear Week 1 scores">🗑 Clear</button>
         </div>
         <div style="width:1px;height:20px;background:rgba(255,255,255,.2)"></div>
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:11px;font-weight:700;color:rgba(255,255,255,.7);white-space:nowrap">Week 2</span>
-          <button onclick="seedPostSeasonTestScores(2)" style="${btnStyle}" title="Seed Week 2 (Back 9)">🧪 Seed</button>
+          <button data-seed="2" onclick="seedPostSeasonTestScores(2)" style="${btnStyle}" title="Seed Week 2 (Back 9)">🧪 Seed</button>
           <button onclick="clearPostSeasonTestScores(2)" style="${clrStyle}" title="Clear Week 2 scores">🗑 Clear</button>
         </div>
         <div style="width:1px;height:20px;background:rgba(255,255,255,.2)"></div>
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:11px;font-weight:700;color:rgba(255,255,255,.7);white-space:nowrap">18H Gallus</span>
-          <button onclick="seedPostSeasonFrom18HGallus()" style="${btnStyle}" title="Seed both weeks from most recent 18-hole Gallus round">🏌️ Seed</button>
+          <button data-seed="gallus" onclick="seedPostSeasonFrom18HGallus()" style="${btnStyle}" title="Seed both weeks from most recent 18-hole Gallus round">🏌️ Seed</button>
         </div>
       </div>` : ''}
     `;
@@ -20994,6 +21026,45 @@ function buildEntryGrid() {
   entryLast9Value = document.getElementById('entry9')?.value || entryLast9Value;
   try { applyCellClasses(nine); } catch (e) { console.warn('applyCellClasses failed after entry build:', e); }
   // (no calcEoySkins here — see the note above; it used to run on every grid build, including a page reload)
+  // Post season: lock any future-dated week (Week 2 before 10/6) unless the test override is on, with a clear message.
+  const _oldPsLock = document.getElementById('psFutureWeekBanner');
+  if (_oldPsLock) _oldPsLock.remove();
+  if (isPostSeason && !blockFutureScores) {
+    const locked = psFutureLockedNines(entryState, todayInt, futureScoreOverrideEnabled());
+    if (locked.length) {
+      const lockedNines = new Set(locked.map(l => l.nine));
+      document.querySelectorAll('#entryGrid input.eg-input').forEach(inp => {
+        const hi = parseInt(inp.dataset.hi);
+        if (lockedNines.has(hi < 9 ? 'Front' : 'Back')) {
+          inp.disabled = true;
+          inp.style.background = '#f5f5f5';
+          inp.style.cursor = 'not-allowed';
+          inp.style.color = '#aaa';
+          inp.title = 'Future-dated week — enable Local Test: Allow Future Scores to enter test scores';
+        }
+      });
+      const msg = document.createElement('div');
+      msg.id = 'psFutureWeekBanner';
+      msg.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:10px 16px;font-size:13px;color:#856404;margin-bottom:12px;font-weight:600';
+      msg.textContent = '🔒 ' + psFutureLockMessage(locked);
+      const host = document.getElementById('adminScores');
+      if (host) {
+        let ref = document.getElementById('entryGrid');
+        while (ref && ref.parentElement !== host) ref = ref.parentElement;
+        host.insertBefore(msg, ref || host.firstChild);
+      }
+    }
+  }
+  // Seed actions write scores, so they are locked on future-dated weeks too (post season only).
+  if (isPostSeason) {
+    document.querySelectorAll('#postSeasonBanner button[data-seed]').forEach(btn => {
+      const lk = psSeedLock(btn.dataset.seed, entryState, todayInt, futureScoreOverrideEnabled());
+      btn.disabled = lk.locked;
+      btn.style.opacity = lk.locked ? '.45' : '';
+      btn.style.cursor = lk.locked ? 'not-allowed' : 'pointer';
+      if (lk.locked) btn.title = lk.message;
+    });
+  }
   if (blockFutureScores) {
     // Always disable score inputs for future dates
     document.querySelectorAll('#entryGrid input.eg-input').forEach(inp => {
@@ -22786,6 +22857,8 @@ async function seedPostSeasonTestScores(week) {
   const league = "Hugh's";
   const ctx = activeEntryPostSeasonContext;
   if (!ctx) { alert('Not in post-season mode.'); return; }
+  const _lock = psSeedLock(week, entryState, psTodayInt(), futureScoreOverrideEnabled());
+  if (_lock.locked) { alert(_lock.message); return; }
 
   const psDatesClause = `(${ctx.week1},${ctx.week2})`;
   const frontDate = entryState._psFrontDate || ctx.week1;
@@ -22828,6 +22901,8 @@ async function seedPostSeasonFrom18HGallus() {
   if (!canUsePostSeasonTestMode()) return;
   const ctx = activeEntryPostSeasonContext;
   if (!ctx) { alert('Not in post-season mode.'); return; }
+  const _lock = psSeedLock('gallus', entryState, psTodayInt(), futureScoreOverrideEnabled());
+  if (_lock.locked) { alert(_lock.message); return; }
   const league = "Hugh's";
   const frontDate = entryState._psFrontDate || ctx.week1;
   const backDate  = entryState._psBackDate  || ctx.week2;
