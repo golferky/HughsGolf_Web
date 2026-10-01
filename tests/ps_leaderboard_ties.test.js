@@ -5,7 +5,7 @@ function extract(name) {
   let d = 0, j = src.indexOf('{', i);
   for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; if (src[k] === '}' && --d === 0) return src.slice(i, k + 1); }
 }
-const ctx = {}; vm.createContext(ctx); vm.runInContext(['psLeaderboardRanks', 'psLeaderboardShotsBack', 'psCcPrizeSchedule', 'psLeaderboardCcPotential'].map(extract).join('\n'), ctx);
+const ctx = {}; vm.createContext(ctx); vm.runInContext(['psLeaderboardRanks', 'psLeaderboardShotsBack', 'psCcPrizeSchedule', 'psLeaderboardCcPotential', 'psCcMissedWeek'].map(extract).join('\n'), ctx);
 const P = (name, net, f = true, b = true) => ({ name, runNet: net, frontComplete: f, backComplete: b });
 const ranks = (lb, ok = () => true) => Array.from(ctx.psLeaderboardRanks(lb, ok));
 
@@ -46,6 +46,15 @@ assert.deepStrictEqual(cc([P('Sub', 29), P('A', 30), P('B', 31)], [100, 50, 25],
 assert.deepStrictEqual(cc([P('A', 30), P('X', '', false, false)]), [100, null], 'unscored get nothing');
 assert.deepStrictEqual(cc([P('A', 30), P('B', 31)], [100]), [100, null], 'only paid places');
 assert(/psLeaderboardCcPotential\(leaderboard/.test(src) && />CC \$</.test(src), 'renderer uses CC helper and has the CC $ header');
+// ---- League Championship needs BOTH weeks
+const miss = (scored, closed) => ctx.psCcMissedWeek(scored, closed);
+assert.strictEqual(miss({ 1: true, 2: true }, { 1: true, 2: true }), 0, 'played both');
+assert.strictEqual(miss({ 1: false, 2: true }, { 1: true, 2: false }), 1, 'no Week 1 once Week 1 is over (Gary)');
+assert.strictEqual(miss({ 1: true, 2: false }, { 1: true, 2: false }), 0, 'Week 2 not over yet: still in the running');
+assert.strictEqual(miss({ 1: true, 2: false }, { 1: true, 2: true }), 2, 'no Week 2 once Week 2 is over');
+assert.strictEqual(miss({ 1: false, 2: false }, { 1: false, 2: false }), 0, 'nothing is over yet: live Week 1 players are not excluded');
+assert.strictEqual(miss({ 1: false, 2: false }, { 1: true, 2: true }), 1, 'reports the first missed week');
+assert.strictEqual(miss(undefined, { 1: false, 2: false }), 0);
 // column header and negative display
 assert(/>Back</.test(src) && /-\${lbBack\[i\]}/.test(src), 'Back header and negative shots back');
 assert(/psLeaderboardRanks\(leaderboard/.test(src), 'renderer uses helper');

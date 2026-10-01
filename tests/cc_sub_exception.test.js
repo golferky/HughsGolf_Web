@@ -74,14 +74,14 @@ const slot = (name, sub, gross, phdcp = 0) => ({ regular: sub ? 'Regular ' + nam
 const g = total => { const a = Array(9).fill(4); let over = total - 36; for (let i = 0; i < over; i++) a[i] += 1; return a; };     // a 9-hole card totalling `total`
 function render(states, season = '2026') {
   gridSeason = season;
-  const entryState = {}; states.forEach((s, i) => { entryState['k' + i] = s; });
+  const entryState = {}; states.forEach((s, i) => { entryState['k' + i] = s; }); entryState._psWeek1Fb = 'Back';
   const ctx = vm.createContext({
     document: { getElementById: id => id === 'psBreakdownPanel' ? panel : id === 'entryGrid' ? grid : null }, window: {}, entryState,
     parseInt, parseFloat, Math, Object, Array, String, Set, query, courseData: { all18: nine },
     getSeasonSettings: () => ({ SkinsPS: 7, ClosestPS: 3 }), psRefundPanelHtml: () => '',
   });
   vm.runInContext([constLine('SUBS_CC_ELIGIBLE'), constLine('CC_SUB_EXCEPTIONS'), extract('isSeasonRosterPlayer'), extract('isCcSubException'), extract('ccRosterEligible'),
-    extract('psLeaderboardRanks'), extract('psLeaderboardShotsBack'), extract('psCcPrizeSchedule'), extract('psLeaderboardCcPotential'), extract('psWeekSkinPayout'), extract('getPostSeasonEntryTotals'), extract('renderPostSeasonBreakdown')].join('\n'), ctx);
+    extract('psWeekForHoleIndex'), extract('psLeaderboardRanks'), extract('psLeaderboardShotsBack'), extract('psCcMissedWeek'), extract('psCcPrizeSchedule'), extract('psLeaderboardCcPotential'), extract('psWeekSkinPayout'), extract('getPostSeasonEntryTotals'), extract('renderPostSeasonBreakdown')].join('\n'), ctx);
   vm.runInContext('renderPostSeasonBreakdown(courseData.all18)', ctx);
   return panel.innerHTML;
 }
@@ -117,6 +117,25 @@ assert.strictEqual((out.match(/standings">\$25<\/span>/g) || []).length, 3);
 assert.strictEqual((out.match(/>Leader<\/span>/g) || []).length, 1);
 assert.strictEqual((out.match(/title="Shots behind the leader">-1<\/span>/g) || []).length, 3, 'three players are -1');
 assert(!/>\+\d/.test(out.replace(/<[^>]*>/g, m => '')), 'no positive shots back');
+
+// ---- both weeks required: a roster player with only Week 2 scores (Week 1 = back 9 is over once anyone has Week 2 scores)
+{
+  const front = gross => { const h = Array(18).fill(''); gross.forEach((v, i) => h[i] = String(v)); return h; };   // Week 2 = front 9
+  const both = (name, back, fr) => ({ regular: name, sub: null, phdcp: 0, inSkins: true, holes: holes(back).map((v, i) => i < 9 ? String(fr[i] ?? '') : v) });
+  const st = [
+    both('Brad Pierce', g(36), g(36)),                    // played both weeks: ranked
+    both('Robby Lykes', g(38), g(38)),
+    { regular: 'Tom Jennings', sub: null, phdcp: 0, inSkins: false, holes: front(g(32)) },   // Week 2 only, did not buy in: no CC
+  ];
+  const o = render(st);
+  const gary = rowOf(o, 'Tom Jennings'), ann = rowOf(o, 'Brad Pierce');
+  assert(/NOT CC · no Week 1/.test(gary), 'Tom J. is flagged: no Week 1');
+  assert(/<span[^>]*text-align:center">—<\/span>/.test(gary), 'Tom J. gets no place');
+  assert(!/\$\d+<\/span>\s*<\/span>\s*<\/div>$/.test(gary.replace(/\s+/g, ' ')) && !/Potential League Championship prize/.test(gary), 'Tom J. has no CC $');
+  assert(!/NOT CC/.test(ann), 'players who played both weeks are untouched');
+  const pos = [...o.matchAll(/<span style="font-weight:700;text-align:center">([^<]+)<\/span>/g)].map(m => m[1]);
+  assert(pos.includes('🥇') && pos.includes('🥈') && pos.includes('—'), 'Ann/Ben take 1st/2nd, Tom J. "—": ' + pos);
+}
 
 // In any other season he is a plain sub again
 out = render(states, '2025');
