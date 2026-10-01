@@ -31,5 +31,7 @@ assert.deepStrictEqual(back([P('Sub', 29), P('A', 30), P('B', 33), P('X', '', fa
 // fewer completed nines is not comparable
 assert.deepStrictEqual(back([P('A', 35, true, true), P('B', 20, true, false)]), [0, null]);
 assert(/psLeaderboardShotsBack\(leaderboard/.test(src), 'renderer uses shots-back helper');
+// column header and negative display
+assert(/>Back</.test(src) && /-\${lbBack\[i\]}/.test(src), 'Back header and negative shots back');
 assert(/psLeaderboardRanks\(leaderboard/.test(src), 'renderer uses helper');
 console.log('ok');
