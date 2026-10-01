@@ -348,6 +348,7 @@
     border-right: 2px solid #ddd;
     white-space: nowrap;
     min-width: 130px;
+    overflow: hidden;   /* badges must never paint over the first hole's score cell */
   }
   .eg-th {
     background: var(--green); color: var(--gold);
@@ -21145,7 +21146,8 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
   const cg = document.createElement('colgroup');
   if (isPostSeason) {
     // Player | 9 front holes | Out | 9 back holes | In | Gross | Net
-    cg.innerHTML = '<col style="width:170px">' +
+    // Player column is wide enough for name + Paid + CTP (#hole) + Sub badges on one line; extra badges wrap, never overlap.
+    cg.innerHTML = '<col style="width:260px">' +
       Array(9).fill('<col style="width:38px">').join('') +
       '<col style="width:48px">' +
       Array(9).fill('<col style="width:38px">').join('') +
@@ -21359,7 +21361,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
     } else {
       // Regular player — show name + "Sub" button
       playerTd.innerHTML = `
-        <div style="display:flex;align-items:center;gap:4px">
+        <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
           ${teamLabel}
           <span class="eg-player-name" style="font-weight:600;${playerNameStyle}">${slot.regular}</span>
           ${paidBadge}${ctpBadge}
