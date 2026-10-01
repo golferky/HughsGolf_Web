@@ -344,7 +344,7 @@
     position: sticky; left: 0; z-index: 2;
     background: white;
     font-weight: 600; font-size: 13px;
-    padding: 4px 10px;
+    padding: 4px 6px 4px 10px;
     border-right: 2px solid #ddd;
     white-space: nowrap;
     min-width: 130px;
@@ -21146,8 +21146,9 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
   const cg = document.createElement('colgroup');
   if (isPostSeason) {
     // Player | 9 front holes | Out | 9 back holes | In | Gross | Net
-    // Player column is wide enough for name + Paid + CTP (#hole) + Sub badges on one line; extra badges wrap, never overlap.
-    cg.innerHTML = '<col style="width:260px">' +
+    // Player column fits name + Paid + Sub on one line; a CTP (#hole) badge wraps to a second line instead of overlapping the
+    // first hole. Kept narrow on purpose: the grid (fixed 38px hole inputs) must still fit without horizontal scrolling.
+    cg.innerHTML = '<col style="width:196px">' +
       Array(9).fill('<col style="width:38px">').join('') +
       '<col style="width:48px">' +
       Array(9).fill('<col style="width:38px">').join('') +
