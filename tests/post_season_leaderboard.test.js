@@ -35,10 +35,10 @@ const entryState = {
 const ctx = vm.createContext({
   document, window: {}, entryState, parseInt, parseFloat, Math, Object, Array,
   courseData: { all18: nine },
-  getSeasonSettings: () => ({ SkinsPS: 7, ClosestPS: 3 }),
+  getSeasonSettings: () => ({ SkinsPS: 7, ClosestPS: 3 }), query: () => [],
   ccRosterEligible: () => true, psRefundPanelHtml: () => '',
 });
-['psLeaderboardRanks', 'psLeaderboardShotsBack', 'psWeekSkinPayout', 'getPostSeasonEntryTotals', 'renderPostSeasonBreakdown'].forEach(n => vm.runInContext(extract(n), ctx));
+['psLeaderboardRanks', 'psLeaderboardShotsBack', 'psCcPrizeSchedule', 'psLeaderboardCcPotential', 'psWeekSkinPayout', 'getPostSeasonEntryTotals', 'renderPostSeasonBreakdown'].forEach(n => vm.runInContext(extract(n), ctx));
 vm.runInContext('renderPostSeasonBreakdown(courseData.all18)', ctx);
 const out = panel.innerHTML;
 
