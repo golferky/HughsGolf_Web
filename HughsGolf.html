@@ -541,6 +541,7 @@
   <div class="header-right">
     <span id="loggedInUser" onclick="showMyProfile()" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px;cursor:pointer;text-decoration:underline" title="View my profile"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
+    <button id="viewAsPlayerBtn" onclick="toggleViewAsPlayer()" title="See the app exactly as a player sees it (admin tools hidden). Click again to return to admin mode." style="display:none;padding:6px 12px;background:#0d47a1;color:white;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">👁 View as Player</button>
     <button id="switchUserBtn" onclick="showImpersonateModal()" style="display:none;padding:6px 12px;background:#4a148c;color:white;border:1px solid #ce93d8;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🎭 Switch User</button>
     <button id="logoutBtn" onclick="logoutUser()" style="display:none;padding:6px 12px;background:#4a3000;color:var(--gold);border:1px solid var(--gold);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:6px">Logout</button>
     <span id="dbStatus">No database loaded</span>
@@ -659,6 +660,7 @@
   </div>
 </div>
 
+<div id="viewAsPlayerBanner" style="display:none;background:#0d47a1;color:white;text-align:center;padding:8px 12px;font-size:13px;font-weight:600">👁 Viewing as a player — admin tools are hidden. <button onclick="setViewAsPlayer(false)" style="margin-left:10px;padding:3px 12px;border:1px solid white;border-radius:5px;background:transparent;color:white;font-weight:700;cursor:pointer">Back to Admin Mode</button></div>
 <div class="tabs">
   <div class="tab active" data-tab="home">Home</div>
   <div class="tab" data-tab="board" id="boardTabBtn">📋 Board</div>
@@ -2707,7 +2709,7 @@ async function releaseFutureScores(reason) {
     const token = await ensureSaveToken();
     const resp = await fetch('/release-future-scores', { method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Save-Token': token,
-                 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '' },
+                 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': actorRole() },
       body: JSON.stringify({ reason }) });
     const json = await resp.json();
     if (json.ok && !json.skipped && db) {
@@ -3522,7 +3524,7 @@ async function sendServerSql(serverSql, sessionToken) {
     const resp = await fetch('/run-sql', {
       method: 'POST',
       headers: {'Content-Type':'application/json','X-Save-Token':token,
-                'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '',
+                'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': actorRole(),
                 'X-Future-Override': futureScoreOverrideEnabled() ? 'Y' : ''},
       body: JSON.stringify({ sql: serverSql, sessionToken })
     });
@@ -11771,12 +11773,41 @@ function roleFromOfficerValue(officer) {
   return 'player';
 }
 
+// ── Admin "View as Player" mode ─────────────────────────────────────────────────────────────────────────────────────
+// An admin or developer can switch to seeing exactly what a player sees. Every role check in the app reads currentUser.role,
+// so the view swaps that to 'player' (the real role is kept in realRole) and re-renders. It only ever REDUCES what is shown,
+// it is not saved across reloads, and logout clears it. Audit headers and session timeouts keep using the real role.
+function canViewAsPlayer() { const r = currentUser?.realRole || currentUser?.role; return r === 'admin' || r === 'developer'; }
+function isViewingAsPlayer() { return !!currentUser && !!currentUser.realRole && currentUser.role !== currentUser.realRole; }
+function actorRole() { return currentUser?.realRole || currentUser?.role || ''; }
+function sessionRole() { return currentUser?.realRole || currentUser?.role; }
+function updateViewAsPlayerUi() {
+  const btn = document.getElementById('viewAsPlayerBtn');
+  const banner = document.getElementById('viewAsPlayerBanner');
+  const viewing = isViewingAsPlayer();
+  if (btn) {
+    btn.style.display = canViewAsPlayer() ? '' : 'none';
+    btn.textContent = viewing ? '🛡 Back to Admin Mode' : '👁 View as Player';
+  }
+  if (banner) banner.style.display = viewing ? '' : 'none';
+}
+function setViewAsPlayer(on) {
+  if (!currentUser || !canViewAsPlayer()) return false;
+  currentUser.role = on ? 'player' : currentUser.realRole;
+  applyRoleAccess();                 // tabs, buttons, dev-only elements, entry controls (also refreshes the toggle UI)
+  const active = activeTabName();
+  if (!canAccessTab(active)) switchTab('home');                    // e.g. leaving the Admin tab while viewing as a player
+  else if (db) refreshTab(active);                                 // re-render the current screen with the new role
+  return true;
+}
+function toggleViewAsPlayer() { setViewAsPlayer(!isViewingAsPlayer()); }
+
 function isPersistentSessionRole(role) {
   return role === 'developer' || role === 'admin';
 }
 
 function showPersistentIdleWarning() {
-  if (!currentUser || !isPersistentSessionRole(currentUser.role) || document.getElementById('persistentIdleModal')) return;
+  if (!currentUser || !isPersistentSessionRole(sessionRole()) || document.getElementById('persistentIdleModal')) return;
   const modal = document.createElement('div');
   modal.id = 'persistentIdleModal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99998;display:flex;align-items:center;justify-content:center';
@@ -11796,7 +11827,7 @@ function resetSessionTimer() {
   if (!currentUser) return;
   clearTimeout(sessionTimer);
   document.getElementById('persistentIdleModal')?.remove();
-  if (isPersistentSessionRole(currentUser.role)) {
+  if (isPersistentSessionRole(sessionRole())) {
     sessionTimer = setTimeout(showPersistentIdleWarning, PERSISTENT_IDLE_WARNING);
     return;
   }
@@ -11967,7 +11998,7 @@ async function saveDBToServer(successLabel, btnId, _retries = 1) {
         'Content-Type': 'application/octet-stream',
         'X-Save-Token': token,
         'X-Actor': encodeURIComponent(currentUser?.name || ''),
-        'X-Actor-Role': currentUser?.role || '',
+        'X-Actor-Role': actorRole(),
         'X-Future-Override': futureScoreOverrideEnabled() ? 'Y' : '',
         'X-DB-Modified-Ms': SERVER_DB_MODIFIED_MS ? String(SERVER_DB_MODIFIED_MS) : '',
         'X-Client-Version': _isAnyTestMode ? '' : clientVersion
@@ -12502,7 +12533,7 @@ async function submitAddPlayer() {
   if (!body.phone && !body.email) { err.textContent = 'Enter a cell number or an email so we can contact him.'; err.style.display = 'block'; return; }
   try {
     const resp = await fetch('/add-player', { method: 'POST', headers: { 'Content-Type': 'application/json',
-      'X-Save-Token': await ensureSaveToken(), 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '' },
+      'X-Save-Token': await ensureSaveToken(), 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': actorRole() },
       body: JSON.stringify(body) });
     const json = await resp.json();
     if (!json.ok) { err.textContent = json.error || 'Could not add player.'; err.style.display = 'block'; return; }
@@ -12532,7 +12563,7 @@ async function reviewPendingPlayer(name, decision) {
   const extra = decision === 'approve' ? '\n\nHe will be sent ONE message asking permission to contact him. No sub requests until he says OK.' : '';
   if (!confirm(`${verb} ${name}?${extra}`)) return;
   const resp = await fetch('/review-player', { method: 'POST', headers: { 'Content-Type': 'application/json',
-    'X-Save-Token': await ensureSaveToken(), 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '' },
+    'X-Save-Token': await ensureSaveToken(), 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': actorRole() },
     body: JSON.stringify({ player: name, decision }) });
   const json = await resp.json();
   if (!json.ok) { alert(json.error || 'Failed'); return; }
@@ -12608,7 +12639,7 @@ async function doNeedSub() {
     const resp = await fetch('/need-sub', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Save-Token': await ensureSaveToken(),
-                 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '' },
+                 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': actorRole() },
       body: JSON.stringify({ player: forPlayer, date, message, recipients: selected, skipEmail: document.getElementById('needSubSkipEmail')?.checked || false })
     });
     const json = await resp.json();
@@ -12714,7 +12745,7 @@ async function doAskOfficerForSub() {
     const resp = await fetch('/need-sub', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Save-Token': await ensureSaveToken(),
-                 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': currentUser?.role || '' },
+                 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': actorRole() },
       body: JSON.stringify({ player: forPlayer, date: dateVal, message: msg, recipients: officerNames, askOfficers: true, skipEmail: document.getElementById('needSubSkipEmail')?.checked || false })
     });
     const json = await resp.json();
@@ -17621,6 +17652,7 @@ async function loginSuccess(player, opts = {}) {
     role: officerKey === 'developer' ? 'developer' :
           (officerKey === 'president' || officerKey === 'secretary') ? 'admin' : 'player'
   };
+  currentUser.realRole = currentUser.role;   // admins/developers can temporarily view the app as a player (role is swapped, realRole is not)
 
   // Log login
   const now = new Date().toISOString().replace('T',' ').substring(0,19);
@@ -17693,7 +17725,7 @@ async function loginSuccess(player, opts = {}) {
     if (!currentUser || !window._mySessionToken || !activeSessionsEnabled()) return;
     try {
       const current = query(`SELECT ActiveSession FROM Players WHERE Player=?`, [currentUser.name])[0]?.ActiveSession;
-      if (current && isSessionTokenStale(current) && !isPersistentSessionRole(currentUser.role)) {
+      if (current && isSessionTokenStale(current) && !isPersistentSessionRole(sessionRole())) {
         serverRun(`UPDATE Players SET ActiveSession=NULL WHERE Player=?`, [currentUser.name]);
         return;
       }
@@ -17709,6 +17741,8 @@ async function loginSuccess(player, opts = {}) {
 function applyRoleAccess() {
   if (!currentUser) return;
   const role = currentUser.role;
+
+  updateViewAsPlayerUi();
 
   // League Settings — developer only (sensitive credentials)
   const lsBtn = document.getElementById('adminBtnLeaguesettings');
@@ -17860,6 +17894,7 @@ async function logoutUser(reason) {
   clearInterval(window._sessionCheckInterval);
   window._mySessionToken = null;
   currentUser = null;
+  updateViewAsPlayerUi();                 // hides the View-as-Player button and banner
   window._resetPlayer = null;
   clearTimeout(sessionTimer);
   document.getElementById('loggedInUser').style.display = 'none';
