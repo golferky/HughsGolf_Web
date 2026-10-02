@@ -9492,6 +9492,22 @@ function populatePaymentsDateDropdown() {
     dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
 }
 
+// EOY Skins money for one player in a season: what they paid in, what has been refunded to them (refund rows are negative
+// 'EOY Skins' / 'Refund' payments dated on the week refunded), how much of that refund is still owed back (DatePaid empty),
+// and the NET (paid in minus refunds), which is what the Payments tab's EOY Paid column shows.
+function eoyPaidSummary(player, league, dFrom, dTo) {
+  const sum = (detail, extra = '') => parseFloat(query(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as s FROM Payments WHERE Player=? AND League=? AND "Desc"='EOY Skins' AND Detail='${detail}' AND Date >= ? AND Date < ?${extra}`, [player, league, dFrom, dTo])[0]?.s || 0);
+  const gross = sum('Payment');
+  const refunded = Math.abs(sum('Refund'));
+  const owed = Math.abs(sum('Refund', " AND COALESCE(DatePaid,'')=''"));
+  return { gross, refunded, owed, net: Math.round((gross - refunded) * 100) / 100 };
+}
+function eoyPaidCellHtml(eoy, fmtM) {
+  if (!eoy) return '\u2014';
+  if (!(eoy.refunded > 0)) return fmtM(eoy.net);
+  return `${fmtM(eoy.net)}<div style="font-size:10px;font-family:'DM Sans',sans-serif;color:#c62828;white-space:nowrap" title="Paid in ${fmtM(eoy.gross)}, refunded ${fmtM(eoy.refunded)}${eoy.owed > 0 ? ' (' + fmtM(eoy.owed) + ' still owed back)' : ''}">paid ${fmtM(eoy.gross)} \u2212 refund ${fmtM(eoy.refunded)}${eoy.owed > 0 ? ' (owed)' : ''}</div>`;
+}
+
 function loadPayments() {
   if (!db) return;
   const season   = document.getElementById('paymentsSeason').value;
@@ -9530,11 +9546,12 @@ function loadPayments() {
     const skinsWonSea = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='Skin' AND Detail LIKE '#%' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.s||0);
     const ctpWonWk    = weekDate ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='CTP' AND Detail LIKE '#%' AND Date=?`,[player,league,weekDate])[0]?.s||0) : 0;
     const ctpWonSea   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='CTP' AND Detail LIKE '#%' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.s||0);
-    const eoyPaid   = isRoster ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='EOY Skins' AND Detail='Payment' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.s||0) : null;
+    const eoy = isRoster ? eoyPaidSummary(player, league, dFrom, dTo) : null;          // paid in, refunded, still owed back, and the net
+    const eoyPaid = eoy ? eoy.net : null;                                              // EOY Paid column = net of refunds
     const lastPaid  = query(`SELECT MAX(DatePaid) as d FROM Payments WHERE Player=? AND League=? AND Detail='Payment' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.d||'';
     // This-week paid-in
     const paidInWk  = weekDate ? (query(`SELECT 1 FROM Payments WHERE Player=? AND League=? AND Desc IN ('Skin','CTP') AND Detail='Payment' AND Date=? LIMIT 1`,[player,league,weekDate]).length > 0) : false;
-    return { player, isRoster, ldPaid, ldBal, skinsPaid, ctpPaid, skinsWonWk, skinsWonSea, ctpWonWk, ctpWonSea, eoyPaid, lastPaid, paidInWk };
+    return { player, isRoster, ldPaid, ldBal, skinsPaid, ctpPaid, skinsWonWk, skinsWonSea, ctpWonWk, ctpWonSea, eoyPaid, eoy, lastPaid, paidInWk };
   });
 
   // Season totals
@@ -9685,7 +9702,7 @@ function loadPayments() {
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${r.skinsWonSea>0?'color:var(--green);font-weight:700':''}">${fmtM(r.skinsWonSea)}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${fmtM(r.ctpPaid)}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;${r.ctpWonSea>0?'color:var(--green);font-weight:700':''}">${fmtM(r.ctpWonSea)}</td>
-      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${r.eoyPaid!==null?fmtM(r.eoyPaid):'—'}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace">${eoyPaidCellHtml(r.eoy, fmtM)}</td>
     </tr>`;
   });
   seaHtml += `</tbody><tfoot><tr style="background:#f5f0e8;font-weight:700;border-top:2px solid var(--border)">
