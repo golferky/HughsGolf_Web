@@ -886,12 +886,14 @@
       <span style="background:#add8e6;padding:3px 10px;border-radius:4px">Bogey (1pt)</span>
       <span style="background:#ffcccc;padding:3px 10px;border-radius:4px">Double Bogey+ (0pts)</span>
     </div>
+    <div id="stablefordPsBanner"></div>
     <div style="overflow-x:auto">
       <table id="stablefordTable" style="border-collapse:collapse;font-size:12px;min-width:1000px;width:100%">
         <thead id="stablefordHead"></thead>
         <tbody id="stablefordBody"></tbody>
       </table>
     </div>
+    <div id="stablefordPsStandings"></div>
 
     <!-- SF STANDINGS -->
     <div class="controls">
@@ -7949,6 +7951,7 @@ function loadSfStandings() {
 
   // All played dates for the season
   let allPlayedDates = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="${league}" AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' ORDER BY Date ASC`).map(r => r.sDate);
+  allPlayedDates = sbfExcludePostSeasonDates(allPlayedDates, season);   // post-season Stableford is individual, not part of the team standings
 
   // Filter by half
   let playedDates = allPlayedDates;
@@ -8015,12 +8018,118 @@ function loadSfStandings() {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Post-season Stableford is an INDIVIDUAL award (no teams / best ball) ────────────────────────────────────────────
+// Per hole: net = gross - stableford strokes, points by sbfPts (same scale as the league Stableford). Each player's day total
+// is the sum of their hole points; the post-season award adds the two weeks.
+function sbfScoreIndividual(gross, phdcp, fb, courseRow, pars) {
+  const net = sbfNetPerHole(gross, phdcp, fb, courseRow);
+  const pts = net.map((n, i) => sbfPts(n, pars[i]));
+  return { net, pts, total: pts.reduce((a, b) => a + (b || 0), 0) };
+}
+// Highest points first; players level on points share a place (1, 2, 2, 4 ...). Does not touch the input rows.
+function sbfRankIndividuals(rows, key = 'total') {
+  const sorted = rows.map(r => ({ ...r })).sort((a, b) => b[key] - a[key] || String(a.player).localeCompare(String(b.player)));
+  sorted.forEach((r, i) => { r.rank = i > 0 && sorted[i - 1][key] === r[key] ? sorted[i - 1].rank : i + 1; });
+  return sorted;
+}
+function sbfExcludePostSeasonDates(dates, season) {
+  const dt = getSeasonSettings(season)?.PostSeasonDt;
+  const ps = dt ? parsePostSeasonDates(dt) : null;
+  if (!ps) return dates;
+  return dates.filter(d => parseInt(d) !== ps.week1 && parseInt(d) !== ps.week2);
+}
+function sbfPostSeasonDay(date, league = "Hugh's") {
+  const season = String(date).substring(0, 4);
+  const fb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="${league}" LIMIT 1`)[0]?.FrontBack;
+  if (!fb) return { fb: null, holeNums: [], rows: [] };
+  const courseName = getSeasonSettings(season)?.Course || 'Boone Links';
+  const courseRow = query(`SELECT Hole1,Hole2,Hole3,Hole4,Hole5,Hole6,Hole7,Hole8,Hole9,Hole10,Hole11,Hole12,Hole13,Hole14,Hole15,Hole16,Hole17,Hole18,H1,H2,H3,H4,H5,H6,H7,H8,H9,H10,H11,H12,H13,H14,H15,H16,H17,H18 FROM Courses WHERE Name=?`, [courseName])[0];
+  if (!courseRow) return { fb, holeNums: [], rows: [] };
+  const start = fb === 'Front' ? 1 : 10;
+  const pars = Array.from({ length: 9 }, (_, i) => Number(courseRow[`Hole${start + i}`]));
+  const holeNums = Array.from({ length: 9 }, (_, i) => start + i);
+  const rows = query(`SELECT Player,"1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${date} AND FrontBack='${fb}' AND League="${league}" AND Gross IS NOT NULL AND Gross != 0`)
+    .map(r => {
+      const gross = [r['1'], r['2'], r['3'], r['4'], r['5'], r['6'], r['7'], r['8'], r['9']].map(v => v ? parseInt(v) : null);
+      const phdcp = sbfGetPlayerPhdcp(r.Player, date, league);
+      return { player: r.Player, phdcp, gross, isSub: !isSeasonRosterPlayer(r.Player, season, league), ...sbfScoreIndividual(gross, phdcp, fb, courseRow, pars) };
+    });
+  return { fb, holeNums, pars, rows: sbfRankIndividuals(rows) };
+}
+// Post-season Stableford AWARD standings: the combined Week 1 + Week 2 points. A final place needs a score in BOTH weeks, and subs
+// (anyone not on the season roster) are not part of the award at all (they still appear in the nightly tables). Players with only
+// one week are returned without a place, after the ranked players, so it is clear why they are not placed.
+function sbfPostSeasonStandings(season, league = "Hugh's") {
+  const ps = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
+  if (!ps) return [];
+  const byPlayer = {};
+  [[1, ps.week1], [2, ps.week2]].forEach(([wk, d]) => {
+    sbfPostSeasonDay(d, league).rows.forEach(r => {
+      if (r.isSub) return;                                   // subs are excluded from the final award
+      const e = byPlayer[r.player] || (byPlayer[r.player] = { player: r.player, w1: null, w2: null });
+      e[wk === 1 ? 'w1' : 'w2'] = r.total;
+    });
+  });
+  const all = Object.values(byPlayer).map(e => ({ ...e, total: (e.w1 || 0) + (e.w2 || 0), eligible: e.w1 !== null && e.w2 !== null }));
+  const ranked = sbfRankIndividuals(all.filter(e => e.eligible));
+  const unplaced = all.filter(e => !e.eligible).sort((a, b) => b.total - a.total || String(a.player).localeCompare(String(b.player))).map(e => ({ ...e, rank: null }));
+  return [...ranked, ...unplaced];
+}
+function renderPostSeasonStableford(date, week) {
+  const season = String(date).substring(0, 4);
+  const day = sbfPostSeasonDay(date);
+  const thS = 'background:var(--green);color:var(--gold);padding:6px 4px;text-align:center;font-size:11px;border:1px solid #2d6a4f';
+  const thL = 'background:var(--green);color:var(--gold);padding:6px 8px;text-align:left;font-size:11px;border:1px solid #2d6a4f';
+  document.getElementById('stablefordPsBanner').innerHTML = `<div style="margin:0 0 10px;padding:8px 12px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:13px;color:#1b5e20;font-weight:600">🏆 Post-season Week ${week} — Stableford is an <u>individual</u> award (no teams / best ball).</div>`;
+  let head = `<tr><th style="${thS}">Pos</th><th style="${thL}">Player</th><th style="${thS}">Hdcp</th>`;
+  day.holeNums.forEach(h => head += `<th style="${thS}" colspan="2">${h}</th>`);
+  head += `<th style="${thS}">Pts</th></tr><tr><th style="${thS}" colspan="3"></th>`;
+  day.holeNums.forEach(() => head += `<th style="${thS};font-size:10px">Gross</th><th style="${thS};font-size:10px">Net</th>`);
+  head += `<th></th></tr>`;
+  document.getElementById('stablefordHead').innerHTML = head;
+  const cellS = "padding:4px 3px;text-align:center;border:1px solid #e8e0d0;font-family:'DM Mono',monospace;font-size:12px";
+  const playerS = 'padding:4px 8px;border:1px solid #e8e0d0;font-size:12px';
+  let body = '';
+  day.rows.forEach(r => {
+    const totalColor = r.rank === 1 ? '#ffd700' : r.rank <= 3 ? '#90EE90' : '';
+    const tied = day.rows.filter(x => x.rank === r.rank).length > 1;
+    body += `<tr><td style="${playerS};text-align:center;font-weight:700" rowspan="2">${tied ? 'T' : ''}${r.rank}</td>
+      <td style="${playerS}">${r.player}${r.isSub ? ' <span style="background:#b3e5fc;color:#01579b;font-size:10px;padding:1px 4px;border-radius:3px">SUB</span>' : ''}</td><td style="${cellS}">${r.phdcp}</td>`
+      + r.gross.map((g, i) => `<td style="${cellS}">${g || ''}</td><td style="${cellS}">${r.net[i] !== null ? r.net[i] : ''}</td>`).join('')
+      + `<td style="${cellS};font-weight:700;font-size:14px;background:${totalColor}" rowspan="2">${r.total}</td></tr>`
+      + `<tr style="background:#f0f7f0"><td style="${playerS};font-size:10px;color:#555" colspan="2">Stableford pts</td>`
+      + r.pts.map(p => `<td style="${cellS};background:${sbfColor(p)}!important" colspan="2">${p !== null ? p : ''}</td>`).join('') + `</tr>`;
+  });
+  document.getElementById('stablefordBody').innerHTML = body || `<tr><td colspan="23" style="padding:12px;text-align:center;color:#999">No scores for this date</td></tr>`;
+  // Award standings: combined Week 1 + Week 2, both weeks required for a place, subs excluded
+  const st = sbfPostSeasonStandings(season);
+  const th = x => `<th style="${thS};padding:6px 10px">${x}</th>`;
+  const placed = st.filter(r => r.rank !== null), unplaced = st.filter(r => r.rank === null);
+  const cell = 'padding:6px 10px;text-align:center';
+  const stRow = r => { const tied = r.rank !== null && placed.filter(x => x.rank === r.rank).length > 1;
+    return `<tr style="background:${r.rank === 1 ? '#fffde7' : 'white'}${r.rank === null ? ';color:#888' : ''}"><td style="${cell};font-weight:700">${r.rank === null ? '—' : (tied ? 'T' : '') + r.rank}</td><td style="padding:6px 10px">${r.player}</td>
+      <td style="${cell}">${r.w1 === null ? '—' : r.w1}</td><td style="${cell}">${r.w2 === null ? '—' : r.w2}</td>
+      <td style="${cell};font-weight:700">${r.total}</td></tr>`; };
+  document.getElementById('stablefordPsStandings').innerHTML = `<div class="card" style="margin-top:20px"><div class="card-header">🏆 Post-Season Stableford Award — Individual Standings ${season}</div>
+    <div style="padding:8px 14px;font-size:12px;color:#666">Combined Week 1 + Week 2 points. A final place needs a score in <b>both</b> weeks; subs are not part of the award.</div>
+    <div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>${th('Place')}<th style="${thL};padding:6px 10px">Player</th>${th('Week 1')}${th('Week 2')}${th('Total')}</tr></thead><tbody>`
+    + (placed.map(stRow).join('') || `<tr><td colspan="5" style="padding:12px;text-align:center;color:#999">No player has a score in both weeks yet</td></tr>`)
+    + (unplaced.length ? `<tr><td colspan="5" style="padding:6px 10px;background:#f5f5f5;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px">No final place yet (needs a score in both weeks)</td></tr>` + unplaced.map(stRow).join('') : '')
+    + `</tbody></table></div></div>`;
+}
+
 function loadStableford() {
   if (!db) return;
   const date   = document.getElementById('stablefordDate').value;
   if (!date) return;
   const league = "Hugh's";
   const season = String(date).substring(0,4);
+
+  // Post-season Stableford is an individual award: no teams / best ball
+  const psCtx = getPostSeasonContextForDate(date);
+  if (psCtx) { renderPostSeasonStableford(date, psCtx.week); return; }
+  const _psBanner = document.getElementById('stablefordPsBanner'); if (_psBanner) _psBanner.innerHTML = '';
+  const _psStand  = document.getElementById('stablefordPsStandings'); if (_psStand) _psStand.innerHTML = '';
 
   // Get course/side
   const fb  = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="${league}" LIMIT 1`)[0]?.FrontBack || 'Front';
