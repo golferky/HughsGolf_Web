@@ -81,7 +81,7 @@ function render(states, season = '2026') {
     getSeasonSettings: () => ({ SkinsPS: 7, ClosestPS: 3 }), psRefundPanelHtml: () => '',
   });
   vm.runInContext([constLine('SUBS_CC_ELIGIBLE'), constLine('CC_SUB_EXCEPTIONS'), extract('isSeasonRosterPlayer'), extract('isCcSubException'), extract('ccRosterEligible'),
-    extract('psWeekForHoleIndex'), extract('psLeaderboardRanks'), extract('psLeaderboardShotsBack'), extract('psCcMissedWeek'), extract('psCcPrizeSchedule'), extract('psLeaderboardCcPotential'), extract('psWeekSkinPayout'), extract('getPostSeasonEntryTotals'), extract('renderPostSeasonBreakdown')].join('\n'), ctx);
+    extract('psWeekForHoleIndex'), extract('psLeaderboardRanks'), extract('psLeaderboardShotsBack'), extract('psCcMissedWeek'), extract('psCcPrizeSchedule'), extract('psLeaderboardCcPotential'), extract('psCtpWinnersHtml'), extract('psWeekSkinPayout'), extract('getPostSeasonEntryTotals'), extract('renderPostSeasonBreakdown')].join('\n'), ctx);
   vm.runInContext('renderPostSeasonBreakdown(courseData.all18)', ctx);
   return panel.innerHTML;
 }
