@@ -7900,7 +7900,7 @@ function calcStablefordTeamTotals(date) {
     const bPtsTotal = bPtsArr.reduce((a,b) => a + (b||0), 0);
     const total = bbPtsArr.reduce((a,b) => a + (b||0), 0);
     const hasScores = aGross.some(s=>s!==null&&s>0) || bGross.some(s=>s!==null&&s>0);
-    if (hasScores) result[team] = { aPts: aPtsTotal, bPts: bPtsTotal, total, aPlayer, bPlayer };
+    if (hasScores) result[team] = { aPts: aPtsTotal, bPts: bPtsTotal, total, aPlayer, bPlayer, aSub: !!subsMap[`${team}-A`], bSub: !!subsMap[`${team}-B`] };
   });
   return result;
 }
@@ -7929,6 +7929,113 @@ function setSfHalf(h) {
 }
 
 // ── SF Standings — season-long Stableford running totals per team ───────────
+// ── SF Standings grid: sortable columns, * marks weeks a sub played, click a * to see the sub hole by hole ─────────────────────
+window._sfSort = window._sfSort || { key: 'total', dir: 'desc' };
+// Sort rows by a column key: rank | team | aPlayer | bPlayer | aPts | bPts | total | d:<date>. Blank values always go last.
+function sfSortRows(rows, key, dir) {
+  const val = r => key.startsWith('d:') ? (r.weeks[key.slice(2)] ?? null)
+    : key === 'team' ? parseInt(r.team) : (r[key] === '' || r[key] === undefined ? null : r[key]);
+  const sign = dir === 'asc' ? 1 : -1;
+  return rows.map((r, i) => ({ r, i, v: val(r) })).sort((x, y) => {
+    if (x.v === null && y.v === null) return x.i - y.i;
+    if (x.v === null) return 1;
+    if (y.v === null) return -1;
+    const c = typeof x.v === 'string' || typeof y.v === 'string' ? String(x.v).localeCompare(String(y.v)) : x.v - y.v;
+    return c !== 0 ? sign * c : x.i - y.i;                       // ties keep the current order
+  }).map(o => o.r);
+}
+function sfSetSort(key) {
+  const cur = window._sfSort;
+  const textual = key === 'aPlayer' || key === 'bPlayer';
+  window._sfSort = cur.key === key ? { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: (textual || key === 'team' || key === 'rank') ? 'asc' : 'desc' };
+  const c = window._sfRowsCtx;
+  if (c) sfRenderStandingsTable(c.season, c.playedDates, c.rows, c.rows.length ? Math.max(...c.rows.map(r => r.total)) : 0);
+}
+function sfWeekCellHtml(season, r, d) {
+  const v = r.weeks[d];
+  if (v == null) return `<td style="padding:6px 8px;text-align:center;font-size:12px"></td>`;
+  const sub = r.subWeeks && r.subWeeks[d];
+  if (sub) {
+    const who = [sub.a ? 'A' : '', sub.b ? 'B' : ''].filter(Boolean).join(' & ');
+    return `<td style="padding:6px 8px;text-align:center;font-size:12px;cursor:pointer;color:#b45309;font-weight:700;text-decoration:underline" title="A sub played for ${who} — click to see the sub hole by hole" onclick="showSfSubDetail(${season},${d},'${String(r.team).replace(/'/g, "\\'")}')">${v}*</td>`;
+  }
+  return `<td style="padding:6px 8px;text-align:center;font-size:12px;cursor:pointer;color:var(--green);text-decoration:underline" onclick="jumpToStableford(${season},${d})">${v}</td>`;
+}
+function sfRenderStandingsTable(season, playedDates, rows, leaderTotal) {
+  const { key, dir } = window._sfSort;
+  const sorted = sfSortRows(rows, key, dir);
+  const arrow = k => key === k ? (dir === 'asc' ? ' ▲' : ' ▼') : '';
+  const base = 'background:var(--green);color:var(--gold);padding:6px 10px;cursor:pointer;user-select:none;white-space:nowrap';
+  const th = (label, k, left) => `<th style="${base};text-align:${left ? 'left' : 'center'}" title="Click to sort" onclick="sfSetSort('${k}')">${label}${arrow(k)}</th>`;
+  document.getElementById('sfStandingsHead').innerHTML = `<tr>
+    ${th('#', 'rank')}${th('Team', 'team')}${th('A Player', 'aPlayer', true)}${th('B Player', 'bPlayer', true)}${th('A Pts', 'aPts')}${th('B Pts', 'bPts')}${th('Total', 'total')}
+    ${playedDates.map(d => `<th style="${base};padding:6px 8px;text-align:center;font-size:11px" title="Click to sort" onclick="sfSetSort('d:${d}')">${fmtDate(d).replace(/\/\d{4}$/, '')}${arrow('d:' + d)}</th>`).join('')}
+    <th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:center">GB</th>
+  </tr>`;
+  document.getElementById('sfStandingsBody').innerHTML = sorted.map((r, i) => {
+    const gb = leaderTotal - r.total;
+    return `<tr style="background:${i % 2 === 0 ? '#fff' : '#f9f6ee'}">
+      <td style="padding:6px 8px;text-align:center;color:#888;font-size:12px">${r.rank}</td>
+      <td style="padding:6px 10px;text-align:center;font-weight:600">${r.team}</td>
+      <td style="padding:6px 10px">${r.aPlayer}</td>
+      <td style="padding:6px 10px">${r.bPlayer}</td>
+      <td style="padding:6px 10px;text-align:center">${r.aPts}</td>
+      <td style="padding:6px 10px;text-align:center">${r.bPts}</td>
+      <td style="padding:6px 10px;text-align:center;font-weight:700">${r.total}</td>
+      ${playedDates.map(d => sfWeekCellHtml(season, r, d)).join('')}
+      <td style="padding:6px 10px;text-align:center;font-weight:600;color:${gb === 0 ? 'var(--green)' : '#888'}">${gb === 0 ? '—' : gb}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="100" style="padding:12px;text-align:center;color:#999">No data for this season</td></tr>';
+}
+// Hole-by-hole detail for one team's week (used for the * cells): the sub(s) who played, with gross / net / Stableford points.
+function sbfTeamWeekDetail(date, team, league = "Hugh's") {
+  const season = String(date).substring(0, 4);
+  const fb = query(`SELECT DISTINCT FrontBack FROM Scores WHERE Date=${date} AND League="${league}" LIMIT 1`)[0]?.FrontBack;
+  if (!fb) return null;
+  const courseName = getSeasonSettings(season)?.Course || 'Boone Links';
+  const courseRow = query(`SELECT Hole1,Hole2,Hole3,Hole4,Hole5,Hole6,Hole7,Hole8,Hole9,Hole10,Hole11,Hole12,Hole13,Hole14,Hole15,Hole16,Hole17,Hole18,H1,H2,H3,H4,H5,H6,H7,H8,H9,H10,H11,H12,H13,H14,H15,H16,H17,H18 FROM Courses WHERE Name=?`, [courseName])[0];
+  if (!courseRow) return null;
+  const start = fb === 'Front' ? 1 : 10;
+  const pars = Array.from({ length: 9 }, (_, i) => Number(courseRow[`Hole${start + i}`]));
+  const holeNums = Array.from({ length: 9 }, (_, i) => start + i);
+  const regulars = {};
+  query(`SELECT Player, Grade FROM Teams WHERE Year=${season} AND Team=?`, [team]).forEach(r => { regulars[r.Grade] = r.Player; });
+  const subs = {};
+  query(`SELECT Player, Grade FROM Subs WHERE Date=${date} AND League="${league}" AND Team=?`, [team]).forEach(r => { subs[r.Grade] = r.Player; });
+  const players = ['A', 'B'].filter(g => subs[g]).map(g => {
+    const player = subs[g];
+    const r = query(`SELECT "1","2","3","4","5","6","7","8","9" FROM Scores WHERE Date=${date} AND FrontBack='${fb}' AND League="${league}" AND Player=? AND Gross IS NOT NULL AND Gross != 0`, [player])[0];
+    const gross = r ? [r['1'], r['2'], r['3'], r['4'], r['5'], r['6'], r['7'], r['8'], r['9']].map(v => v ? parseInt(v) : null) : Array(9).fill(null);
+    const phdcp = sbfGetPlayerPhdcp(player, date, league);
+    return { slot: g, player, forPlayer: regulars[g] || '', phdcp, gross, ...sbfScoreIndividual(gross, phdcp, fb, courseRow, pars) };
+  });
+  return { date, team, fb, holeNums, pars, players };
+}
+function sfSubDetailHtml(d) {
+  const cell = "padding:4px 3px;text-align:center;border:1px solid #e8e0d0;font-family:'DM Mono',monospace;font-size:12px";
+  const th = 'background:var(--green);color:var(--gold);padding:5px 4px;text-align:center;font-size:11px;border:1px solid #2d6a4f';
+  if (!d || !d.players.length) return '<div style="color:#999;padding:8px">No sub detail for this week.</div>';
+  return d.players.map(p => `
+    <div style="margin-bottom:14px">
+      <div style="font-weight:700;margin-bottom:4px">${p.player} <span style="background:#b3e5fc;color:#01579b;font-size:10px;padding:1px 4px;border-radius:3px">SUB</span>
+        <span style="font-weight:400;color:#666">for ${p.forPlayer || 'the ' + p.slot + ' player'} (${p.slot}) · Hdcp ${p.phdcp} · ${d.fb} 9 · <b>${p.total} pts</b></span></div>
+      <div style="overflow-x:auto"><table style="border-collapse:collapse"><thead><tr><th style="${th};text-align:left">Hole</th>${d.holeNums.map(h => `<th style="${th}">${h}</th>`).join('')}<th style="${th}">Tot</th></tr></thead><tbody>
+        <tr><td style="${cell};text-align:left">Par</td>${d.pars.map(x => `<td style="${cell}">${x}</td>`).join('')}<td style="${cell}">${d.pars.reduce((a, b) => a + b, 0)}</td></tr>
+        <tr><td style="${cell};text-align:left">Gross</td>${p.gross.map(g => `<td style="${cell}">${g || ''}</td>`).join('')}<td style="${cell}">${p.gross.reduce((a, b) => a + (b || 0), 0) || ''}</td></tr>
+        <tr><td style="${cell};text-align:left">Net</td>${p.net.map(n => `<td style="${cell}">${n !== null ? n : ''}</td>`).join('')}<td style="${cell}"></td></tr>
+        <tr><td style="${cell};text-align:left">Pts</td>${p.pts.map(x => `<td style="${cell};background:${sbfColor(x)}!important">${x !== null ? x : ''}</td>`).join('')}<td style="${cell};font-weight:700">${p.total}</td></tr>
+      </tbody></table></div>
+    </div>`).join('');
+}
+function showSfSubDetail(season, date, team) {
+  const d = sbfTeamWeekDetail(date, team);
+  document.getElementById('sfSubDetailTitle').textContent = `Team ${team} — ${fmtDate(date)} — sub detail`;
+  document.getElementById('sfSubDetailBody').innerHTML = sfSubDetailHtml(d);
+  document.getElementById('sfSubDetailFull').onclick = () => { closeSfSubDetail(); jumpToStableford(season, date); };
+  document.getElementById('sfSubDetailModal').style.display = 'flex';
+}
+function closeSfSubDetail() { document.getElementById('sfSubDetailModal').style.display = 'none'; }
+
 function loadSfStandings() {
   if (!db) return;
   const league = "Hugh's";
@@ -7970,51 +8077,30 @@ function loadSfStandings() {
   // Accumulate per team: aPts, bPts, total, and per-week totals
   const teamTotals = {};
   Object.keys(teamsInfo).forEach(team => {
-    teamTotals[team] = { aPts: 0, bPts: 0, total: 0, weeks: {} };
+    teamTotals[team] = { aPts: 0, bPts: 0, total: 0, weeks: {}, subWeeks: {} };
   });
 
   playedDates.forEach(date => {
     const weekData = calcStablefordTeamTotals(date);
     Object.entries(weekData).forEach(([team, d]) => {
-      if (!teamTotals[team]) teamTotals[team] = { aPts: 0, bPts: 0, total: 0, weeks: {} };
+      if (!teamTotals[team]) teamTotals[team] = { aPts: 0, bPts: 0, total: 0, weeks: {}, subWeeks: {} };
       teamTotals[team].aPts += d.aPts;
       teamTotals[team].bPts += d.bPts;
       teamTotals[team].total += d.total;
       teamTotals[team].weeks[date] = d.total;
+      if (d.aSub || d.bSub) teamTotals[team].subWeeks[date] = { a: !!d.aSub, b: !!d.bSub };   // a sub played for the A and/or B slot this week
     });
   });
 
   const rows = Object.entries(teamTotals).map(([team, d]) => ({
     team, aPlayer: teamsInfo[team]?.['A'] || '', bPlayer: teamsInfo[team]?.['B'] || '',
-    aPts: d.aPts, bPts: d.bPts, total: d.total, weeks: d.weeks
+    aPts: d.aPts, bPts: d.bPts, total: d.total, weeks: d.weeks, subWeeks: d.subWeeks
   })).sort((a,b) => b.total - a.total);
+  rows.forEach((r, i) => { r.rank = i + 1; });                 // standings place by total (stays fixed while the grid is re-sorted)
 
   const leaderTotal = rows.length ? rows[0].total : 0;
-  const th = s => `<th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:center">${s}</th>`;
-  const thLeft = s => `<th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:left">${s}</th>`;
-
-  const head = document.getElementById('sfStandingsHead');
-  head.innerHTML = `<tr>
-    ${th('#')}${th('Team')}${thLeft('A Player')}${thLeft('B Player')}${th('A Pts')}${th('B Pts')}${th('Total')}
-    ${playedDates.map(d => `<th style="background:var(--green);color:var(--gold);padding:6px 8px;text-align:center;font-size:11px">${fmtDate(d).replace(/\/\d{4}$/,'')}</th>`).join('')}
-    ${th('GB')}
-  </tr>`;
-
-  const tbody = document.getElementById('sfStandingsBody');
-  tbody.innerHTML = rows.map((r, i) => {
-    const gb = leaderTotal - r.total;
-    return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
-      <td style="padding:6px 8px;text-align:center;color:#888;font-size:12px">${i+1}</td>
-      <td style="padding:6px 10px;text-align:center;font-weight:600">${r.team}</td>
-      <td style="padding:6px 10px">${r.aPlayer}</td>
-      <td style="padding:6px 10px">${r.bPlayer}</td>
-      <td style="padding:6px 10px;text-align:center">${r.aPts}</td>
-      <td style="padding:6px 10px;text-align:center">${r.bPts}</td>
-      <td style="padding:6px 10px;text-align:center;font-weight:700">${r.total}</td>
-      ${playedDates.map(d => `<td style="padding:6px 8px;text-align:center;font-size:12px;${r.weeks[d]!=null?'cursor:pointer;color:var(--green);text-decoration:underline':''}" ${r.weeks[d]!=null?`onclick="jumpToStableford(${season},${d})"`:''}>${r.weeks[d] ?? ''}</td>`).join('')}
-      <td style="padding:6px 10px;text-align:center;font-weight:600;color:${gb===0?'var(--green)':'#888'}">${gb===0?'—':gb}</td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="100" style="padding:12px;text-align:center;color:#999">No data for this season</td></tr>';
+  window._sfRowsCtx = { season, playedDates, rows };
+  sfRenderStandingsTable(season, playedDates, rows, leaderTotal);
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -24317,6 +24403,16 @@ function buildTableList() {
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
       <button onclick="closePostSeasonWeekOffer()" style="padding:8px 14px;border:1px solid #ccc;border-radius:6px;background:white;cursor:pointer">Not now</button>
       <button id="psWeekOfferPay" style="padding:8px 14px;border:none;border-radius:6px;background:var(--green);color:white;font-weight:600;cursor:pointer"></button>
+    </div>
+  </div>
+</div>
+<div id="sfSubDetailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center" onclick="if(event.target===this)closeSfSubDetail()">
+  <div style="background:white;border-radius:12px;padding:20px 22px;min-width:340px;max-width:760px;max-height:85vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
+    <div style="font-family:'Bebas Neue',cursive;font-size:24px;color:var(--green);margin-bottom:10px" id="sfSubDetailTitle"></div>
+    <div id="sfSubDetailBody"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+      <button id="sfSubDetailFull" style="padding:7px 14px;border:1px solid #ccc;border-radius:6px;background:white;cursor:pointer">Open full week →</button>
+      <button onclick="closeSfSubDetail()" style="padding:7px 14px;border:none;border-radius:6px;background:var(--green);color:white;font-weight:600;cursor:pointer">Close</button>
     </div>
   </div>
 </div>
