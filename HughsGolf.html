@@ -21336,16 +21336,9 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
 
   // Post season: optionally sort by net score ascending (no score → bottom)
   if (isPostSeason && _psSortByScore) {
-    slots = [...slots].sort((a, b) => {
-      const aKey = `${a.team}-${a.grade}`;
-      const bKey = `${b.team}-${b.grade}`;
-      const aNet = getPostSeasonEntryTotals(entryState[aKey] || {holes:[]}).totalNet;
-      const bNet = getPostSeasonEntryTotals(entryState[bKey] || {holes:[]}).totalNet;
-      if (aNet === '' && bNet === '') return 0;
-      if (aNet === '') return 1;
-      if (bNet === '') return -1;
-      return aNet - bNet;
-    });
+    slots = [...slots].sort((a, b) => psCompareByScore(
+      getPostSeasonEntryTotals(entryState[`${a.team}-${a.grade}`] || {holes:[]}),
+      getPostSeasonEntryTotals(entryState[`${b.team}-${b.grade}`] || {holes:[]})));
   }
 
   slots.forEach(slot => {
@@ -22635,6 +22628,19 @@ function calcNet(holes, pars, hcps, phdcp) {
   if (vals.some(isNaN)) return null;
   const gross = vals.reduce((a, b) => a + b, 0);
   return gross - phdcp;
+}
+
+// "Sort by Score" order for the post-season grid (same ranking as the leaderboard): more completed nines first, then lower
+// running net; players with no score go last. totalNet only exists once BOTH nines are done, so sorting on it alone left the
+// grid unsorted all through Week 1. Ties keep their current (group) order because Array.sort is stable.
+function psCompareByScore(a, b) {
+  const nines = t => (t.frontComplete ? 1 : 0) + (t.backComplete ? 1 : 0);
+  const aBlank = a.runNet === '', bBlank = b.runNet === '';
+  if (aBlank && bBlank) return 0;
+  if (aBlank) return 1;
+  if (bBlank) return -1;
+  if (nines(a) !== nines(b)) return nines(b) - nines(a);
+  return a.runNet - b.runNet;
 }
 
 function getPostSeasonEntryTotals(st) {
