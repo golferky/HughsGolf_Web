@@ -10710,6 +10710,16 @@ function loadH2H() {
   renderH2HTable();
 }
 
+// Competition ranking on rows already sorted best-first: players with the same value share a rank and the next rank skips
+// ahead (1, 2, 3, 3, 5). Values are compared with a tiny tolerance (averages of whole-number scores); a missing value only ties
+// with other missing values. Sets row[rankKey] and row[tiedKey] (true when someone else holds the same rank).
+function rankWithTies(sortedRows, valueKey, rankKey, tiedKey) {
+  const same = (a, b) => (a == null || b == null) ? (a == null && b == null) : Math.abs(a - b) < 1e-9;
+  sortedRows.forEach((r, i) => { r[rankKey] = i > 0 && same(sortedRows[i - 1][valueKey], r[valueKey]) ? sortedRows[i - 1][rankKey] : i + 1; });
+  sortedRows.forEach(r => { r[tiedKey] = sortedRows.filter(x => x[rankKey] === r[rankKey]).length > 1; });
+  return sortedRows;
+}
+
 function loadRankings() {
   if (!db) return;
 
@@ -10782,7 +10792,7 @@ function loadRankings() {
 
   // Overall rank = sort by overallAvg asc (lower = better), assign rank
   const overallRanked = [...stats].sort((a,b)=>(a.overallAvg??9999)-(b.overallAvg??9999));
-  overallRanked.forEach((r,i)=>{ r.overallRank = i+1; });
+  rankWithTies(overallRanked, 'overallAvg', 'overallRank', 'overallTied');   // equal averages share a rank (1, 2, T3, T3, 5 ...)
 
   // Sort state — default: overall avg asc
   if (!window._rankSort) window._rankSort = { col: 'overallAvg', asc: true };
@@ -10820,7 +10830,7 @@ function loadRankings() {
     return `<tr style="${stripe}">
       <td style="text-align:center;padding:5px 6px;font-weight:700;color:var(--gray);font-size:12px">${i+1}</td>
       <td style="${tdL}">${r.Player}</td>
-      <td style="${td};font-weight:700;color:var(--green)">${r.overallRank}</td>
+      <td style="${td};font-weight:700;color:var(--green)">${r.overallTied ? 'T' : ''}${r.overallRank}</td>
       <td style="${td}">${r.totalRds}</td>
       <td style="${td}">${r.fRds}</td>
       <td style="${td};font-weight:600">${n(r.fAvg)}</td>
