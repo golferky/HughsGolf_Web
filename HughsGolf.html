@@ -5579,9 +5579,10 @@ async function loadHomeNews() {
     const resp  = await fetch('/board-posts', { headers: { 'X-Save-Token': token } });
     const data  = await resp.json();
     if (!data.ok) throw new Error(data.error);
-    const posts = (data.posts || []).filter(p => p.Pinned || p.Category === 'Announcement');
-    // Check for unread and update badge
-    checkBoardUnread(data.posts || []);
+    const visible = boardVisiblePosts(data.posts);
+    const posts = visible.filter(p => p.Pinned || p.Category === 'Announcement');
+    // Check for unread and update badge (only posts this user can actually see)
+    checkBoardUnread(visible);
     if (!posts.length) {
       el.innerHTML = '<div style="color:#999;font-size:13px;padding:4px 0">No pinned posts or announcements.</div>';
       return;
@@ -5608,14 +5609,22 @@ async function loadHomeNews() {
   }
 }
 
+// Posts this user is allowed to see: admin-only posts (Audience = 'admin') are for admins/developers only. The server returns every
+// post, so every place that lists or COUNTS posts (board, home news, unread badge, toast) must go through this.
+function boardVisiblePosts(posts) {
+  const officer = currentUser?.role === 'admin' || currentUser?.role === 'developer';
+  return (posts || []).filter(p => officer || (p.Audience || 'all') === 'all');
+}
+
 // Track last-seen post ID in localStorage to detect unread posts
 function _boardSeenKey() {
   return 'lastBoardPostId_' + (currentUser?.name || 'anon');
 }
 
 function markBoardSeen() {
-  if (!_boardCache.posts.length) return;
-  const maxId = Math.max(..._boardCache.posts.map(p => p.ID));
+  const seen = boardVisiblePosts(_boardCache.posts);
+  if (!seen.length) return;
+  const maxId = Math.max(...seen.map(p => p.ID));
   try { localStorage.setItem(_boardSeenKey(), maxId); } catch(e) {}
   // Clear badge
   const badge = document.getElementById('boardTabBadge');
@@ -5632,7 +5641,8 @@ function checkBoardUnread(posts) {
   // Remove old badge if present
   const old = document.getElementById('boardTabBadge');
   if (old) old.remove();
-  if (unread.length > 0) {
+  const boardOpen = document.querySelector('.tab[data-tab="board"]')?.classList.contains('active');
+  if (unread.length > 0 && !boardOpen) {
     const badge = document.createElement('span');
     badge.id = 'boardTabBadge';
     badge.textContent = unread.length > 9 ? '9+' : unread.length;
@@ -5725,13 +5735,15 @@ async function loadBoard() {
   // Populate author dropdown
   const authorSel = document.getElementById('boardAuthorFilter');
   if (authorSel) {
-    const authors = [...new Set(_boardCache.posts.map(p => p.Author))].sort();
+    const authors = [...new Set(boardVisiblePosts(_boardCache.posts).map(p => p.Author))].sort();
     const current = authorSel.value;
     authorSel.innerHTML = '<option value="">All authors</option>' +
       authors.map(a => `<option value="${a}" ${a===current?'selected':''}>${escapeHtml(a)}</option>`).join('');
   }
 
   renderBoardPosts();
+  // The cache is only filled now, so clear the unread badge here (markBoardSeen at tab-switch time ran on an empty/old cache)
+  if (document.querySelector('.tab[data-tab="board"]')?.classList.contains('active')) markBoardSeen();
 
   // Auto-refresh every 3 minutes while Board tab is active and no modal is open
   clearTimeout(_boardRefreshTimer);
@@ -5754,8 +5766,7 @@ function renderBoardPosts() {
   const el = document.getElementById('boardContent');
   if (!el) return;
 
-  const isOfficerView = currentUser?.role === 'admin' || currentUser?.role === 'developer';
-  let posts = [..._boardCache.posts].filter(p => isOfficerView || (p.Audience || 'all') === 'all');
+  let posts = boardVisiblePosts(_boardCache.posts);
 
   // Client-side filters
   if (_boardFilter.category) posts = posts.filter(p => p.Category === _boardFilter.category);
