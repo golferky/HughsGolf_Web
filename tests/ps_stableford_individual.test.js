@@ -10,10 +10,11 @@ const course = { Hole1: 4, Hole2: 5, Hole3: 3, Hole4: 4, Hole5: 4, Hole6: 4, Hol
 [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18].forEach(h => { course['H' + h] = h; });          // stroke index
 const backPars = [3, 5, 3, 4, 4, 4, 5, 4, 4];
 const scores = {   // date -> rows (Back 9 on 9/29 = Week 1, Front 9 on 10/6 = Week 2)
-  20260929: [['Ann', backPars], ['Ben', backPars.map(p => p + 1)], ['Cy', backPars.map(p => p + 2)]],
-  20261006: [['Ann', [4, 5, 3, 4, 4, 4, 5, 4, 4].map(p => p + 1)], ['Cy', [4, 5, 3, 4, 4, 4, 5, 4, 4]]],
+  20260929: [['Ann', backPars], ['Ben', backPars.map(p => p + 1)], ['Cy', backPars.map(p => p + 2)], ['Sam', backPars], ['Eve', backPars]],
+  20261006: [['Ann', [4, 5, 3, 4, 4, 4, 5, 4, 4].map(p => p + 1)], ['Cy', [4, 5, 3, 4, 4, 4, 5, 4, 4]], ['Sam', [4, 5, 3, 4, 4, 4, 5, 4, 4]]],
 };
-const hdcp = { Ann: 0, Ben: 9, Cy: 0 };
+const hdcp = { Ann: 0, Ben: 9, Cy: 0, Sam: 0, Eve: 0 };
+const roster = new Set(['Ann', 'Ben', 'Cy', 'Eve']);          // Sam is a sub (not on the season roster)
 const queries = [];
 function row(player, g) { const r = { Player: player }; g.forEach((v, i) => r[String(i + 1)] = v); return r; }
 const ctx = vm.createContext({
@@ -21,6 +22,7 @@ const ctx = vm.createContext({
   query: (sql, p) => {
     queries.push(sql);
     let m;
+    if (/SELECT 1 FROM Teams WHERE League=\? AND Year=\? AND Player=\?/.test(sql)) return roster.has(p[2]) ? [{ 1: 1 }] : [];     // roster check only
     if (/FROM Teams|FROM Subs/.test(sql)) throw new Error('team query in an individual view: ' + sql.slice(0, 40));
     if ((m = sql.match(/SELECT DISTINCT FrontBack FROM Scores WHERE Date=(\d+)/))) return scores[m[1]] ? [{ FrontBack: m[1] === '20260929' ? 'Back' : 'Front' }] : [];
     if (/FROM Courses/.test(sql)) return [course];
@@ -32,7 +34,7 @@ const ctx = vm.createContext({
   parsePostSeasonDates: () => ({ week1: 20260929, week2: 20261006 }),
 });
 ['sbfPts', 'sbfColor', 'sbfActualHole', 'sbfStablefordStrokesForHole', 'sbfNetPerHole', 'sbfGetPlayerPhdcp', 'sbfScoreIndividual', 'sbfRankIndividuals', 'sbfExcludePostSeasonDates',
- 'sbfPostSeasonDay', 'sbfPostSeasonStandings'].forEach(n => vm.runInContext(extract(n), ctx));
+ 'isSeasonRosterPlayer', 'sbfPostSeasonDay', 'sbfPostSeasonStandings'].forEach(n => vm.runInContext(extract(n), ctx));
 const plain = x => JSON.parse(JSON.stringify(x));
 
 // scoring (same scale as the league Stableford): par = 2, bogey = 1, double bogey+ = 0; net uses the stableford strokes
@@ -42,14 +44,33 @@ assert.strictEqual(day1.fb, 'Back'); assert.deepStrictEqual(Array.from(day1.hole
 assert.strictEqual(byName.Ann.total, 18, 'scratch, par every hole = 9 x 2');
 assert.strictEqual(byName.Ben.total, 18, '9 handicap gets a stroke on every hole: gross par+1 = net par');
 assert.strictEqual(byName.Cy.total, 0, 'scratch, par+2 every hole = double bogey = 0');
-// ranking: highest first, ties share a place
-assert.deepStrictEqual(plain(day1.rows.map(r => [r.player, r.rank])), [['Ann', 1], ['Ben', 1], ['Cy', 3]], 'Ann and Ben tie for 1st on Week 1');
+// nightly table: ALL players are shown, including the sub, ranked by that night's points (ties share a place)
+assert.deepStrictEqual(plain(day1.rows.map(r => [r.player, r.rank, r.isSub])), [['Ann', 1, false], ['Ben', 1, false], ['Eve', 1, false], ['Sam', 1, true], ['Cy', 5, false]],
+  'Week 1 shows the sub Sam too (tagged), 4 players tie on 18, Cy 5th');
+const day2 = ctx.sbfPostSeasonDay(20261006);
+assert.deepStrictEqual(plain(day2.rows.map(r => [r.player, r.total, r.isSub])).sort(), [['Ann', 9, false], ['Cy', 18, false], ['Sam', 18, true]].sort(), 'Week 2 shows the sub too');
 assert(!('team' in day1.rows[0]) && !('bbNet' in day1.rows[0]), 'individual rows: no team / best-ball fields');
 
-// post-season standings: Week 1 + Week 2 per player
+// AWARD standings: combined Week 1 + Week 2, a score in BOTH weeks needed for a place, subs excluded
 const st = ctx.sbfPostSeasonStandings(2026);
 assert.deepStrictEqual(plain(st.map(r => [r.player, r.w1, r.w2, r.total, r.rank])),
-  [['Ann', 18, 9, 27, 1], ['Ben', 18, null, 18, 2], ['Cy', 0, 18, 18, 2]], 'Ann 18+9; Ben only Week 1; Cy 0+18; Ben/Cy tie 2nd');
+  [['Ann', 18, 9, 27, 1], ['Cy', 0, 18, 18, 2], ['Ben', 18, null, 18, null], ['Eve', 18, null, 18, null]],
+  'placed: Ann 18+9=27, Cy 0+18=18 (both weeks). Ben and Eve played one week: listed, no place. Sam (sub) is not in the award');
+assert(!st.some(r => r.player === 'Sam'), 'subs are excluded from the final award standings');
+assert(st.filter(r => r.rank !== null).every(r => r.w1 !== null && r.w2 !== null), 'every placed player has a score in both weeks');
+assert(st.filter(r => r.rank === null).every(r => r.w1 === null || r.w2 === null), 'unplaced players are missing a week');
+// the ranked players come first, then the unplaced
+assert.deepStrictEqual(plain(st.map(r => r.rank === null)), [false, false, true, true]);
+// a player who scored 0 points in a week still HAS a score for that week (Cy Week 1: all double bogeys)
+assert.strictEqual(st.find(r => r.player === 'Cy').w1, 0);
+// the combined total is Week 1 + Week 2 (not either week alone); ties among placed players share a place
+scores[20261006].push(['Ben', [4, 5, 3, 4, 4, 4, 5, 4, 4].map(p => p + 1)]);      // Ben now has Week 2 = 9 (his handicap 9: bogey = net par = 18)
+const st2 = ctx.sbfPostSeasonStandings(2026);
+assert.deepStrictEqual(plain(st2.filter(r => r.rank !== null).map(r => [r.player, r.total, r.rank])), [['Ben', 36, 1], ['Ann', 27, 2], ['Cy', 18, 3]], 'once Ben has both weeks he is placed: 18 + 18');
+// a sub who plays both weeks (Sam) still never appears
+assert(!st2.some(r => r.player === 'Sam'));
+scores[20261006].pop();
+
 // the input rows are not mutated by ranking
 const rows = [{ player: 'B', total: 5 }, { player: 'A', total: 9 }];
 ctx.sbfRankIndividuals(rows); assert.strictEqual(rows[0].player, 'B'); assert(!('rank' in rows[0]));
@@ -79,5 +100,8 @@ const head = outs.stablefordHead.innerHTML, body = outs.stablefordBody.innerHTML
 assert(/Pos/.test(head) && /Player/.test(head) && !/Team|BB/.test(head), 'header has Pos/Player, no Team / BB Pts');
 assert(!/Best Ball/.test(body) && /Stableford pts/.test(body) && /Ann/.test(body), 'rows are players');
 assert(/individual/i.test(banner) && /Week 1/.test(banner));
-assert(/Individual Standings 2026/.test(stand) && /Week 1/.test(stand) && /Week 2/.test(stand) && /27/.test(stand));
+assert(/Stableford Award — Individual Standings 2026/.test(stand) && /Week 1/.test(stand) && /Week 2/.test(stand) && /27/.test(stand));
+assert(/both<\/b> weeks; subs are not part of the award/.test(stand), 'rules stated');
+assert(/No final place yet/.test(stand) && /Ben/.test(stand) && /Eve/.test(stand) && !/Sam/.test(stand), 'one-week players listed unplaced; sub absent from the award');
+assert(/Sam[\s\S]*SUB/.test(body), 'nightly table still shows the sub, tagged SUB');
 console.log('ok');

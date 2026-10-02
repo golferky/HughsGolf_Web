@@ -8052,22 +8052,28 @@ function sbfPostSeasonDay(date, league = "Hugh's") {
     .map(r => {
       const gross = [r['1'], r['2'], r['3'], r['4'], r['5'], r['6'], r['7'], r['8'], r['9']].map(v => v ? parseInt(v) : null);
       const phdcp = sbfGetPlayerPhdcp(r.Player, date, league);
-      return { player: r.Player, phdcp, gross, ...sbfScoreIndividual(gross, phdcp, fb, courseRow, pars) };
+      return { player: r.Player, phdcp, gross, isSub: !isSeasonRosterPlayer(r.Player, season, league), ...sbfScoreIndividual(gross, phdcp, fb, courseRow, pars) };
     });
   return { fb, holeNums, pars, rows: sbfRankIndividuals(rows) };
 }
-// Post-season individual standings: Week 1 + Week 2 points per player, highest total first.
+// Post-season Stableford AWARD standings: the combined Week 1 + Week 2 points. A final place needs a score in BOTH weeks, and subs
+// (anyone not on the season roster) are not part of the award at all (they still appear in the nightly tables). Players with only
+// one week are returned without a place, after the ranked players, so it is clear why they are not placed.
 function sbfPostSeasonStandings(season, league = "Hugh's") {
   const ps = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
   if (!ps) return [];
   const byPlayer = {};
   [[1, ps.week1], [2, ps.week2]].forEach(([wk, d]) => {
     sbfPostSeasonDay(d, league).rows.forEach(r => {
+      if (r.isSub) return;                                   // subs are excluded from the final award
       const e = byPlayer[r.player] || (byPlayer[r.player] = { player: r.player, w1: null, w2: null });
       e[wk === 1 ? 'w1' : 'w2'] = r.total;
     });
   });
-  return sbfRankIndividuals(Object.values(byPlayer).map(e => ({ ...e, total: (e.w1 || 0) + (e.w2 || 0) })));
+  const all = Object.values(byPlayer).map(e => ({ ...e, total: (e.w1 || 0) + (e.w2 || 0), eligible: e.w1 !== null && e.w2 !== null }));
+  const ranked = sbfRankIndividuals(all.filter(e => e.eligible));
+  const unplaced = all.filter(e => !e.eligible).sort((a, b) => b.total - a.total || String(a.player).localeCompare(String(b.player))).map(e => ({ ...e, rank: null }));
+  return [...ranked, ...unplaced];
 }
 function renderPostSeasonStableford(date, week) {
   const season = String(date).substring(0, 4);
@@ -8088,23 +8094,28 @@ function renderPostSeasonStableford(date, week) {
     const totalColor = r.rank === 1 ? '#ffd700' : r.rank <= 3 ? '#90EE90' : '';
     const tied = day.rows.filter(x => x.rank === r.rank).length > 1;
     body += `<tr><td style="${playerS};text-align:center;font-weight:700" rowspan="2">${tied ? 'T' : ''}${r.rank}</td>
-      <td style="${playerS}">${r.player}</td><td style="${cellS}">${r.phdcp}</td>`
+      <td style="${playerS}">${r.player}${r.isSub ? ' <span style="background:#b3e5fc;color:#01579b;font-size:10px;padding:1px 4px;border-radius:3px">SUB</span>' : ''}</td><td style="${cellS}">${r.phdcp}</td>`
       + r.gross.map((g, i) => `<td style="${cellS}">${g || ''}</td><td style="${cellS}">${r.net[i] !== null ? r.net[i] : ''}</td>`).join('')
       + `<td style="${cellS};font-weight:700;font-size:14px;background:${totalColor}" rowspan="2">${r.total}</td></tr>`
       + `<tr style="background:#f0f7f0"><td style="${playerS};font-size:10px;color:#555" colspan="2">Stableford pts</td>`
       + r.pts.map(p => `<td style="${cellS};background:${sbfColor(p)}!important" colspan="2">${p !== null ? p : ''}</td>`).join('') + `</tr>`;
   });
   document.getElementById('stablefordBody').innerHTML = body || `<tr><td colspan="23" style="padding:12px;text-align:center;color:#999">No scores for this date</td></tr>`;
-  // Combined individual standings for the whole post season (both weeks)
+  // Award standings: combined Week 1 + Week 2, both weeks required for a place, subs excluded
   const st = sbfPostSeasonStandings(season);
   const th = x => `<th style="${thS};padding:6px 10px">${x}</th>`;
-  document.getElementById('stablefordPsStandings').innerHTML = `<div class="card" style="margin-top:20px"><div class="card-header">🏆 Post-Season Stableford — Individual Standings ${season}</div>
-    <div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>${th('Pos')}<th style="${thL};padding:6px 10px">Player</th>${th('Week 1')}${th('Week 2')}${th('Total')}</tr></thead><tbody>`
-    + (st.map(r => { const tied = st.filter(x => x.rank === r.rank).length > 1;
-        return `<tr style="background:${r.rank === 1 ? '#fffde7' : 'white'}"><td style="padding:6px 10px;text-align:center;font-weight:700">${tied ? 'T' : ''}${r.rank}</td><td style="padding:6px 10px">${r.player}</td>
-        <td style="padding:6px 10px;text-align:center">${r.w1 === null ? '—' : r.w1}</td><td style="padding:6px 10px;text-align:center">${r.w2 === null ? '—' : r.w2}</td>
-        <td style="padding:6px 10px;text-align:center;font-weight:700">${r.total}</td></tr>`; }).join('')
-      || `<tr><td colspan="5" style="padding:12px;text-align:center;color:#999">No post-season scores yet</td></tr>`) + `</tbody></table></div></div>`;
+  const placed = st.filter(r => r.rank !== null), unplaced = st.filter(r => r.rank === null);
+  const cell = 'padding:6px 10px;text-align:center';
+  const stRow = r => { const tied = r.rank !== null && placed.filter(x => x.rank === r.rank).length > 1;
+    return `<tr style="background:${r.rank === 1 ? '#fffde7' : 'white'}${r.rank === null ? ';color:#888' : ''}"><td style="${cell};font-weight:700">${r.rank === null ? '—' : (tied ? 'T' : '') + r.rank}</td><td style="padding:6px 10px">${r.player}</td>
+      <td style="${cell}">${r.w1 === null ? '—' : r.w1}</td><td style="${cell}">${r.w2 === null ? '—' : r.w2}</td>
+      <td style="${cell};font-weight:700">${r.total}</td></tr>`; };
+  document.getElementById('stablefordPsStandings').innerHTML = `<div class="card" style="margin-top:20px"><div class="card-header">🏆 Post-Season Stableford Award — Individual Standings ${season}</div>
+    <div style="padding:8px 14px;font-size:12px;color:#666">Combined Week 1 + Week 2 points. A final place needs a score in <b>both</b> weeks; subs are not part of the award.</div>
+    <div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>${th('Place')}<th style="${thL};padding:6px 10px">Player</th>${th('Week 1')}${th('Week 2')}${th('Total')}</tr></thead><tbody>`
+    + (placed.map(stRow).join('') || `<tr><td colspan="5" style="padding:12px;text-align:center;color:#999">No player has a score in both weeks yet</td></tr>`)
+    + (unplaced.length ? `<tr><td colspan="5" style="padding:6px 10px;background:#f5f5f5;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px">No final place yet (needs a score in both weeks)</td></tr>` + unplaced.map(stRow).join('') : '')
+    + `</tbody></table></div></div>`;
 }
 
 function loadStableford() {
