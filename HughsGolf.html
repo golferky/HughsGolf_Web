@@ -667,6 +667,7 @@
   <div class="tab" data-tab="whatsnew">📋 Changelog</div>
   <div class="tab" data-tab="standings">Standings</div>
   <div class="tab" data-tab="matches">Matches</div>
+  <div class="tab" data-tab="scorecard" id="scorecardTabBtn">📝 Scores</div>
   <div class="tab" data-tab="handicaps">Handicaps</div>
   <div class="tab" data-tab="payments">Payments</div>
   <div class="tab" data-tab="prizemoney">PrizeMoney</div>
@@ -1345,9 +1346,10 @@
 
   <!-- SQL -->
   <!-- ADMIN -->
+  <div class="section" id="tab-scorecard"></div>
+
   <div class="section" id="tab-admin">
     <div class="admin-nav">
-      <button onclick="showAdminSection('scores')" id="adminBtnScores" class="admin-btn">📝 Scores</button>
       <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
       <button onclick="showAdminSection('sql')" id="adminGroupSql" class="admin-btn">🔍 SQL</button>
       <button onclick="showAdminSection('players')" id="adminGroupTables" class="admin-btn">Table Maintenance</button>
@@ -3440,7 +3442,7 @@ function switchTab(tabName) {
   document.getElementById('tab-' + targetTab)?.classList.add('active');
   pvTrack(targetTab);
   if (db) {
-    if (targetTab === 'scores' && DB_UPDATE_PENDING) refreshScoresForExternalDbUpdate();
+    if (targetTab === 'scorecard' && DB_UPDATE_PENDING) refreshScoresForExternalDbUpdate();
     else refreshTab(targetTab);
   }
 }
@@ -4384,12 +4386,13 @@ function onDbLoaded() {
   refreshTab('schedule');
   refreshTestModeUi();
   initHomeCardCollapse();
-  // Move adminScores into the admin tab so showAdminSection controls it correctly
+  // The score grid lives in its own Scores tab (visible to everyone; read-only for players), not in the Admin section
   const _scoresEl = document.getElementById('adminScores');
-  const _adminTabEl = document.getElementById('tab-admin');
-  if (_scoresEl && _adminTabEl && _scoresEl.parentNode !== _adminTabEl) {
-    _adminTabEl.appendChild(_scoresEl);
+  const _scoresTabEl = document.getElementById('tab-scorecard');
+  if (_scoresEl && _scoresTabEl && _scoresEl.parentNode !== _scoresTabEl) {
+    _scoresTabEl.appendChild(_scoresEl);
   }
+  if (_scoresEl) _scoresEl.style.display = 'block';
   buildTableList();
   initEntry();
 }
@@ -5501,7 +5504,8 @@ function refreshTab(tab) {
   if (tab === 'board') { loadBoard(); markBoardSeen(); }
   if (tab === 'help') loadHelpTab();
   if (tab === 'whatsnew') loadWhatsNewTab();
-  if (tab === 'scores' || tab === 'entry') { switchTab('admin'); showAdminSection('scores'); }
+  if (tab === 'scorecard') { if (!courseData) initEntry(); else reRenderEntry(); }
+  if (tab === 'scores' || tab === 'entry') switchTab('scorecard');
   if (tab === 'stats') loadPlayerStats();
   setTimeout(highlightCurrentPlayer, 50);
 }
@@ -10749,7 +10753,7 @@ function loadSchedule() {
 }
 
 // ── ADMIN TAB ──
-const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','scores','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','emaillog','proposals'];
+const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','emaillog','proposals'];
 const ADMIN_GROUPS = {
   tables: ['players','teams','subs','leaguesettings'],
   logging: ['loginactivity','serverlog','pageviews','emaillog']
@@ -10766,6 +10770,7 @@ function adminGroupForSection(section) {
 }
 
 function showAdminSection(section) {
+  if (section === 'scores') { switchTab('scorecard'); return; }   // the score grid moved to its own Scores tab
   pvTrack('admin', section);
   const group = adminGroupForSection(section);
 
@@ -10786,11 +10791,10 @@ function showAdminSection(section) {
     const btn = document.getElementById(`adminGroup${g}`);
     if (btn) btn.className = 'admin-btn' + (group === g.toLowerCase() || (g === 'Sql' && section === 'sql') ? ' active-admin-btn' : '');
   });
-  ['pdfs','rainout','sync','scores','gallus','backups','changelog','expenses','compare','proposals'].forEach(s => {
+  ['pdfs','rainout','sync','gallus','backups','changelog','expenses','compare','proposals'].forEach(s => {
     const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
     if (btn) btn.className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
-  if (section==='scores') { if (!courseData) initEntry(); else reRenderEntry(); }
   // Usage has two buttons (top-level tab + logging subnav pill)
   const pvTop = document.getElementById('adminBtnPageviewsTop');
   const pvSub = document.getElementById('adminBtnPageviews');
@@ -11646,7 +11650,7 @@ function activeTabName() {
 }
 async function refreshScoresForExternalDbUpdate() {
   if (!DB_UPDATE_PENDING || !db || SCORE_DB_REFRESH_IN_PROGRESS) return false;
-  if (activeTabName() !== 'scores') return false;
+  if (activeTabName() !== 'scorecard') return false;
   // Personal test sandbox uses its own DB file — never swap in the shared DB
   if (typeof _isTestMode === 'function' && _isTestMode()) return false;
   if (_saveInProgress || _savePending || entryDirty) {
@@ -11694,7 +11698,7 @@ async function checkServerVersion() {
       } else if (dbModified > SERVER_DB_MODIFIED) {
         SERVER_DB_MODIFIED = dbModified;
         DB_UPDATE_PENDING = true;
-        if (activeTabName() === 'scores') refreshScoresForExternalDbUpdate();
+        if (activeTabName() === 'scorecard') refreshScoresForExternalDbUpdate();
         else if (typeof reRenderEntry === 'function') reRenderEntry();
       }
     }
@@ -17539,6 +17543,8 @@ function applyRoleAccess() {
   const gallusSubmitBtn = document.getElementById('gallusSubmitBtn');
   const isOfficer = role === 'developer' || role === 'admin';
   if (entrySaveBtn)  entrySaveBtn.style.display  = isOfficer ? '' : 'none';
+  const groupsBtn = document.getElementById('groupIntakeToggle');
+  if (groupsBtn) groupsBtn.style.display = isOfficer ? '' : 'none';
   if (entryClearBtn) entryClearBtn.style.display = isOfficer ? '' : 'none';
   if (gallusSubmitBtn) gallusSubmitBtn.style.display = currentUser ? '' : 'none';
   refreshTestModeUi();
@@ -21377,7 +21383,7 @@ function renderEntryGrid(slots, nine, isFuture, isPostSeason) {
       _egClrBtn.style.cssText = 'float:right;font-size:10px;padding:1px 8px;border:1px solid rgba(144,202,249,0.5);border-radius:3px;background:rgba(255,255,255,0.1);cursor:pointer;color:#90caf9;font-family:\'DM Sans\',sans-serif;letter-spacing:0;font-weight:600';
       _egClrBtn.onclick = () => clearEntryGroup(_grp);
       sepTd.innerHTML = `Group ${_grp} <span style="color:${_methodColor};font-size:11px;letter-spacing:0;font-family:'DM Sans',sans-serif;font-weight:600">${_methodLabel}</span>`;
-      sepTd.appendChild(_egClrBtn);
+      if (currentUser?.role === 'admin' || currentUser?.role === 'developer') sepTd.appendChild(_egClrBtn);   // officers only; players view read-only
       sep.appendChild(sepTd);
       body.appendChild(sep);
     }
