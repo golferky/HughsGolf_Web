@@ -16,7 +16,8 @@ const ctx = vm.createContext({ currentUser: { role: 'player' }, Set });
 vm.runInContext(`const ADMIN_ONLY_TABS = new Set([${adminOnly}]);` + extract('canAccessTab'), ctx);
 assert.strictEqual(ctx.canAccessTab('scorecard', 'player'), true, 'players can open Scores');
 assert.strictEqual(ctx.canAccessTab('admin', 'player'), false, 'Admin still admin-only');
-assert.strictEqual(ctx.canAccessTab('prizemoney', 'player'), false);
+assert.strictEqual(ctx.canAccessTab('prizemoney', 'player'), true, 'Prize Money is visible to everyone');
+['payments', 'schedule'].forEach(t => assert.strictEqual(ctx.canAccessTab(t, 'player'), false, t + ' stays admin-only'));
 
 // -- the grid is hosted in the Scores tab, not the Admin tab
 assert(/_scoresTabEl = document\.getElementById\('tab-scorecard'\)/.test(src) && /_scoresTabEl\.appendChild\(_scoresEl\)/.test(src));

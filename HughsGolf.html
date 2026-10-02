@@ -3357,7 +3357,7 @@ dz.addEventListener('drop', e => {
 dz.addEventListener('click', () => document.getElementById('fileInput').click());
 
 // ── Tabs ──
-const ADMIN_ONLY_TABS = new Set(['admin', 'payments', 'prizemoney', 'schedule']);
+const ADMIN_ONLY_TABS = new Set(['admin', 'payments', 'schedule']);
 
 // ── What's New changelog — prepend a new entry each deploy ──────────────────
 // Each entry: { version, date, items: ['...','...'] }
@@ -4950,7 +4950,7 @@ function loadPrizeMoney(options = {}) {
       sendWeekResults();
     })(${date})" style="padding:8px 18px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">📧 Email Results for ${fmtDate(date)}</button>
   </div>`;
-  document.getElementById('prizemoneyContent').innerHTML = ctpAlertHtml + kittyHtml + html + _emailBtn;
+  document.getElementById('prizemoneyContent').innerHTML = ctpAlertHtml + kittyHtml + html + (isOfficerRole() ? _emailBtn : '');
   if (options.reopenHeld || window._reopenHeldDetailAfterPrizeRefresh) {
     window._reopenHeldDetailAfterPrizeRefresh = false;
     const heldDetail = document.getElementById('heldDetail');
@@ -9170,7 +9170,16 @@ function warnIfUnpaidScorers(date) {
   );
 }
 
+// Officer-only actions (defense in depth: the buttons are already hidden for players, these refuse if one is reached anyway).
+function isOfficerRole() { return currentUser?.role === 'admin' || currentUser?.role === 'developer'; }
+function requireOfficer() {
+  if (isOfficerRole()) return true;
+  alert('Only an admin can change this.');
+  return false;
+}
+
 async function ctpSetWinner(hole, date, player, amount) {
+  if (!requireOfficer()) return;
   if (!player) return;
   if (!warnIfUnpaidScorers(date)) { loadCtps(); return; }
   const league     = "Hugh's";
@@ -9187,6 +9196,7 @@ async function ctpSetWinner(hole, date, player, amount) {
 }
 
 async function ctpReset(hole, date) {
+  if (!requireOfficer()) return;
   const league = "Hugh's";
   serverRun(`DELETE FROM Payments WHERE League=? AND Date=? AND Desc='CTP' AND Detail=? AND Player!='Kitty'`, [league, date, `#${hole}`]);
   await SERVER_RUN_QUEUE;
@@ -9195,6 +9205,7 @@ async function ctpReset(hole, date) {
 }
 
 async function ctpNoWinner(hole, date, amount, fb) {
+  if (!requireOfficer()) return;
   if (!warnIfUnpaidScorers(date)) { loadCtps(); return; }
   const league    = "Hugh's";
   const now       = new Date().toLocaleDateString();
@@ -11817,6 +11828,7 @@ async function saveDBToServer(successLabel, btnId, _retries = 1) {
 // ── Mark Winner as Paid ───────────────────────────────────────────────────────
 // ── Mark Selected Unpaid as Paid ─────────────────────────────────────────────
 async function markSelectedPaid(season) {
+  if (!requireOfficer()) return;
   const checked = [...document.querySelectorAll('.held-cb:checked')];
   if (!checked.length) { alert('Check at least one row first.'); return; }
   const rows = checked.map(cb => ({
@@ -11845,6 +11857,7 @@ async function markSelectedPaid(season) {
 
 // ── Send Unpaid Balance Reminders ────────────────────────────────────────
 async function sendUnpaidReminders() {
+  if (!requireOfficer()) return;
   const season = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   const seasonEnd = `${parseInt(season)+1}0101`;
   const heldRows = query(`
@@ -11889,6 +11902,7 @@ async function sendUnpaidReminders() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function doMarkPaid(player, date, desc, detail, amount) {
+  if (!requireOfficer()) return;
   // Look up player's contact info to preview notification
   const p = query(`SELECT Email, Phone, CellCarrier FROM Players WHERE Player=?`, [player])[0] || {};
   const CARRIERS = ['verizon','att','at&t','t-mobile','tmobile','sprint','cricket','boost','cbw','metro','us cellular','uscellular'];
@@ -12518,6 +12532,7 @@ async function doAskOfficerForSub() {
 let _ptSeason = null;
 
 function showPoolTransfer(season) {
+  if (!requireOfficer()) return;
   if (!(currentUser?.role === 'admin' || currentUser?.role === 'developer')) return;
   _ptSeason = season;
   document.getElementById('poolTransferModal').style.display = 'flex';
@@ -12649,6 +12664,7 @@ async function doPoolTransfer() {
 //  - Skin: one 'Pool Transfer' row for the exact balance (can be negative), so the kitty math nets to $0
 //  - CTP: open Carryover rows are renamed KittyCleared… so they stop counting but stay in history
 async function clearKitty(season) {
+  if (!requireOfficer()) return;
   if (!(currentUser?.role === 'admin' || currentUser?.role === 'developer')) return;
   const s = parseInt(season);
   const seasonEnd = `${s + 1}0101`;
@@ -12700,6 +12716,7 @@ async function clearKitty(season) {
 }
 
 function showKittyPay() {
+  if (!requireOfficer()) return;
   if (!(currentUser?.role === 'admin' || currentUser?.role === 'developer')) return;
   document.getElementById('kittyPayModal').style.display = 'flex';
   document.getElementById('kittyPayAmount').value = '';
@@ -21685,6 +21702,18 @@ function psCcMissedWeek(wkScored, closed) {
   return 0;
 }
 
+// Read-only list of a post-season week's CTP winners (everyone can see it; only admins can assign or reset winners).
+function psCtpWinnersHtml(week, nineName, wins) {
+  const head = `<div style="font-weight:700;font-size:12px;color:#555;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.5px">📍 Week ${week} CTP Winners (${nineName} 9)</div>`;
+  if (!wins.length) return head + `<div style="color:#aaa;font-size:13px">No CTP winners yet</div>`;
+  const row = w => `<div style="display:grid;grid-template-columns:44px 1fr auto;gap:6px;align-items:center;padding:4px 10px;border-radius:4px;font-size:12px;margin-bottom:2px;background:#f3e5f5">
+      <span style="color:#6a1b9a;font-weight:700">H${String(w.Detail || '').replace('#', '')}</span>
+      <span style="font-weight:600">${w.Player}</span>
+      <span style="font-family:'DM Mono',monospace;font-weight:700;color:#6a1b9a">$${parseFloat(w.Earned || 0).toFixed(2)}</span>
+    </div>`;
+  return head + wins.map(row).join('');
+}
+
 function renderPostSeasonBreakdown(nine) {
   const panel = document.getElementById('psBreakdownPanel');
   if (!panel) return;
@@ -21892,6 +21921,16 @@ function renderPostSeasonBreakdown(nine) {
     lbHtml += '<div style="margin-bottom:14px"></div>';
   }
 
+  // CTP winners for the selected week's nine (read-only for everyone; winners are assigned by an admin on the Skins/CTPs tab)
+  let ctpWinnersHtml = '';
+  try {
+    const _ctpDate = selFb === 'Front' ? (entryState._psFrontDate || entryState._psDate1) : (entryState._psBackDate || entryState._psDate2);
+    if (_ctpDate && typeof query === 'function') {
+      const wins = query(`SELECT Player, Detail, Earned FROM Payments WHERE League="Hugh's" AND "Desc"='CTP' AND Detail LIKE '#%' AND Player!='Kitty' AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) ORDER BY CAST(REPLACE(Detail,'#','') AS INTEGER)`, [_ctpDate]) || [];
+      ctpWinnersHtml = psCtpWinnersHtml(selWeek, selFb, wins);
+    }
+  } catch (e) { console.warn('CTP winners failed to load:', e); }
+
   // Skins results
   if (window._psSkinShowTies === undefined) window._psSkinShowTies = false;
   let skinsHtml = '';
@@ -21933,7 +21972,7 @@ function renderPostSeasonBreakdown(nine) {
       ${summaryHtml}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div>${lbHtml || '<div style="color:#aaa;font-size:13px">Scores not yet entered</div>'}</div>
-        <div>${skinsHtml || ''}</div>
+        <div>${skinsHtml || ''}${ctpWinnersHtml}</div>
       </div>
       ${psRefundPanelHtml(season, selWeek)}
     </div>`}`;
