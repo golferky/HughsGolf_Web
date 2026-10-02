@@ -8065,7 +8065,7 @@ function sbfPostSeasonStandings(season, league = "Hugh's") {
   const byPlayer = {};
   [[1, ps.week1], [2, ps.week2]].forEach(([wk, d]) => {
     sbfPostSeasonDay(d, league).rows.forEach(r => {
-      if (!r.awardEligible) return;                          // subs are excluded from the final award, except the league-approved CC sub exception (Howard Gorman, 2026)
+      if (!r.awardEligible) return;                          // subs are excluded from the final award, except the league-approved CC sub exception
       const e = byPlayer[r.player] || (byPlayer[r.player] = { player: r.player, w1: null, w2: null });
       e[wk === 1 ? 'w1' : 'w2'] = r.total;
     });
@@ -8111,7 +8111,7 @@ function renderPostSeasonStableford(date, week) {
       <td style="${cell}">${r.w1 === null ? '—' : r.w1}</td><td style="${cell}">${r.w2 === null ? '—' : r.w2}</td>
       <td style="${cell};font-weight:700">${r.total}</td></tr>`; };
   document.getElementById('stablefordPsStandings').innerHTML = `<div class="card" style="margin-top:20px"><div class="card-header">🏆 Post-Season Stableford Award — Individual Standings ${season}</div>
-    <div style="padding:8px 14px;font-size:12px;color:#666">Combined Week 1 + Week 2 points. A final place needs a score in <b>both</b> weeks; subs are not part of the award (except a league-approved exception such as Howard Gorman).</div>
+    <div style="padding:8px 14px;font-size:12px;color:#666">Combined Week 1 + Week 2 points. A final place needs a score in <b>both</b> weeks; subs are not part of the award (except a league-approved exception).</div>
     <div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>${th('Place')}<th style="${thL};padding:6px 10px">Player</th>${th('Week 1')}${th('Week 2')}${th('Total')}</tr></thead><tbody>`
     + (placed.map(stRow).join('') || `<tr><td colspan="5" style="padding:12px;text-align:center;color:#999">No player has a score in both weeks yet</td></tr>`)
     + (unplaced.length ? `<tr><td colspan="5" style="padding:6px 10px;background:#f5f5f5;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px">No final place yet (needs a score in both weeks)</td></tr>` + unplaced.map(stRow).join('') : '')
