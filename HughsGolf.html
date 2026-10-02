@@ -541,7 +541,7 @@
   <div class="header-right">
     <span id="loggedInUser" onclick="showMyProfile()" style="display:none;font-size:12px;color:#a8e6a3;margin-right:8px;cursor:pointer;text-decoration:underline" title="View my profile"></span>
     <button id="changePwBtn" onclick="showChangePw()" title="Change Password" style="display:none;padding:6px 12px;background:#1a3a1a;color:#90caf9;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🔑 Password</button>
-    <button id="viewAsPlayerBtn" onclick="toggleViewAsPlayer()" title="See the app exactly as a player sees it (admin tools hidden). Click again to return to admin mode." style="display:none;padding:6px 12px;background:#0d47a1;color:white;border:1px solid #90caf9;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">👁 View as Player</button>
+    <span id="viewModeGroup" style="display:none;margin-right:6px;white-space:nowrap"></span>
     <button id="switchUserBtn" onclick="showImpersonateModal()" style="display:none;padding:6px 12px;background:#4a148c;color:white;border:1px solid #ce93d8;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:4px">🎭 Switch User</button>
     <button id="logoutBtn" onclick="logoutUser()" style="display:none;padding:6px 12px;background:#4a3000;color:var(--gold);border:1px solid var(--gold);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;margin-right:6px">Logout</button>
     <span id="dbStatus">No database loaded</span>
@@ -11773,33 +11773,55 @@ function roleFromOfficerValue(officer) {
   return 'player';
 }
 
-// ── Admin "View as Player" mode ─────────────────────────────────────────────────────────────────────────────────────
-// An admin or developer can switch to seeing exactly what a player sees. Every role check in the app reads currentUser.role,
-// so the view swaps that to 'player' (the real role is kept in realRole) and re-renders. It only ever REDUCES what is shown,
-// it is not saved across reloads, and logout clears it. Audit headers and session timeouts keep using the real role.
-function canViewAsPlayer() { const r = currentUser?.realRole || currentUser?.role; return r === 'admin' || r === 'developer'; }
-function isViewingAsPlayer() { return !!currentUser && !!currentUser.realRole && currentUser.role !== currentUser.realRole; }
+// ── View mode: Developer / Admin / Player ───────────────────────────────────────────────────────────────────────────
+// A developer can view the app as Developer, Admin or Player; an admin as Admin or Player. Every role check in the app reads
+// currentUser.role, so a view mode simply swaps that (the real role is kept in realRole) and re-renders. A mode can only ever
+// REDUCE what is shown (never above the real role), it is not saved across reloads, and logout clears it. Audit headers and
+// session timeouts keep using the real role.
+const VIEW_MODE_RANK = { player: 0, admin: 1, developer: 2 };
+const VIEW_MODE_LABEL = { developer: 'Developer', admin: 'Admin', player: 'Player' };
+// Modes the signed-in user may switch between, highest first (developer: all three, admin: admin + player, player: none).
+function viewModes() {
+  const real = currentUser?.realRole || currentUser?.role;
+  if (!(real in VIEW_MODE_RANK) || VIEW_MODE_RANK[real] < 1) return [];
+  return ['developer', 'admin', 'player'].filter(m => VIEW_MODE_RANK[m] <= VIEW_MODE_RANK[real]);
+}
+function canViewAsPlayer() { return viewModes().length > 0; }
+function isViewingAsPlayer() { return !!currentUser && currentUser.role === 'player' && canViewAsPlayer(); }
+function isViewingBelowRealRole() { return !!currentUser && !!currentUser.realRole && currentUser.role !== currentUser.realRole; }
 function actorRole() { return currentUser?.realRole || currentUser?.role || ''; }
 function sessionRole() { return currentUser?.realRole || currentUser?.role; }
 function updateViewAsPlayerUi() {
-  const btn = document.getElementById('viewAsPlayerBtn');
+  const group = document.getElementById('viewModeGroup');
   const banner = document.getElementById('viewAsPlayerBanner');
-  const viewing = isViewingAsPlayer();
-  if (btn) {
-    btn.style.display = canViewAsPlayer() ? '' : 'none';
-    btn.textContent = viewing ? '🛡 Back to Admin Mode' : '👁 View as Player';
+  const modes = viewModes();
+  if (group) {
+    group.style.display = modes.length ? '' : 'none';
+    group.innerHTML = modes.length ? '<span style="font-size:11px;color:#90caf9;margin-right:4px">👁 View:</span>' + modes.map(m => {
+      const on = currentUser.role === m;
+      return `<button onclick="setViewMode('${m}')" title="${on ? 'Current view' : 'See the app as ' + (m === 'player' ? 'a ' : 'an ') + VIEW_MODE_LABEL[m]}" style="padding:4px 9px;border:1px solid #90caf9;border-radius:5px;margin-right:2px;font-family:\'DM Sans\',sans-serif;font-size:11px;font-weight:700;cursor:pointer;${on ? 'background:#90caf9;color:#0d2a55' : 'background:#0d47a1;color:white'}">${VIEW_MODE_LABEL[m]}</button>`;
+    }).join('') : '';
   }
-  if (banner) banner.style.display = viewing ? '' : 'none';
+  if (banner) {
+    const below = isViewingBelowRealRole();
+    banner.style.display = below ? '' : 'none';
+    if (below) {
+      const real = currentUser.realRole;
+      banner.innerHTML = `👁 Viewing as ${currentUser.role === 'player' ? 'a Player' : 'an ' + VIEW_MODE_LABEL[currentUser.role]} — tools above that level are hidden. <button onclick="setViewMode('${real}')" style="margin-left:10px;padding:3px 12px;border:1px solid white;border-radius:5px;background:transparent;color:white;font-weight:700;cursor:pointer">Back to ${VIEW_MODE_LABEL[real]} Mode</button>`;
+    }
+  }
 }
-function setViewAsPlayer(on) {
-  if (!currentUser || !canViewAsPlayer()) return false;
-  currentUser.role = on ? 'player' : currentUser.realRole;
-  applyRoleAccess();                 // tabs, buttons, dev-only elements, entry controls (also refreshes the toggle UI)
+// Switch the view to 'developer' | 'admin' | 'player' (only modes at or below the real role are allowed).
+function setViewMode(mode) {
+  if (!currentUser || !viewModes().includes(mode)) return false;
+  currentUser.role = mode;
+  applyRoleAccess();                 // tabs, buttons, dev-only elements, entry controls (also refreshes the view-mode UI)
   const active = activeTabName();
   if (!canAccessTab(active)) switchTab('home');                    // e.g. leaving the Admin tab while viewing as a player
   else if (db) refreshTab(active);                                 // re-render the current screen with the new role
   return true;
 }
+function setViewAsPlayer(on) { return setViewMode(on ? 'player' : (currentUser?.realRole || '')); }
 function toggleViewAsPlayer() { setViewAsPlayer(!isViewingAsPlayer()); }
 
 function isPersistentSessionRole(role) {
