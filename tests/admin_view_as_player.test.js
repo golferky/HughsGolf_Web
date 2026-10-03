@@ -1,5 +1,5 @@
-// Admins and developers can switch the app to "View as Player" and back. It only reduces what is shown, keeps the real role
-// for audit/session logic, and never persists.
+// View mode: a developer can view the app as Developer / Admin / Player, an admin as Admin / Player. Modes only ever reduce
+// what is shown (never above the real role), keep the real role for audit/session logic, and are never persisted.
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const src = fs.readFileSync(__dirname + '/../HughsGolf.html', 'utf8');
 function extract(name) {
@@ -7,9 +7,10 @@ function extract(name) {
   let d = 0, j = src.indexOf('{', i);
   for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; if (src[k] === '}' && --d === 0) return src.slice(i, k + 1); }
 }
+const constLine = name => { const m = src.match(new RegExp(`const ${name} = [^;]*;`)); assert(m, name); return m[0]; };
 const adminOnly = src.match(/const ADMIN_ONLY_TABS = new Set\(\[([^\]]*)\]\)/)[1];
 function world(role, activeTab = 'admin') {
-  const els = { viewAsPlayerBtn: { style: {}, textContent: '' }, viewAsPlayerBanner: { style: {} } };
+  const els = { viewModeGroup: { style: {}, innerHTML: '' }, viewAsPlayerBanner: { style: {}, innerHTML: '' } };
   const log = [];
   const c = vm.createContext({
     Set, db: {}, document: { getElementById: id => els[id] || null },
@@ -18,56 +19,83 @@ function world(role, activeTab = 'admin') {
     applyRoleAccess: () => { log.push('applyRoleAccess:' + c.currentUser.role); c.updateViewAsPlayerUi(); },
     switchTab: t => { log.push('switchTab:' + t); c.__tab = t; }, refreshTab: t => log.push('refreshTab:' + t),
   });
-  vm.runInContext(`const ADMIN_ONLY_TABS = new Set([${adminOnly}]);`, c);
-  ['canAccessTab', 'canViewAsPlayer', 'isViewingAsPlayer', 'actorRole', 'sessionRole', 'updateViewAsPlayerUi', 'setViewAsPlayer', 'toggleViewAsPlayer', 'isPersistentSessionRole'].forEach(n => vm.runInContext(extract(n), c));
-  // canAccessTab reads the default role from currentUser at call time
+  vm.runInContext(`const ADMIN_ONLY_TABS = new Set([${adminOnly}]);` + constLine('VIEW_MODE_RANK') + constLine('VIEW_MODE_LABEL'), c);
+  ['canAccessTab', 'viewModes', 'canViewAsPlayer', 'isViewingAsPlayer', 'isViewingBelowRealRole', 'actorRole', 'sessionRole', 'updateViewAsPlayerUi',
+   'setViewMode', 'setViewAsPlayer', 'toggleViewAsPlayer', 'isPersistentSessionRole'].forEach(n => vm.runInContext(extract(n), c));
   return { c, els, log };
 }
+const modes = w => Array.from(w.c.viewModes());
+const buttons = w => [...w.els.viewModeGroup.innerHTML.matchAll(/setViewMode\('(\w+)'\)/g)].map(m => m[1]);
 
-for (const role of ['admin', 'developer']) {
-  const w = world(role, 'scorecard');
-  w.c.updateViewAsPlayerUi();
-  assert.strictEqual(w.els.viewAsPlayerBtn.style.display, '', role + ': the toggle is shown'); assert.strictEqual(w.els.viewAsPlayerBtn.textContent, '👁 View as Player');
-  assert.strictEqual(w.els.viewAsPlayerBanner.style.display, 'none');
-  // ON: role becomes player everywhere, real role kept, UI updated, current screen re-rendered
-  assert.strictEqual(w.c.setViewAsPlayer(true), true);
-  assert.strictEqual(w.c.currentUser.role, 'player'); assert.strictEqual(w.c.currentUser.realRole, role);
-  assert.strictEqual(w.c.isViewingAsPlayer(), true);
-  assert.strictEqual(w.els.viewAsPlayerBanner.style.display, '', 'banner shown'); assert.strictEqual(w.els.viewAsPlayerBtn.textContent, '🛡 Back to Admin Mode');
-  assert.deepStrictEqual(w.log, ['applyRoleAccess:player', 'refreshTab:scorecard']);
-  assert.strictEqual(w.c.canAccessTab('admin'), false, 'Admin tab hidden while viewing as a player');
-  assert.strictEqual(w.c.canAccessTab('payments'), false); assert.strictEqual(w.c.canAccessTab('scorecard'), true);
-  assert.strictEqual(w.c.actorRole(), role, 'audit headers keep the real role'); assert.strictEqual(w.c.sessionRole(), role);
-  assert.strictEqual(w.c.isPersistentSessionRole(w.c.sessionRole()), true, 'session timeout logic still treats them as an admin');
-  // OFF: back to the real role
+// ---- available modes by real role
+assert.deepStrictEqual(modes(world('developer')), ['developer', 'admin', 'player'], 'developer: three levels');
+assert.deepStrictEqual(modes(world('admin')), ['admin', 'player'], 'admin: two levels, never developer');
+assert.deepStrictEqual(modes(world('player')), []); assert.deepStrictEqual(modes(world(null)), []);
+
+// ---- developer walks through all three levels
+{
+  const w = world('developer', 'scorecard'); w.c.updateViewAsPlayerUi();
+  assert.deepStrictEqual(buttons(w), ['developer', 'admin', 'player'], 'header shows Developer / Admin / Player');
+  assert(/background:#90caf9[^"]*">Developer</.test(w.els.viewModeGroup.innerHTML), 'current mode is highlighted');
+  assert.strictEqual(w.els.viewModeGroup.style.display, ''); assert.strictEqual(w.els.viewAsPlayerBanner.style.display, 'none', 'no banner at your own level');
+
+  assert.strictEqual(w.c.setViewMode('admin'), true);
+  assert.strictEqual(w.c.currentUser.role, 'admin'); assert.strictEqual(w.c.currentUser.realRole, 'developer');
+  assert.strictEqual(w.c.canAccessTab('admin'), true, 'admin view still has the Admin tab');
+  assert.strictEqual(w.els.viewAsPlayerBanner.style.display, ''); assert(/Viewing as an Admin/.test(w.els.viewAsPlayerBanner.innerHTML) && /Back to Developer Mode/.test(w.els.viewAsPlayerBanner.innerHTML) && /setViewMode\('developer'\)/.test(w.els.viewAsPlayerBanner.innerHTML));
+  assert(/background:#90caf9[^"]*">Admin</.test(w.els.viewModeGroup.innerHTML), 'Admin is now highlighted');
+  assert.deepStrictEqual(w.log, ['applyRoleAccess:admin', 'refreshTab:scorecard']);
+
   w.log.length = 0;
-  assert.strictEqual(w.c.toggleViewAsPlayer(), undefined);
-  assert.strictEqual(w.c.currentUser.role, role); assert.strictEqual(w.c.isViewingAsPlayer(), false);
-  assert.strictEqual(w.els.viewAsPlayerBanner.style.display, 'none'); assert.strictEqual(w.els.viewAsPlayerBtn.textContent, '👁 View as Player');
-  assert.strictEqual(w.c.canAccessTab('admin'), true, 'admin tools are back');
-  assert.deepStrictEqual(w.log, ['applyRoleAccess:' + role, 'refreshTab:scorecard']);
+  assert.strictEqual(w.c.setViewMode('player'), true);
+  assert.strictEqual(w.c.currentUser.role, 'player'); assert.strictEqual(w.c.isViewingAsPlayer(), true);
+  assert.strictEqual(w.c.canAccessTab('admin'), false, 'player view: no Admin tab');
+  assert(/Viewing as a Player/.test(w.els.viewAsPlayerBanner.innerHTML) && /Back to Developer Mode/.test(w.els.viewAsPlayerBanner.innerHTML));
+  // jump straight from player back up to developer
+  assert.strictEqual(w.c.setViewMode('developer'), true);
+  assert.strictEqual(w.c.currentUser.role, 'developer'); assert.strictEqual(w.els.viewAsPlayerBanner.style.display, 'none'); assert.strictEqual(w.c.isViewingBelowRealRole(), false);
+  // audit + session always use the real role
+  w.c.setViewMode('player'); assert.strictEqual(w.c.actorRole(), 'developer'); assert.strictEqual(w.c.sessionRole(), 'developer'); assert.strictEqual(w.c.isPersistentSessionRole(w.c.sessionRole()), true);
 }
 
-// on the Admin tab: switching to player view leaves it (the player can't open it)
-{ const w = world('admin', 'admin'); w.c.setViewAsPlayer(true);
-  assert.deepStrictEqual(w.log, ['applyRoleAccess:player', 'switchTab:home'], 'moves off the Admin tab to Home'); }
+// ---- admin: two levels, no escalation
+{
+  const w = world('admin', 'admin'); w.c.updateViewAsPlayerUi();
+  assert.deepStrictEqual(buttons(w), ['admin', 'player']);
+  assert.strictEqual(w.c.setViewMode('developer'), false, 'an admin can never view (or become) a developer'); assert.strictEqual(w.c.currentUser.role, 'admin');
+  assert.strictEqual(w.c.setViewMode('bogus'), false);
+  assert.strictEqual(w.c.setViewMode('player'), true);
+  assert.deepStrictEqual(w.log, ['applyRoleAccess:player', 'switchTab:home'], 'leaves the Admin tab for Home when going to Player');
+  assert(/Back to Admin Mode/.test(w.els.viewAsPlayerBanner.innerHTML));
+  assert.strictEqual(w.c.setViewMode('developer'), false, 'still cannot reach developer from the player view'); assert.strictEqual(w.c.currentUser.role, 'player');
+  assert.strictEqual(w.c.setViewMode('admin'), true); assert.strictEqual(w.c.currentUser.role, 'admin');
+}
 
-// a developer in player view is a plain player for every check (dev-only controls too)
-{ const w = world('developer', 'home'); w.c.setViewAsPlayer(true); assert.notStrictEqual(w.c.currentUser.role, 'developer'); assert.strictEqual(w.c.currentUser.role, 'player'); }
+// ---- developer on the Admin tab: Admin view keeps it, Player view leaves it
+{ const w = world('developer', 'admin'); w.c.setViewMode('admin'); assert.deepStrictEqual(w.log, ['applyRoleAccess:admin', 'refreshTab:admin']);
+  w.log.length = 0; w.c.setViewMode('player'); assert.deepStrictEqual(w.log, ['applyRoleAccess:player', 'switchTab:home']); }
 
-// players (and logged-out users) can't use it
-{ const w = world('player', 'home'); w.c.updateViewAsPlayerUi();
-  assert.strictEqual(w.els.viewAsPlayerBtn.style.display, 'none'); assert.strictEqual(w.c.setViewAsPlayer(true), false); assert.strictEqual(w.c.currentUser.role, 'player'); assert.deepStrictEqual(w.log, []);
-  const o = world(null, 'home'); o.c.updateViewAsPlayerUi(); assert.strictEqual(o.els.viewAsPlayerBtn.style.display, 'none'); assert.strictEqual(o.c.setViewAsPlayer(true), false); }
-// a plain player can never reach admin by calling it with false
-{ const w = world('player', 'home'); assert.strictEqual(w.c.setViewAsPlayer(false), false); assert.strictEqual(w.c.currentUser.role, 'player'); }
+// ---- players and logged-out users: nothing available, no escalation
+for (const role of ['player', null]) {
+  const w = world(role, 'home'); w.c.updateViewAsPlayerUi();
+  assert.strictEqual(w.els.viewModeGroup.style.display, 'none'); assert.strictEqual(w.els.viewModeGroup.innerHTML, '');
+  for (const m of ['developer', 'admin', 'player']) assert.strictEqual(w.c.setViewMode(m), false, String(role) + ' cannot pick ' + m);
+  assert.strictEqual(w.c.canViewAsPlayer(), false); assert.deepStrictEqual(w.log, []);
+  if (role) assert.strictEqual(w.c.currentUser.role, 'player');
+}
 
-// wiring: button + banner, real role remembered at login, audit headers and session checks use the real role, logout clears it
-assert(/id="viewAsPlayerBtn" onclick="toggleViewAsPlayer\(\)"/.test(src) && /id="viewAsPlayerBanner"/.test(src) && /onclick="setViewAsPlayer\(false\)"/.test(src));
+// ---- the old toggle API still works on top of the modes (banner/back button, setViewAsPlayer)
+{ const w = world('developer', 'home'); w.c.setViewAsPlayer(true); assert.strictEqual(w.c.currentUser.role, 'player'); w.c.setViewAsPlayer(false); assert.strictEqual(w.c.currentUser.role, 'developer');
+  w.c.toggleViewAsPlayer(); assert.strictEqual(w.c.currentUser.role, 'player'); w.c.toggleViewAsPlayer(); assert.strictEqual(w.c.currentUser.role, 'developer');
+  const a = world('admin', 'home'); a.c.setViewAsPlayer(true); assert.strictEqual(a.c.currentUser.role, 'player'); a.c.setViewAsPlayer(false); assert.strictEqual(a.c.currentUser.role, 'admin'); }
+
+// ---- wiring
+assert(/<span id="viewModeGroup"/.test(src) && !/id="viewAsPlayerBtn"/.test(src), 'header has the 3-way view switcher (old single button replaced)');
+assert(/id="viewAsPlayerBanner"/.test(src));
 assert(/currentUser\.realRole = currentUser\.role;/.test(src), 'login remembers the real role');
-assert.strictEqual((src.match(/'X-Actor-Role': actorRole\(\)/g) || []).length, 7); assert(!/'X-Actor-Role': currentUser\?\.role/.test(src), 'no audit header uses the swapped role');
+assert.strictEqual((src.match(/'X-Actor-Role': actorRole\(\)/g) || []).length, 7); assert(!/'X-Actor-Role': currentUser\?\.role/.test(src));
 assert(!/isPersistentSessionRole\(currentUser\.role\)/.test(src), 'session logic uses the real role');
-assert(/updateViewAsPlayerUi\(\);\s*\n\s*\n\s*\/\/ League Settings/.test(src), 'applyRoleAccess keeps the toggle in sync');
-assert(/currentUser = null;\s*\n\s*updateViewAsPlayerUi\(\);/.test(src), 'logout clears the toggle UI (currentUser is gone, so the mode cannot survive)');
-assert(!/localStorage\.setItem\([^)]*viewAs|sessionStorage\.setItem\([^)]*viewAs/i.test(src), 'view-as-player is never persisted');
+assert(/updateViewAsPlayerUi\(\);\s*\n\s*\n\s*\/\/ League Settings/.test(src), 'applyRoleAccess keeps the switcher in sync');
+assert(/currentUser = null;\s*\n\s*updateViewAsPlayerUi\(\);/.test(src), 'logout clears it');
+assert(!/localStorage\.setItem\([^)]*viewMode|sessionStorage\.setItem\([^)]*viewMode|sessionStorage\.setItem\([^)]*viewAs/i.test(src), 'never persisted');
 console.log('ok');
