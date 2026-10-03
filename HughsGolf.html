@@ -6611,7 +6611,13 @@ function collectVisiblePostSeasonScoreRows() {
     const inputs = [...tr.querySelectorAll('input.eg-input')].slice(0, 18);
     if (!st || !inputs.length) return;
 
-    const holes = inputs.map(inp => (inp.value || '').trim());
+    // Read each score by its real hole index (data-hi), NOT by screen order: when Week 1 is the Back 9 the grid shows holes
+    // 10-18 first, so the first nine inputs on screen are the Back 9 and must not be counted as the Front 9.
+    const holes = Array(18).fill('');
+    inputs.forEach((inp, pos) => {
+      const hi = parseInt(inp.dataset.hi);
+      holes[Number.isInteger(hi) && hi >= 0 && hi < 18 ? hi : pos] = (inp.value || '').trim();
+    });
     const liveState = { ...st, holes };
     const totals = getPostSeasonEntryTotals(liveState);
     if (!totals.frontComplete && !totals.backComplete) return;
