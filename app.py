@@ -1476,7 +1476,7 @@ def need_sub():
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        cur.execute("SELECT Email FROM Players WHERE Officer IN ('Secretary','President') AND Login='Y' AND Email IS NOT NULL AND Email != ''")
+        cur.execute("SELECT Email FROM Players WHERE LOWER(COALESCE(Officer,'')) IN ('admin','secretary','president') AND Login='Y' AND Email IS NOT NULL AND Email != ''")
         officer_emails = [r['Email'] for r in cur.fetchall()]
         conn.close()
     except Exception as e:
@@ -2651,7 +2651,7 @@ def clear_stale_sessions():
             cur.execute("""
                 UPDATE Players SET ActiveSession=NULL
                 WHERE ActiveSession IS NOT NULL
-                AND COALESCE(Officer, '') NOT IN ('Developer', 'President', 'Secretary')
+                AND LOWER(COALESCE(Officer, '')) NOT IN ('developer', 'admin', 'president', 'secretary')
                 AND Player NOT IN (
                     SELECT DISTINCT text FROM (
                         SELECT REPLACE(text, ' logged in', '') as text, MAX(log_time) as lt
