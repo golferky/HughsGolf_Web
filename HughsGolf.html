@@ -9552,7 +9552,10 @@ function loadPayments() {
     const skinsWonSea = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='Skin' AND Detail LIKE '#%' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.s||0);
     const ctpWonWk    = weekDate ? parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='CTP' AND Detail LIKE '#%' AND Date=?`,[player,league,weekDate])[0]?.s||0) : 0;
     const ctpWonSea   = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as s FROM Payments WHERE Player=? AND League=? AND Desc='CTP' AND Detail LIKE '#%' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.s||0);
-    const eoy = isRoster ? eoyPaidSummary(player, league, dFrom, dTo) : null;          // paid in, refunded, still owed back, and the net
+    // paid in, refunded, still owed back, and the net. Roster players always get a figure; anyone else (a sub who bought into
+    // EOY Skins) gets one only if they actually paid or were refunded, otherwise the column shows a dash.
+    let eoy = eoyPaidSummary(player, league, dFrom, dTo);
+    if (!isRoster && !(eoy.gross > 0 || eoy.refunded > 0)) eoy = null;
     const eoyPaid = eoy ? eoy.net : null;                                              // EOY Paid column = net of refunds
     const lastPaid  = query(`SELECT MAX(DatePaid) as d FROM Payments WHERE Player=? AND League=? AND Detail='Payment' AND Date >= ? AND Date < ?`,[player,league,dFrom,dTo])[0]?.d||'';
     // This-week paid-in
