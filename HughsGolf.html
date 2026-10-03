@@ -11597,6 +11597,17 @@ function preparePrizeMoneyPdfSection() {
   };
 }
 
+// The combined PDF is Scores + Standings + Matches + Prize Money. A post-season night (Week 1 / Week 2) has no matches or
+// league standings to report, so those two sections are left out there; the regular-season PDF is unchanged.
+function combinedPdfIsPostSeason() {
+  const date = document.getElementById('pdfCombinedDate')?.value;
+  try { return !!(date && getPostSeasonContextForDate(date)); } catch (e) { return false; }
+}
+function combinedPdfReports() {
+  if (combinedPdfIsPostSeason()) return [prepareScoresPdfSection(), preparePrizeMoneyPdfSection()];
+  return [prepareScoresPdfSection(), prepareStandingsPdfSection(), prepareMatchesPdfSection(), preparePrizeMoneyPdfSection()];
+}
+
 function buildReportPdfPayload(kind) {
   if (!db) return null;
   let title = '';
@@ -11611,7 +11622,7 @@ function buildReportPdfPayload(kind) {
     ({ title, subtitle, source } = prepareMatchesPdfSection());
   } else if (kind === 'combined') {
     applyCombinedPdfDate();
-    const reports = [prepareScoresPdfSection(), prepareStandingsPdfSection(), prepareMatchesPdfSection(), preparePrizeMoneyPdfSection()];
+    const reports = combinedPdfReports();
     return {
       reports,
       title: "Hugh's Golf Reports",
@@ -11773,7 +11784,7 @@ function createReportPdf(kind) {
     ({ title, subtitle, source } = prepareMatchesPdfSection());
   } else if (kind === 'combined') {
     applyCombinedPdfDate();
-    const reports = [prepareScoresPdfSection(), prepareStandingsPdfSection(), prepareMatchesPdfSection(), preparePrizeMoneyPdfSection()];
+    const reports = combinedPdfReports();
     const bodyHtml = reports.map((r, i) => `
       <section style="${i ? 'break-before:page;page-break-before:always;' : ''}">
         <div class="pdf-title">${r.title}</div>
