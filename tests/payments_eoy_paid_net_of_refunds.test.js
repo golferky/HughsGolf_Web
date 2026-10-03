@@ -37,8 +37,14 @@ assert(/^\$0\.00<div/.test(c.eoyPaidCellHtml(c.eoyPaidSummary('Dee', "Hugh's", '
 assert.strictEqual(c.eoyPaidCellHtml(null, fmtM), '—', 'non-roster players still show a dash');
 
 // wiring: the column, its totals and the recap card all use the net
-assert(/const eoy = isRoster \? eoyPaidSummary\(player, league, dFrom, dTo\) : null;/.test(src) && /const eoyPaid = eoy \? eoy\.net : null;/.test(src), 'row EOY Paid = net');
+assert(/let eoy = eoyPaidSummary\(player, league, dFrom, dTo\);/.test(src) && /if \(!isRoster && !\(eoy\.gross > 0 \|\| eoy\.refunded > 0\)\) eoy = null;/.test(src) && /const eoyPaid = eoy \? eoy\.net : null;/.test(src), 'row EOY Paid = net, for subs too when they paid');
 assert(/\$\{eoyPaidCellHtml\(r\.eoy, fmtM\)\}/.test(src), 'cell shows the refund detail');
 assert(/a\.eoyPaid \+= \(r\.eoyPaid\|\|0\);/.test(src), 'totals sum the net');
 assert(!/Desc='EOY Skins' AND Detail='Payment' AND Date >= \? AND Date < \?`,\[player,league,dFrom,dTo\]\)\[0\]\?\.s\|\|0\) : null;/.test(src), 'old gross-only query is gone from loadPayments');
+// the row rule: roster players always get a figure; a sub only if they paid or were refunded (Howard Gorman paid $20)
+db.push(['Howard', 'Payment', 20, '10/1/2026']);
+const rowEoy = (player, isRoster) => { let e = c.eoyPaidSummary(player, "Hugh's", 'a', 'b'); if (!isRoster && !(e.gross > 0 || e.refunded > 0)) e = null; return e; };
+assert.strictEqual(c.eoyPaidCellHtml(rowEoy('Howard', false), fmtM), '$20.00', 'a sub who paid EOY Skins shows what they paid');
+assert.strictEqual(c.eoyPaidCellHtml(rowEoy('Nobody', false), fmtM), '\u2014', 'a sub who never bought in still shows a dash');
+assert.strictEqual(c.eoyPaidCellHtml(rowEoy('Nobody', true), fmtM), '$0.00', 'a roster player who has not paid still shows $0.00');
 console.log('ok');
