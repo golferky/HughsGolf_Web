@@ -11023,6 +11023,7 @@ function adminGroupForSection(section) {
 
 function showAdminSection(section) {
   if (section === 'scores') { switchTab('scorecard'); return; }   // the score grid moved to its own Scores tab
+  window._adminSection = section;                                   // remembered so the Admin tab reopens where you left off
   pvTrack('admin', section);
   const group = adminGroupForSection(section);
 
@@ -11744,7 +11745,10 @@ function createReportPdf(kind) {
 
 function loadAdminTab() {
   if (!db) return;
-  showAdminSection('scores');
+  // Open the section you were last on (first visit: Players). The old default, 'scores', now lives in its own Scores tab, so
+  // asking for it from here would bounce straight back out of the Admin tab and make the tab look dead.
+  const remembered = window._adminSection;
+  showAdminSection(remembered && remembered !== 'scores' && ADMIN_SECTIONS.includes(remembered) ? remembered : 'players');
   document.getElementById('playerSearch').addEventListener('input', loadAdminPlayers);
   // Show Compare Live button only in sandbox environment
   const isSandboxEnv = isSandboxHost() || location.port === '8446';
