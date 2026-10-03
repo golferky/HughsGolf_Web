@@ -1444,6 +1444,7 @@
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Carrier</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Email Stats</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Text Stats</th>
+            <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Role</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Last Login</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Actions</th>
           </tr></thead>
@@ -17488,8 +17489,7 @@ async function doSetPassword() {
   await serverRun(`UPDATE Players SET Password=? WHERE Player=?`, [hash, name]);
   const player = query(`SELECT Player, Officer, Password FROM Players WHERE Player=?`, [name])[0];
   const officerKey = String(player?.Officer || '').trim().toLowerCase();
-  const role = officerKey === 'developer' ? 'developer' :
-               (officerKey === 'admin' || officerKey === 'president' || officerKey === 'secretary') ? 'admin' : 'player';
+  const role = roleFromOfficerValue(officerKey);
   await auditUserAction('password_set', `${name} set initial password`, 'source=first-login', 'INFO', name, role);
   saveDBToServer();
 
@@ -17689,8 +17689,7 @@ async function loginSuccess(player, opts = {}) {
   currentUser = {
     name: player.Player,
     officer,
-    role: officerKey === 'developer' ? 'developer' :
-          (officerKey === 'president' || officerKey === 'secretary') ? 'admin' : 'player'
+    role: roleFromOfficerValue(officer)          // one rule for every login path: developer | admin (Admin, President, Secretary) | player
   };
   currentUser.realRole = currentUser.role;   // admins/developers can temporarily view the app as a player (role is swapped, realRole is not)
 
@@ -18515,6 +18514,26 @@ function loadAdminKitty() {
     </div>`;
 }
 
+// How a player's stored Officer value is shown: the access LEVEL (Developer / Admin / Player) via the same rule used at login,
+// with the stored title in grey when it is a legacy one (President, Secretary).
+function playerRoleLabel(officer) {
+  const level = roleFromOfficerValue(officer);
+  const stored = String(officer || '').trim();
+  const legacy = level === 'admin' && stored && stored.toLowerCase() !== 'admin' ? stored : '';
+  return { level, text: level === 'developer' ? 'Developer' : level === 'admin' ? 'Admin' : 'Player', legacy };
+}
+function playerRoleCellHtml(officer) {
+  const r = playerRoleLabel(officer);
+  const style = r.level === 'developer' ? 'background:#ede7f6;color:#4527a0' : r.level === 'admin' ? 'background:#e3f2fd;color:#0d47a1' : 'background:#f5f5f5;color:#777';
+  return `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;${style}">${r.text}</span>${r.legacy ? ` <span style="font-size:10px;color:#999">(${String(r.legacy).replace(/[<>&]/g, '')})</span>` : ''}`;
+}
+// Value for the Edit Player Role dropdown ('' = Player, 'admin', 'developer'). A legacy title like Secretary maps to Admin so
+// opening and saving that player no longer demotes them to Player.
+function officerSelectValue(officer) {
+  const level = roleFromOfficerValue(officer);
+  return level === 'player' ? '' : level;
+}
+
 function loadAdminPlayers() {
   loadAdminKitty();
   try { renderPendingPlayers(); } catch (e) { console.warn('pending players', e); }
@@ -18565,6 +18584,7 @@ function loadAdminPlayers() {
       <td style="padding:7px 12px;font-size:12px">${r.CellCarrier||''}</td>
       <td style="padding:7px 12px;text-align:center">${r.EmailStats==='Y'?'✓':''}</td>
       <td style="padding:7px 12px;text-align:center">${r.TextStats==='Y'?'✓':''}</td>
+      <td style="padding:7px 12px;white-space:nowrap">${playerRoleCellHtml(r.Officer)}</td>
       <td style="padding:7px 12px;font-size:11px;color:${lastLogin?'#333':'#bbb'}">${lastLogin ? formatUtcSqlTimestamp(lastLogin) : 'Never'}</td>
       <td style="padding:7px 12px;text-align:center">
         <button onclick="editPlayer('${(r.Player||'').replace(/'/g,"\\'")}')" style="padding:3px 10px;border:1px solid #ddd;border-radius:4px;background:white;cursor:pointer;font-size:11px;margin-right:4px">Edit</button>
@@ -18641,7 +18661,7 @@ function editPlayer(name) {
   const roleSection = document.getElementById('pmRoleSection');
   if (currentUser?.role === 'developer') {
     roleSection.style.display = '';
-    document.getElementById('pmOfficer').value = r.Officer || '';
+    document.getElementById('pmOfficer').value = officerSelectValue(r.Officer);
   } else {
     roleSection.style.display = 'none';
   }
