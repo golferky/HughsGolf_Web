@@ -1860,6 +1860,13 @@
               <option value="90">90 days</option>
               <option value="0">All time</option>
             </select>
+            <label style="font-size:13px;font-weight:600;color:#333">Level</label>
+            <select id="pvLevelFilter" onchange="loadPageViews()" title="Show only usage by people at this security level" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+              <option value="">All levels</option>
+              <option value="developer">Developers</option>
+              <option value="admin">Admins</option>
+              <option value="player">Players</option>
+            </select>
             <label style="font-size:13px;font-weight:600;color:#333">Player</label>
             <select id="pvPlayerFilter" onchange="loadPageViews()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;min-width:140px">
               <option value="">All Players</option>
@@ -13123,6 +13130,18 @@ function pvSyncToggleBtn() {
   btn.style.color = window._pvDisabled ? '#c00' : 'var(--green)';
 }
 
+// Usage screen "Level" filter: who is at a security level comes from the Players table (Officer column), the same mapping the
+// app uses at login (developer / admin / player), not from whoever is logged in right now.
+function pvPlayersAtLevel(level, playerRows) {
+  if (!level) return null;                                           // null = no level filter
+  return playerRows.filter(r => roleFromOfficerValue(r.Officer) === level).map(r => r.Player);
+}
+function pvLevelClause(names) {
+  if (names === null) return '';
+  if (!names.length) return 'AND 0';                                  // a level nobody is in matches nothing
+  return `AND Player IN (${names.map(n => `'${String(n).replace(/'/g, "''")}'`).join(',')})`;
+}
+
 async function loadPageViews() {
   pvSyncToggleBtn();
   if (!db) return;
@@ -13134,18 +13153,22 @@ async function loadPageViews() {
   const days = parseInt(document.getElementById('pvDaysFilter')?.value ?? '30');
   const cutoff = days > 0 ? new Date(Date.now() - days * 86400000).toISOString().replace('T',' ').substring(0,19) : '2000-01-01 00:00:00';
 
+  // Security level filter (developers / admins / players) narrows everything below, including the Player dropdown
+  const levelNames = pvPlayersAtLevel(document.getElementById('pvLevelFilter')?.value || '', query(`SELECT Player, Officer FROM Players`));
+  const levelClause = pvLevelClause(levelNames);
+
   // Populate player dropdown
   const pvPlayerSel = document.getElementById('pvPlayerFilter');
-  const selectedPlayer = pvPlayerSel?.value || '';
-  const allPlayers = query(`SELECT DISTINCT Player FROM PageViews WHERE Ts >= '${cutoff}' AND Player IS NOT NULL ORDER BY Player`);
+  let selectedPlayer = pvPlayerSel?.value || '';
+  const allPlayers = query(`SELECT DISTINCT Player FROM PageViews WHERE Ts >= '${cutoff}' AND Player IS NOT NULL ${levelClause} ORDER BY Player`);
+  if (selectedPlayer && !allPlayers.some(r => r.Player === selectedPlayer)) selectedPlayer = '';   // not at this level any more
   if (pvPlayerSel) {
-    const cur = pvPlayerSel.value;
     pvPlayerSel.innerHTML = '<option value="">All Players</option>' +
-      allPlayers.map(r => `<option value="${r.Player}"${r.Player===cur?' selected':''}>${r.Player}</option>`).join('');
+      allPlayers.map(r => `<option value="${r.Player}"${r.Player===selectedPlayer?' selected':''}>${r.Player}</option>`).join('');
   }
 
   const playerClause = selectedPlayer ? `AND Player = '${selectedPlayer.replace(/'/g,"''")}'` : '';
-  const clause = `WHERE Ts >= '${cutoff}' ${playerClause}`;
+  const clause = `WHERE Ts >= '${cutoff}' ${levelClause} ${playerClause}`;
 
   const total    = query(`SELECT COUNT(*) as n FROM PageViews ${clause}`)[0]?.n ?? 0;
   const players  = query(`SELECT COUNT(DISTINCT Player) as n FROM PageViews ${clause} AND Player IS NOT NULL`)[0]?.n ?? 0;
