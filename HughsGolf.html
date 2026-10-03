@@ -2637,7 +2637,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20260928.6';
+const APP_VERSION = '20261003.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3713,6 +3713,44 @@ function ensureAppChangelogTable() {
   ensureVersion('20260928.2', 'September 28, 2026', [
     ['summary', 'Stats → Head to Head now ends with every player\'s overall win-loss record for the season.', '', 0],
     ['enhancement', 'Head to Head: All Players — Overall Record table', 'Below the selected player\'s table: every player\'s W/L/T, games, win % and record for the chosen season (or all seasons), ranked by win %. Selected player is highlighted; click a name to view their head-to-head.', 1],
+  ]);
+
+  // ── October 3, 2026: post-season rollout (PRs #1-#38 on sandbox-enhancements). Audit scripts are developer-only. ──
+  ensureVersion('20261003.1', 'October 3, 2026', [
+    ['summary', 'New Scores tab: everyone can now see the post-season scores, the live leaderboard (places, shots back and the prize you would win), skins and CTP winners. Prize Money is visible to everyone, and post-season Stableford is now an individual award.', '', 0],
+    ['adminsummary', 'Admins: a View switcher shows the app as a player sees it, you can clear one player\'s Front or Back 9, refunds now show in EOY Paid, and unpaid players are offered that week\'s skins when scoring starts.', '', 0],
+    ['enhancement', 'Scores tab for everyone (read-only for players)',
+     'Score Entry moved out of Admin into its own tab: scores, leaderboard, pots, skins results and CTP winners. Players see it but cannot change anything. PRs #25, #27.', 1],
+    ['enhancement', 'Post-season leaderboard: tied places, shots back, potential CC prize',
+     'Players level on net share a place (T2). A Back column shows strokes behind the leader and CC $ shows the prize you would win at the current standings (ties split the combined places). The League Championship needs a score in both weeks. PRs #14-#17, #20.', 2],
+    ['enhancement', 'Post-season Stableford is an individual award',
+     'Combined Week 1 + Week 2 points, a score in both weeks needed for a place, subs excluded (except the league-approved exception). The nightly tables still show everyone, and the team standings no longer include post-season. PRs #29, #30.', 3],
+    ['enhancement', 'SF Standings: sortable columns and sub detail',
+     'Click any column to sort. A * marks a week a sub played; click it to see the sub hole by hole. PR #31.', 4],
+    ['enhancement', 'League Rankings: ties share a rank', 'Equal combined averages show the same rank (T6) instead of consecutive numbers. PR #34.', 5],
+    ['enhancement', 'Post-season skins pay whole dollars',
+     'Each skin pays a whole dollar amount and the leftover goes to the Skins kitty. Only an officer\'s Calculate / Restate writes winners. PR #9.', 6],
+    ['enhancement', 'Prize Money tab visible to everyone', 'Players can see it; the buttons that change anything stay admin-only. PR #27.', 7],
+    ['admin', 'View as Player: Developer / Admin / Player switcher',
+     'Admins can see the app exactly as a player sees it and switch back; developers get all three levels. It never lasts past a reload and does not change what you are logged as. PRs #32, #33.', 1],
+    ['admin', 'Clear one player\'s Front or Back 9', 'A small x beside OUT / IN clears just that player and nine; the leaderboard, pots and skins refresh immediately. Refused if they already have paid winnings that week. PRs #22, #24.', 2],
+    ['admin', 'Unpaid players are offered that week\'s skins', 'When scoring starts for a player who has not paid for the week, a prompt offers the week\'s skins and opens the normal payment window. PR #21.', 3],
+    ['admin', 'Future-dated weeks are locked',
+     'Score fields and the Seed buttons for a week that has not happened yet are disabled, with a message, unless Allow Future Scores is on. The server block is unchanged. PR #23.', 4],
+    ['admin', 'Refunds: easier to find and record',
+     'Refunds are available once CTP results are in and show as owed until marked paid. The refund button hides when the player has a score that week, and "Week" only changes wrong payments. PRs #5, #6, #10.', 5],
+    ['admin', 'Payments tab: EOY Paid is net of refunds',
+     'Shows paid minus refund (and "owed" until paid back). Subs who paid into EOY Skins now show their amount. PRs #36, #38.', 6],
+    ['admin', 'EOY payments and CTPs', 'Existing untagged $20 EOY payments need no week assignment, a page reload no longer runs the EOY payout calculation, and CTPs can be assigned on post-season nights. PRs #1-#4.', 7],
+    ['admin', 'League Championship sub exception', 'The league-approved sub exception is eligible for the League Championship and the Stableford award for the 2026 season only; he stays a sub everywhere else. PRs #12, #30.', 8],
+    ['bugfix', 'Scores table showed Back 9 scores as Front 9', 'When Week 1 is the Back 9 the table read the grid in screen order. It now follows the real hole numbers. PR #35.', 1],
+    ['bugfix', 'Admin tab did nothing when clicked', 'Caused by moving Score Entry to its own tab; the Admin tab now opens the section you were last on. PR #37.', 2],
+    ['bugfix', 'False "haven\'t paid in" warning on post-season nights', 'Post-season players are paid through EOY Skins, which the warning did not check. PR #13.', 3],
+    ['bugfix', 'Sort by Score did nothing in Week 1', 'It sorted on an 18-hole total that only exists after both nines. It now sorts by running net like the leaderboard. PR #26.', 4],
+    ['bugfix', 'Board badge counted posts you cannot see', 'The red number now counts only posts you can see and clears once the Board loads. PR #28.', 5],
+    ['bugfix', 'Score Entry layout', 'Player badges no longer overlap the first hole score, and the right side is no longer cut off. PRs #18, #19.', 6],
+    ['developer', 'Read-only audit scripts (tools/)', 'wk1_pot_audit.py (Week 1 pot, $1 transfer simulation) and regular_skin_kitty_audit.py. They open a copy of the database read-only and write nothing. Not shown to players or admins. PRs #7, #8, #11.', 1],
+    ['developer', 'Sandbox rollout reference', 'Pull requests #1-#38 into sandbox-enhancements; see the PR recap document for the full list.', 2],
   ]);
 
   // ── Post-season fixes, Sep 27 2026 ──
