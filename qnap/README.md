@@ -30,3 +30,13 @@ Public address: `hughsgolf.duckdns.org:8445` → router port-forward 8445 → th
 ## Cutover marker
 `live/.is_live` — once it exists, the sandbox's "Compare Live / Refresh from live" uses the
 QNAP live DB instead of the Mac mini.
+
+## Python packages (flask, tzdata) — keep them OFF the home folder
+On the QNAP `/share/homes` is a **16 MB memory disk wiped at every reboot**, so `pip install --user` there vanishes and the
+sites fail with `No module named 'flask'` / `No time zone found with key America/New_York`. Install once onto the big volume:
+
+    /share/CACHEDEV1_DATA/.qpkg/Python3/opt/python3/bin/python3 -m pip install --no-cache-dir \
+        --target "/share/CACHEDEV3_DATA/My Stuff/HughsGolf/pylibs" flask tzdata
+
+`hughsgolf_ctl.sh` adds that `pylibs` folder to `PYTHONPATH`, and checks the packages before starting a site (it prints the
+fix above instead of failing silently).

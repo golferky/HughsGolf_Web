@@ -10,8 +10,11 @@
 # Each site is identified by the FOLDER its python runs from, so stopping one
 # can never touch the other.
 
-BASE="/share/CACHEDEV3_DATA/My Stuff/HughsGolf"
-PYTHON="/share/CACHEDEV1_DATA/.qpkg/Python3/opt/python3/bin/python3"
+BASE="${HG_BASE:-/share/CACHEDEV3_DATA/My Stuff/HughsGolf}"
+PYTHON="${HG_PYTHON:-/share/CACHEDEV1_DATA/.qpkg/Python3/opt/python3/bin/python3}"
+# Python packages the app needs (flask, tzdata) live HERE, on the big volume. They must NOT go in the home folder: on the
+# QNAP /share/homes is a 16 MB memory disk that is wiped on every reboot (that is what took the sites down after the move).
+LIBS="$BASE/pylibs"
 RUN_AS="GaryAdmin"
 
 # The cron watchdog runs as root (QNAP only allows root's crontab). Never run the
@@ -79,6 +82,12 @@ do_start() {
   if [ ! -f "$DIR/app.py" ]; then echo "[$SITE] no app.py in $DIR — not starting"; return 1; fi
   if [ -n "$(site_pids)" ]; then echo "[$SITE] already running (PID $(site_pids))"; return 0; fi
   if port_up; then echo "[$SITE] port $PORT is in use by something else — not starting"; return 1; fi
+  [ -d "$LIBS" ] && export PYTHONPATH="$LIBS${PYTHONPATH:+:$PYTHONPATH}"
+  if ! "$PYTHON" -c "import flask, zoneinfo; zoneinfo.ZoneInfo('America/New_York')" >/dev/null 2>&1; then
+    echo "[$SITE] NOT starting: Python is missing flask and/or tzdata (a reboot or Python update wipes the home-folder install)."
+    echo "  Fix (run on the QNAP, one time):  \"$PYTHON\" -m pip install --no-cache-dir --target \"$LIBS\" flask tzdata"
+    return 1
+  fi
   cd "$DIR" || return 1
   if [ "$SITE" = "sandbox" ] && [ -f "$BASE/live/.is_live" ]; then
     # After cutover (live/.is_live exists): sandbox "Refresh/Compare Live" uses the QNAP live DB.
