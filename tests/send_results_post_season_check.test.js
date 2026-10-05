@@ -17,11 +17,12 @@ function counts(date, { ps, field = [], scored = [], matchesPlayed = 0 }) {
 const names = n => Array.from({ length: n }, (_, i) => 'P' + i);
 // the reported case: post-season night, 19 scored, no Matches rows -> was "19 of 0", now complete
 let r = counts('20260929', { ps: true, field: names(19), scored: names(19), matchesPlayed: 0 });
-assert.deepStrictEqual(r, { playedCount: 19, scoredCount: 19, postSeason: true });
+assert.deepStrictEqual(r, { playedCount: 19, scoredCount: 19, postSeason: true, missing: [] });
 assert(r.playedCount > 0 && r.scoredCount >= r.playedCount, 'scores OK');
 // a paid-in player with no score yet is still flagged
 r = counts('20260929', { ps: true, field: names(21), scored: names(19) });
 assert.deepStrictEqual([r.scoredCount, r.playedCount], [19, 21]);
+assert.deepStrictEqual(r.missing, ['P19', 'P20'], 'names the paid-in players with no score');
 // someone scoring who is not in the field does not hide a missing field player
 r = counts('20260929', { ps: true, field: names(20), scored: [...names(19), 'Visitor'] });
 assert.deepStrictEqual([r.scoredCount, r.playedCount], [19, 20]);
@@ -44,4 +45,5 @@ const body = n => src.slice(src.indexOf('function ' + n + '('), src.indexOf('fun
   assert(!/FROM Matches WHERE CAST\(Date AS INTEGER\)=\$\{date\}[^`]*Points > 0/.test(b.slice(0, 900)), n + ' no longer counts Matches directly');
 });
 assert(/post-season field/.test(src), 'dialog says "post-season field"');
+assert(/no score yet: \$\{\(wk\.missing \|\| \[\]\)\.join\(', '\)\}/.test(src), 'dialog lists who is missing');
 console.log('ok');
