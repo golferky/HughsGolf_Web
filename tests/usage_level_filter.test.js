@@ -23,10 +23,10 @@ assert.strictEqual(c.pvLevelClause(["Player O'Neil", 'Player One']), "AND Player
 const pv = [['Dev One', 'admin'], ['Dev One', 'home'], ['Admin One', 'scorecard'], ['Player One', 'home'], [null, 'home']];
 function run(level, player) {
   const seen = [], els = { pvDaysFilter: { value: '30' }, pvLevelFilter: { value: level }, pvPlayerFilter: { value: player, innerHTML: '' } };
-  const ctx = vm.createContext({ db: {}, window: { _pageViewBuffer: [] }, parseInt, Date, document: { getElementById: id => els[id] || { innerHTML: '', style: {} }, querySelectorAll: () => [] },
-    pvSyncToggleBtn() {}, ADMIN_SECTIONS: [], PV_STATS_VIEWS: [], pvFlush: async () => {}, SERVER_RUN_QUEUE: Promise.resolve(), refreshLiveDbSnapshotForReadOnlyView: async () => {},
+  const ctx = vm.createContext({ db: {}, window: { _pageViewBuffer: [] }, parseInt, Date, document: { getElementById: id => els[id] || { innerHTML: '', style: {} }, querySelectorAll: () => [], querySelector: () => null },
+    pvSyncToggleBtn() {}, ADMIN_SECTIONS: [], PV_STATS_VIEWS: [], PV_DEV_ONLY_SECTIONS: [], ADMIN_ONLY_TABS: new Set(), pvFlush: async () => {}, SERVER_RUN_QUEUE: Promise.resolve(), refreshLiveDbSnapshotForReadOnlyView: async () => {},
     query: sql => { seen.push(sql); if (/FROM Players/.test(sql)) return players; return []; }, console });
-  vm.runInContext(extract('roleFromOfficerValue') + extract('pvPlayersAtLevel') + extract('pvLevelClause') + extract('pvTabKey') + extract('pvKnownTabKeys') + extract('pvUnusedKeys') + 'async ' + extract('loadPageViews', true).replace(/^async /, ''), ctx);
+  vm.runInContext(extract('roleFromOfficerValue') + extract('pvPlayersAtLevel') + extract('pvLevelClause') + extract('pvTabKey') + extract('pvTabLabel') + extract('pvDisplayKey') + extract('pvKnownTabKeys') + extract('pvUnusedKeys') + 'async ' + extract('loadPageViews', true).replace(/^async /, ''), ctx);
   return ctx.loadPageViews().then(() => ({ seen, els }));
 }
 (async () => {
