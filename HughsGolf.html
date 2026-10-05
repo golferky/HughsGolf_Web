@@ -13191,22 +13191,36 @@ function pvLevelClause(names) {
   return `AND Player IN (${names.map(n => `'${String(n).replace(/'/g, "''")}'`).join(',')})`;
 }
 
-// Usage "By Tab" also lists the tabs and sub-screens nobody opened in the chosen period / level / player (count 0).
+// Usage "By Tab" also lists the tabs and sub-screens nobody opened in the chosen period / level / player (count 0), but only the
+// ones that group could actually open: players never see Admin / Payments / Schedule, admins never see the developer-only
+// screens, so those are not listed as "unused" for them.
 const PV_STATS_VIEWS = ['individual', 'rankings', 'leaders', 'h2h'];
+const PV_DEV_ONLY_SECTIONS = ['leaguesettings', 'backups', 'sql', 'sync'];
 function pvTabKey(tab, subNav) { return subNav ? `${tab} › ${subNav}` : tab; }
-function pvKnownTabKeys() {
+// What the header calls a tab (e.g. 'scorecard' is the Scores tab, 'noshows' is Attendance); falls back to the stored name.
+function pvTabLabel(tab) {
+  let text = '';
+  try { text = (document.querySelector(`.tab[data-tab="${tab}"]`)?.textContent || '').replace(/^[^A-Za-z0-9]+/, '').trim(); } catch (e) {}
+  return text || tab;
+}
+function pvDisplayKey(tab, subNav) { return subNav ? `${pvTabLabel(tab)} › ${subNav}` : pvTabLabel(tab); }
+// level: '' (everyone) | 'player' | 'admin' | 'developer'
+function pvKnownTabKeys(level) {
   const tabs = Array.from(document.querySelectorAll('.tab[data-tab]')).map(el => el.getAttribute('data-tab'));
   const keys = [];
   tabs.forEach(t => {
-    keys.push(t);
-    if (t === 'admin') ADMIN_SECTIONS.forEach(a => keys.push(pvTabKey('admin', a)));
-    if (t === 'stats') PV_STATS_VIEWS.forEach(v => keys.push(pvTabKey('stats', v)));
+    if (level === 'player' && ADMIN_ONLY_TABS.has(t)) return;
+    keys.push({ tab: t, sub: null });
+    if (t === 'admin') ADMIN_SECTIONS.forEach(a => { if (level !== 'admin' || !PV_DEV_ONLY_SECTIONS.includes(a)) keys.push({ tab: 'admin', sub: a }); });
+    if (t === 'stats') PV_STATS_VIEWS.forEach(v => keys.push({ tab: 'stats', sub: v }));
   });
   return keys;
 }
 function pvUnusedKeys(known, used) {
   const seen = new Set(used);
-  return known.filter((k, i) => !seen.has(k) && known.indexOf(k) === i);
+  const out = [], done = new Set();
+  known.forEach(k => { const key = pvTabKey(k.tab, k.sub); if (!seen.has(key) && !done.has(key)) { done.add(key); out.push(k); } });
+  return out;
 }
 
 async function loadPageViews() {
@@ -13267,12 +13281,16 @@ async function loadPageViews() {
 
   const tabMax = byTab[0]?.n ?? 1;
   const usedKeys = byTab.map(r => pvTabKey(r.Tab, r.SubNav));
-  const unused = pvUnusedKeys(pvKnownTabKeys(), usedKeys);
+  // Which screens could this group open? A chosen player's own level wins over the Level filter.
+  const accessLevel = selectedPlayer
+    ? roleFromOfficerValue(query(`SELECT Officer FROM Players WHERE Player=?`, [selectedPlayer])[0]?.Officer)
+    : (document.getElementById('pvLevelFilter')?.value || '');
+  const unused = pvUnusedKeys(pvKnownTabKeys(accessLevel), usedKeys);
   document.getElementById('pvByTab').innerHTML = (byTab.map(r =>
-    barRow(pvTabKey(r.Tab, r.SubNav), r.n, tabMax)
+    barRow(pvDisplayKey(r.Tab, r.SubNav), r.n, tabMax)
   ).join('') || '<div style="color:#888;font-size:12px">No data yet</div>') +
     (unused.length ? `<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px">Not used (${unused.length})</div>` +
-      unused.map(k => barRow(`<span style="color:#999">${k}</span>`, 0, 1)).join('') : '');
+      unused.map(k => barRow(`<span style="color:#999">${pvDisplayKey(k.tab, k.sub)}</span>`, 0, 1)).join('') : '');
 
   const plMax = byPlayer[0]?.n ?? 1;
   document.getElementById('pvByPlayer').innerHTML = byPlayer.map(r =>
