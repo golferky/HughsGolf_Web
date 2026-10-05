@@ -13191,6 +13191,24 @@ function pvLevelClause(names) {
   return `AND Player IN (${names.map(n => `'${String(n).replace(/'/g, "''")}'`).join(',')})`;
 }
 
+// Usage "By Tab" also lists the tabs and sub-screens nobody opened in the chosen period / level / player (count 0).
+const PV_STATS_VIEWS = ['individual', 'rankings', 'leaders', 'h2h'];
+function pvTabKey(tab, subNav) { return subNav ? `${tab} › ${subNav}` : tab; }
+function pvKnownTabKeys() {
+  const tabs = Array.from(document.querySelectorAll('.tab[data-tab]')).map(el => el.getAttribute('data-tab'));
+  const keys = [];
+  tabs.forEach(t => {
+    keys.push(t);
+    if (t === 'admin') ADMIN_SECTIONS.forEach(a => keys.push(pvTabKey('admin', a)));
+    if (t === 'stats') PV_STATS_VIEWS.forEach(v => keys.push(pvTabKey('stats', v)));
+  });
+  return keys;
+}
+function pvUnusedKeys(known, used) {
+  const seen = new Set(used);
+  return known.filter((k, i) => !seen.has(k) && known.indexOf(k) === i);
+}
+
 async function loadPageViews() {
   pvSyncToggleBtn();
   if (!db) return;
@@ -13248,9 +13266,13 @@ async function loadPageViews() {
   };
 
   const tabMax = byTab[0]?.n ?? 1;
-  document.getElementById('pvByTab').innerHTML = byTab.map(r =>
-    barRow(r.SubNav ? `${r.Tab} › ${r.SubNav}` : r.Tab, r.n, tabMax)
-  ).join('') || '<div style="color:#888;font-size:12px">No data yet</div>';
+  const usedKeys = byTab.map(r => pvTabKey(r.Tab, r.SubNav));
+  const unused = pvUnusedKeys(pvKnownTabKeys(), usedKeys);
+  document.getElementById('pvByTab').innerHTML = (byTab.map(r =>
+    barRow(pvTabKey(r.Tab, r.SubNav), r.n, tabMax)
+  ).join('') || '<div style="color:#888;font-size:12px">No data yet</div>') +
+    (unused.length ? `<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px">Not used (${unused.length})</div>` +
+      unused.map(k => barRow(`<span style="color:#999">${k}</span>`, 0, 1)).join('') : '');
 
   const plMax = byPlayer[0]?.n ?? 1;
   document.getElementById('pvByPlayer').innerHTML = byPlayer.map(r =>
