@@ -11645,12 +11645,27 @@ function buildReportPdfPayload(kind) {
   };
 }
 
+// "Everyone who should have a score" vs "everyone who has one" for the send-results checks.
+// League night: players with match points (no-shows are 0-point Matches rows) vs players with a saved gross.
+// Post-season night: there are no matches, so the expected players are the ones in that week's post-season field (paid in
+// for that week and not refunded), and only their scores count; nobody in the field = nothing expected yet.
+function weekScoreCounts(date) {
+  let ctx = null;
+  try { ctx = getPostSeasonContextForDate(date); } catch (e) {}
+  const scored = query(`SELECT DISTINCT Player FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Gross IS NOT NULL AND Gross != 0`).map(r => r.Player);
+  if (ctx) {
+    const field = getEoySkinPlayersForWeek(ctx.season, ctx.week);
+    return { playedCount: field.size, scoredCount: scored.filter(pl => field.has(pl)).length, postSeason: true };
+  }
+  const playedCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Matches WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Points > 0`)[0]?.c || 0;
+  return { playedCount, scoredCount: scored.length, postSeason: false };
+}
+
 function checkReadyToSendPdf(date) {
   if (!db || !date) return;
   // Check 1: all scores in — compare against players who actually played (Points > 0),
   // so no-shows (0-pt forfeits in Matches, no Scores row) don't block the prompt
-  const playedCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Matches WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Points > 0`)[0]?.c || 0;
-  const scoredCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Gross IS NOT NULL AND Gross != 0`)[0]?.c || 0;
+  const { playedCount, scoredCount } = weekScoreCounts(date);
   if (playedCount === 0 || scoredCount < playedCount) return; // scores not complete yet — stay quiet
 
   // Check 2: all CTP holes resolved (winner or carryover)
@@ -11686,8 +11701,8 @@ async function sendWeekResults() {
   const date = parseInt(dateVal);
 
   // ── Check 1: Scores — exclude no-shows (0-pt Matches rows, no Scores row) ──
-  const playedCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Matches WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Points > 0`)[0]?.c || 0;
-  const scoredCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Gross IS NOT NULL AND Gross != 0`)[0]?.c || 0;
+  const wk = weekScoreCounts(date);
+  const { playedCount, scoredCount } = wk;
   const scoresOk = playedCount > 0 && scoredCount >= playedCount;
 
   // ── Check 2: CTPs assigned ────────────────────────────────────────────────
@@ -11717,7 +11732,7 @@ async function sendWeekResults() {
   box.style.cssText = 'background:white;border-radius:12px;padding:28px;max-width:420px;width:90%;font-family:"DM Sans",sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.3)';
 
   const checks = [
-    { ok: scoresOk, label: `Scores`, detail: scoresOk ? `All ${playedCount} players have scores` : `${scoredCount} of ${playedCount} players have scores (excluding no-shows)` },
+    { ok: scoresOk, label: `Scores`, detail: scoresOk ? `All ${playedCount} players have scores` : (wk.postSeason && !playedCount ? 'No post-season entries found for this week' : `${scoredCount} of ${playedCount} players have scores${wk.postSeason ? ' (post-season field)' : ' (excluding no-shows)'}`) },
     { ok: ctpsOk,   label: `CTPs`,   detail: ctpsOk   ? `All ${par3Count} CTP hole(s) assigned` : `${ctpWinners} of ${par3Count} CTP hole(s) assigned` },
     { ok: moneyOk,  label: `Paid out`, detail: moneyOk ? 'All winners paid' : `${unpaidCount} winner(s) not yet paid` },
   ];
