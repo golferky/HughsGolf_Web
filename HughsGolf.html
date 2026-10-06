@@ -1444,6 +1444,7 @@
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Carrier</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Email Stats</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Text Stats</th>
+            <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Plays</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Role</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Last Login</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Actions</th>
@@ -2201,6 +2202,19 @@
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="pmLogin"> Login Access</label>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="pmBlockSubs"> 🚫 Don't ask to sub</label>
       </div>
+      <div id="pmParticipationSection" style="margin-bottom:12px;padding:10px 12px;background:#eef7ee;border:1px solid #c8e6c9;border-radius:6px">
+        <label style="font-size:11px;font-weight:700;color:#2e7d32;display:block;margin-bottom:6px">🏌️ LEAGUE PARTICIPATION <span style="font-weight:400;color:#777">(separate from the access role)</span></label>
+        <select id="pmParticipates" style="width:100%;padding:7px 10px;border:1px solid #c8e6c9;border-radius:6px;font-size:13px;background:white">
+          <option value="Y">Plays in the league (scoring, teams, payments, standings, prizes)</option>
+          <option value="N">Does not play (e.g. a non-playing admin or viewer)</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:8px;cursor:pointer"><input type="checkbox" id="pmIsTest" onchange="updateTestOwnerRow()"> 🧪 Test account (left out of real-player lists, counts and messages)</label>
+        <div id="pmTestOwnerRow" style="display:none;margin-top:6px">
+          <label style="font-size:11px;font-weight:600;color:var(--gray)">TEST ACCOUNT OWNER</label>
+          <select id="pmTestOwner" style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;background:white"></select>
+          <div id="pmTestInfo" style="font-size:11px;color:#777;margin-top:4px"></div>
+        </div>
+      </div>
       <div id="pmRoleSection" style="display:none;margin-bottom:12px;padding:10px 12px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px">
         <label style="font-size:11px;font-weight:700;color:#e65100;display:block;margin-bottom:6px">🔐 ROLE (Developer only)</label>
         <select id="pmOfficer" style="width:100%;padding:7px 10px;border:1px solid #ffcc02;border-radius:6px;font-size:13px;background:white">
@@ -2637,7 +2651,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261006.1';
+const APP_VERSION = '20261006.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4249,6 +4263,7 @@ function playerAuditSnapshotFromForm() {
     TextStats: document.getElementById('pmTextStats').checked ? 'Y' : 'N',
     Login: document.getElementById('pmLogin').checked ? 'Y' : 'N',
     BlockSubs: document.getElementById('pmBlockSubs').checked ? 'Y' : 'N',
+    ...(playersHaveParticipationColumns() ? participationFormValues() : {}),
     Officer: (currentUser?.role === 'developer') ? (document.getElementById('pmOfficer')?.value || '') : undefined
   };
 }
@@ -11906,6 +11921,49 @@ function roleFromOfficerValue(officer) {
   return 'player';
 }
 
+// ── League participation: who is IN the league, separate from the access role above ───────────────────────────────────
+// Players.Officer decides what someone may DO (player / admin / developer). Players.Participates ('Y'/'N'; blank = Y) and
+// Players.IsTest ('Y'/'N'; blank = N) decide whether they BELONG in scoring, teams, subs, payments, attendance, standings,
+// prizes and messages. A non-playing admin is Officer=admin + Participates=N; a test account is IsTest=Y (with a TestOwner).
+// The server (/run-sql) refuses to create scores, matches, team/sub rows or buy-ins for anyone who is not a participant.
+function playersHaveParticipationColumns() {
+  try { return !!db && hasDbColumn('Players', 'Participates') && hasDbColumn('Players', 'IsTest'); } catch (e) { return false; }
+}
+function participantRowOk(row) {
+  return String(row?.Participates ?? 'Y').trim().toUpperCase() !== 'N' && String(row?.IsTest ?? 'N').trim().toUpperCase() !== 'Y';
+}
+function participantSql(alias) {   // SQL condition for "is a real league participant"; always true on a DB without the columns
+  const a = alias ? alias + '.' : '';
+  return playersHaveParticipationColumns() ? `(COALESCE(${a}Participates,'Y')!='N' AND COALESCE(${a}IsTest,'N')!='Y')` : '1=1';
+}
+function leaguePlayerNames() {     // everyone who may be picked for scoring, teams, subs, payments and prizes
+  return query(`SELECT Player FROM Players WHERE ${participantSql()} ORDER BY Player`).map(r => r.Player);
+}
+function participationLabel(row) { // for the Players list: what to show in the Plays column
+  const test = String(row?.IsTest ?? 'N').trim().toUpperCase() === 'Y';
+  if (test) return { kind: 'test', text: 'Test', owner: String(row?.TestOwner || '').trim() };
+  if (String(row?.Participates ?? 'Y').trim().toUpperCase() === 'N') return { kind: 'off', text: 'Not playing', owner: '' };
+  return { kind: 'on', text: 'Plays', owner: '' };
+}
+function participationCellHtml(row) {
+  const l = participationLabel(row);
+  const esc = v => String(v).replace(/[<>&]/g, '');
+  if (l.kind === 'test') return `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fff3e0;color:#e65100">Test</span>${l.owner ? ` <span style="font-size:10px;color:#999">(owner: ${esc(l.owner)})</span>` : ' <span style="font-size:10px;color:#c62828">(no owner)</span>'}`;
+  if (l.kind === 'off') return `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:#f5f5f5;color:#777">Not playing</span>`;
+  return '<span style="color:#2e7d32;font-size:12px">✓ Plays</span>';
+}
+// Last login IP and device for a player, from the login log (shown to help identify a test account's owner; ownership itself
+// is recorded in TestOwner, never guessed from an IP because IPs are shared).
+function lastLoginIpInfo(name) {
+  try {
+    const r = query(`SELECT details, log_time FROM LogTable WHERE method='login' AND text=? ORDER BY log_time DESC LIMIT 1`, [`${name} logged in`])[0];
+    if (!r) return null;
+    const ip = (String(r.details || '').match(/\bip=([^\s]+)/) || [])[1] || '';
+    const device = (String(r.details || '').match(/\bdevice=(.+?)(?:\s+\w+=|$)/) || [])[1] || '';
+    return { ip, device: device.trim(), at: r.log_time };
+  } catch (e) { return null; }
+}
+
 // ── View mode: Developer / Admin / Player ───────────────────────────────────────────────────────────────────────────
 // A developer can view the app as Developer, Admin or Player; an admin as Admin or Player. Every role check in the app reads
 // currentUser.role, so a view mode simply swaps that (the real role is kept in realRole) and re-renders. A mode can only ever
@@ -12528,6 +12586,7 @@ function showNeedSub() {
     FROM Players p
     WHERE p.Player NOT IN (SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season})
       AND COALESCE(p.BlockSubs,'N') != 'Y'
+      AND ${participantSql('p')}
       AND COALESCE(p.Status,'') NOT IN ('Pending','Rejected')
       AND NOT (COALESCE(p.Status,'')='Approved' AND COALESCE(p.ContactOK,'')!='Y')
       AND (
@@ -13118,7 +13177,7 @@ function showKittyPay() {
   document.getElementById('kittyPayNotify').checked = true;
 
   // Populate player dropdown
-  const players = query(`SELECT Player FROM Players ORDER BY Player`);
+  const players = query(`SELECT Player FROM Players WHERE ${participantSql()} ORDER BY Player`);
   document.getElementById('kittyPayPlayer').innerHTML = players.map(r => `<option value="${r.Player}">${r.Player}</option>`).join('');
 
   // Update source dropdown labels with current balances
@@ -13452,6 +13511,7 @@ async function loadLoginActivity(options = {}) {
     if (!excludeTestGolfers) return false;
     const name = String(player || '').trim();
     if (!name) return false;
+    if (playersHaveParticipationColumns() && query(`SELECT 1 FROM Players WHERE Player=? AND COALESCE(IsTest,'N')='Y' LIMIT 1`, [name]).length) return true;   // marked as a test account
     const playerRow = query(`SELECT 1 FROM Players WHERE Player=? LIMIT 1`, [name]);
     return playerRow.length > 0 && !historicalLeaguePlayers.has(name);
   };
@@ -18765,6 +18825,7 @@ function loadAdminPlayers() {
       <td style="padding:7px 12px;font-size:12px">${r.CellCarrier||''}</td>
       <td style="padding:7px 12px;text-align:center">${r.EmailStats==='Y'?'✓':''}</td>
       <td style="padding:7px 12px;text-align:center">${r.TextStats==='Y'?'✓':''}</td>
+      <td style="padding:7px 12px;white-space:nowrap">${participationCellHtml(r)}</td>
       <td style="padding:7px 12px;white-space:nowrap">${playerRoleCellHtml(r.Officer)}</td>
       <td style="padding:7px 12px;font-size:11px;color:${lastLogin?'#333':'#bbb'}">${lastLogin ? formatUtcSqlTimestamp(lastLogin) : 'Never'}</td>
       <td style="padding:7px 12px;text-align:center">
@@ -18789,6 +18850,7 @@ function openPlayerModal(name) {
   document.getElementById('pmTextStats').checked = false;
   document.getElementById('pmLogin').checked = true;
   document.getElementById('pmBlockSubs').checked = false;
+  loadParticipationFields(null);
   document.getElementById('pmPassword1').value = '';
   document.getElementById('pmPassword2').value = '';
   document.getElementById('pmPasswordHasOne').textContent = '';
@@ -18816,6 +18878,36 @@ function normalizeCarrier(val) {
   return map[v] || 'Other';
 }
 
+function participationFormValues() {
+  const isTest = document.getElementById('pmIsTest')?.checked;
+  return {
+    Participates: document.getElementById('pmParticipates')?.value === 'N' ? 'N' : 'Y',
+    IsTest: isTest ? 'Y' : 'N',
+    TestOwner: isTest ? (document.getElementById('pmTestOwner')?.value || '') : ''
+  };
+}
+function updateTestOwnerRow() {
+  const on = !!document.getElementById('pmIsTest')?.checked;
+  const row = document.getElementById('pmTestOwnerRow'); if (row) row.style.display = on ? '' : 'none';
+}
+function loadParticipationFields(r) {
+  const sec = document.getElementById('pmParticipationSection');
+  const have = playersHaveParticipationColumns();
+  if (sec) sec.style.display = have ? '' : 'none';
+  if (!have) return;
+  document.getElementById('pmParticipates').value = String(r?.Participates ?? 'Y').toUpperCase() === 'N' ? 'N' : 'Y';
+  document.getElementById('pmIsTest').checked = String(r?.IsTest ?? 'N').toUpperCase() === 'Y';
+  const owners = query(`SELECT Player FROM Players WHERE COALESCE(IsTest,'N')!='Y' AND Player != ? ORDER BY Player`, [r?.Player || '']).map(x => x.Player);
+  const sel = document.getElementById('pmTestOwner');
+  sel.innerHTML = '<option value="">— choose the owner —</option>' + owners.map(n => `<option value="${String(n).replace(/"/g, '&quot;')}">${String(n).replace(/[<>&]/g, '')}</option>`).join('');
+  sel.value = r?.TestOwner && owners.includes(r.TestOwner) ? r.TestOwner : '';
+  const info = r?.Player ? lastLoginIpInfo(r.Player) : null;
+  document.getElementById('pmTestInfo').textContent = info
+    ? `Last login: ${info.ip || 'unknown IP'}${info.device ? ' · ' + info.device : ''}. The owner is recorded here, not guessed from the IP (IPs are shared).`
+    : 'Ownership is recorded here, not guessed from an IP address (IPs are shared).';
+  updateTestOwnerRow();
+}
+
 function editPlayer(name) {
   const r = query(`SELECT * FROM Players WHERE Player=?`, [name])[0];
   if (!r) return;
@@ -18831,6 +18923,7 @@ function editPlayer(name) {
   document.getElementById('pmTextStats').checked = r.TextStats==='Y';
   document.getElementById('pmLogin').checked = r.Login==='Y';
   document.getElementById('pmBlockSubs').checked = r.BlockSubs==='Y';
+  loadParticipationFields(r);
   document.getElementById('pmPassword1').value = '';
   document.getElementById('pmPassword2').value = '';
   const hasPw = r.Password ? true : false;
@@ -19166,6 +19259,8 @@ async function savePlayer() {
   const afterAudit = playerAuditSnapshotFromForm();
 
   if (!fullName) { alert('Please enter a name'); return; }
+  const part = playersHaveParticipationColumns() ? participationFormValues() : null;
+  if (part && part.IsTest === 'Y' && !part.TestOwner) { alert('Choose who owns this test account.'); return; }
 
   if (pw1 || pw2) {
     if (pw1 !== pw2) { alert('Passwords do not match'); return; }
@@ -19187,6 +19282,7 @@ async function savePlayer() {
       'Login Access': o.Login,
       "Don't Ask to Sub": o.BlockSubs,
       ...(isDeveloper ? { 'Role (Officer)': o.Officer || '' } : {}),
+      ...(part ? { 'Plays in league': String(o.Participates || 'Y'), 'Test account': String(o.IsTest || 'N'), 'Test owner': o.TestOwner || '' } : {}),
     }, {
       'First Name': firstName,
       'Last Name': lastName,
@@ -19199,6 +19295,7 @@ async function savePlayer() {
       'Login Access': loginAccess,
       "Don't Ask to Sub": blockSubs,
       ...(isDeveloper ? { 'Role (Officer)': officerVal } : {}),
+      ...(part ? { 'Plays in league': part.Participates, 'Test account': part.IsTest, 'Test owner': part.TestOwner } : {}),
     });
     if (!proceed) return;
   }
@@ -19220,7 +19317,9 @@ async function savePlayer() {
           ca = carrier.replace(/'/g,"''"), on = originalName.replace(/'/g,"''"),
           fu = fullName.replace(/'/g,"''");
     const officerClause = isDeveloper ? `,Officer='${(officerVal||'').replace(/'/g,"''")}'` : '';
-    await runSqlPlayer(`UPDATE Players SET FirstName='${fn}',LastName='${ln}',Player='${fu}',Email='${em}',Phone='${ph}',CellCarrier='${ca}',EmailStats='${emailStats}',TextStats='${textStats}',Login='${loginAccess}',BlockSubs='${blockSubs}'${officerClause} WHERE Player='${on}'`);
+    const partClause = part ? `,Participates='${part.Participates}',IsTest='${part.IsTest}',TestOwner='${part.TestOwner.replace(/'/g,"''")}'` : '';
+    await runSqlPlayer(`UPDATE Players SET FirstName='${fn}',LastName='${ln}',Player='${fu}',Email='${em}',Phone='${ph}',CellCarrier='${ca}',EmailStats='${emailStats}',TextStats='${textStats}',Login='${loginAccess}',BlockSubs='${blockSubs}'${officerClause}${partClause} WHERE Player='${on}'`);
+    if (part) serverRun(`UPDATE Players SET Participates=?,IsTest=?,TestOwner=? WHERE Player=?`, [part.Participates, part.IsTest, part.TestOwner, originalName]);
     // Also update local memory for immediate UI
     if (isDeveloper) {
       serverRun(`UPDATE Players SET FirstName=?,LastName=?,Player=?,Email=?,Phone=?,CellCarrier=?,EmailStats=?,TextStats=?,Login=?,BlockSubs=?,Officer=? WHERE Player=?`,
@@ -19285,6 +19384,10 @@ async function savePlayer() {
           em = email.replace(/'/g,"''"), ph = phone.replace(/'/g,"''"),
           ca = carrier.replace(/'/g,"''"), fu = fullName.replace(/'/g,"''");
     await runSqlPlayer(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login,BlockSubs) VALUES ('${fn}','${ln}','${fu}','${em}','${ph}','${ca}','${emailStats}','${textStats}','${loginAccess}','${blockSubs}')`);
+    if (part) {
+      await runSqlPlayer(`UPDATE Players SET Participates='${part.Participates}',IsTest='${part.IsTest}',TestOwner='${part.TestOwner.replace(/'/g,"''")}' WHERE Player='${fu}'`);
+      serverRun(`UPDATE Players SET Participates=?,IsTest=?,TestOwner=? WHERE Player=?`, [part.Participates, part.IsTest, part.TestOwner, fullName]);
+    }
     serverRun(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login,BlockSubs) VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [firstName,lastName,fullName,email,phone,carrier,emailStats,textStats,loginAccess,blockSubs]);
     auditDbChange('player_add', 'Players', fullName, `${currentUser?.name || 'unknown'} added player ${fullName}`,
@@ -19382,7 +19485,7 @@ function loadAdminTeams() {
   });
 
   // Populate player dropdown in modal
-  const allPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r=>r.Player);
+  const allPlayers = leaguePlayerNames();
   document.getElementById('tpmPlayer').innerHTML = allPlayers.map(p=>`<option value="${p}">${p}</option>`).join('');
   makeSortable('teamsTable');
 }
@@ -19482,7 +19585,7 @@ function loadAdminSubs() {
   });
 
   // Populate player list in sub modal
-  const allPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r=>r.Player);
+  const allPlayers = leaguePlayerNames();
   document.getElementById('smPlayer').innerHTML = allPlayers.map(p=>`<option value="${p}">${p}</option>`).join('');
   document.getElementById('smDate').value = date;
 }
@@ -21461,7 +21564,7 @@ function buildEntryGrid() {
   const last5Map = getPlayerLast5Map(date);
 
   // All known players for sub picker (all who have ever played)
-  const allPlayers = query(`SELECT DISTINCT Player FROM Players ORDER BY Player`).map(r => r.Player);
+  const allPlayers = leaguePlayerNames();
 
   // Build slot list — one slot per team+grade
   // Each slot knows: team, grade, regularPlayer, activeName (sub or regular)
@@ -22481,7 +22584,7 @@ function openSubPicker(key) {
     GROUP BY Player ORDER BY cnt DESC`, [st.regular]).map(r=>r.Player)
     .filter(p => !slotFrequent.includes(p));
 
-  const allPlayers = st.allPlayers || query(`SELECT DISTINCT Player FROM Players ORDER BY Player`).map(r=>r.Player);
+  const allPlayers = st.allPlayers || leaguePlayerNames();
   const others = allPlayers.filter(p => p !== st.regular && !slotFrequent.includes(p) && !seasonFrequent.includes(p));
 
   // Store ordered player list for filtering

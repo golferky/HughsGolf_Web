@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261006.1-sandbox'
+VERSION    = '20261006.2-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1454,7 +1454,12 @@ def need_sub():
         for r in recipients:
             cur.execute("SELECT COALESCE(Status,''), COALESCE(ContactOK,''), COALESCE(BlockSubs,'N') FROM Players WHERE Player=?", (r,))
             row = cur.fetchone()
-            if (not row or r in roster or row[2] == 'Y' or row[0] in ('Pending', 'Rejected')
+            try:   # a non-playing or test account is never asked to sub (participation is separate from the access role)
+                cur.execute("SELECT 1 FROM Players WHERE Player=? AND (COALESCE(Participates,'Y')='N' OR COALESCE(IsTest,'N')='Y')", (r,))
+                not_participant = cur.fetchone() is not None
+            except Exception:
+                not_participant = False
+            if (not row or not_participant or r in roster or row[2] == 'Y' or row[0] in ('Pending', 'Rejected')
                     or (row[0] == 'Approved' and row[1] != 'Y')):
                 bad.append(r)
         conn.close()
@@ -2566,6 +2571,44 @@ def audit_data_change(cur, sql, rowcount=None, action=None):
     except Exception as e:
         print(f'[{now_local():%H:%M:%S}] audit log failed: {e}')
 
+# ── League participation guard ──────────────────────────────────────────────
+# Access role (Players.Officer) and league participation (Players.Participates / IsTest) are independent. Nobody who is not a
+# participant (not playing, or a test account) may be given scores, matches, team or sub rows, or a buy-in payment.
+# Only rows that would be NEW are blocked, so history already on file and later edits (refunds, paid dates) are untouched.
+_PARTICIPATION_TABLES = {          # table -> extra condition (buy-ins only for Payments; refunds and winnings are allowed)
+    'scores': '', 'matches': '', 'teams': '', 'subs': '',
+    'payments': " AND t.Detail = 'Payment'",
+}
+_PARTICIPATION_BLOCKED_SQL = "(COALESCE(p.Participates,'Y')='N' OR COALESCE(p.IsTest,'N')='Y')"
+_RENAME_ONLY_RE = _audit_re.compile(r'^\s*UPDATE\s+\w+\s+SET\s+Player\s*=', _audit_re.I)
+
+def _participation_active(cur):
+    """True if any player is marked not-playing or test (fast path: no flags = nothing to check)."""
+    try:
+        cur.execute("SELECT 1 FROM Players WHERE COALESCE(Participates,'Y')='N' OR COALESCE(IsTest,'N')='Y' LIMIT 1")
+        return cur.fetchone() is not None
+    except Exception:
+        return False
+
+def _nonparticipant_rows(cur, table):
+    """{(rowid, player)} of rows in `table` that belong to a non-participant."""
+    extra = _PARTICIPATION_TABLES[table]
+    try:
+        cur.execute(f'SELECT t.rowid, t.Player FROM "{table}" t JOIN Players p ON p.Player = t.Player WHERE {_PARTICIPATION_BLOCKED_SQL}{extra}')
+        return set((r[0], r[1]) for r in cur.fetchall())
+    except Exception:
+        return set()
+
+def _participation_table_for(sql):
+    """The guarded table this statement writes to (INSERT/UPDATE/REPLACE only), else None."""
+    m = _AUDIT_TABLE_RE.match(sql or '')
+    if not m or m.group(1).lower() not in _PARTICIPATION_TABLES:
+        return None
+    head = (sql or '').lstrip().upper()
+    if head.startswith('DELETE') or _RENAME_ONLY_RE.match(sql or ''):
+        return None
+    return m.group(1).lower()
+
 @app.route('/run-sql', methods=['POST'])
 def run_sql():
     """Execute a SQL statement against HughsGolf.db (Developer only — token required)."""
@@ -2588,8 +2631,26 @@ def run_sql():
             _guard = bool(_m and _m.group(1).lower() == 'scores' and not _future_override()
                           and not sql.lstrip().upper().startswith('DELETE'))
             _before = _future_score_keys(cur) if _guard else None
+            _ptab = _participation_table_for(sql) if _participation_active(cur) else None
+            _pbefore = _nonparticipant_rows(cur, _ptab) if _ptab else None
             cur.execute(sql)
             _rc = cur.rowcount
+            if _ptab:
+                _new = _nonparticipant_rows(cur, _ptab) - _pbefore
+                if _new:
+                    conn.rollback(); conn.close()
+                    names = sorted({n for _, n in _new})
+                    actor, role = _audit_actor()
+                    print(f'[{now_local():%H:%M:%S}] BLOCKED non-participant row in {_ptab} by {actor}: {", ".join(names)}')
+                    try:
+                        _lc = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+                        audit_data_change(_lc.cursor(), sql, 0, action='BLOCKED_NON_PARTICIPANT')
+                        _lc.commit(); _lc.close()
+                    except Exception:
+                        pass
+                    return jsonify({'ok': False, 'error': 'participation',
+                                    'message': f'{", ".join(names)} is not a league participant (not playing, or a test account), so no {_ptab} can be saved for them. '
+                                               f'Change Plays in the league on their player record first.'}), 403
             if _guard and (_future_score_keys(cur) - _before):
                 conn.rollback(); conn.close()
                 actor, role = _audit_actor()
@@ -2685,6 +2746,12 @@ def ensure_schema():
         if 'BlockSubs' not in cols:
             cur.execute("ALTER TABLE Players ADD COLUMN BlockSubs TEXT DEFAULT 'N'")
             print(f'[{now_local():%H:%M:%S}] Schema check: added missing Players.BlockSubs column')
+        # League participation (who is IN the league) is separate from the access role in Players.Officer.
+        # Blank = existing behavior: everyone keeps playing, nobody is a test account.
+        for _col, _ddl in (('Participates', "TEXT DEFAULT 'Y'"), ('IsTest', "TEXT DEFAULT 'N'"), ('TestOwner', 'TEXT')):
+            if _col not in cols:
+                cur.execute(f'ALTER TABLE Players ADD COLUMN {_col} {_ddl}')
+                print(f'[{now_local():%H:%M:%S}] Schema check: added Players.{_col} column')
         conn.commit()
         # Global service settings live in LeagueSettings (LeagueParms is legacy and may be dropped).
         lp_cols = _table_cols(cur, 'LeagueParms')          # empty set if the table no longer exists
