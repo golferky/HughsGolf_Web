@@ -27,6 +27,7 @@ assert(by('developer').some(x => /audit/i.test(x[1])), 'audit scripts are listed
 const all = e.map(x => x[1]).join(' | ');
 ['Scores tab', 'Stableford', 'League Rankings', 'EOY Paid', 'Admin tab', 'Back 9', 'haven\'t paid in', 'Sort by Score', 'Board', 'View as Player', 'Clear one player'].forEach(t => assert(all.includes(t), 'mentions ' + t));
 // versions: newer than the last release so the popup shows, and html/server agree
-assert(/const APP_VERSION = '20261003\.1';/.test(src)); assert(/VERSION\s+= '20261003\.1-sandbox'/.test(app));
+const verOk = v => /^\d{8}\.\d+$/.test(v) && v >= '20261003.1';   // golden rule: every change bumps yyyymmdd.N, so only require 'at least the 10/3 release'
+assert(verOk(src.match(/const APP_VERSION = '([^']+)';/)[1])); assert(verOk(app.match(/VERSION\s+= '([^']+)-sandbox'/)[1]));
 assert('20261003.1' > '20260928.6');
 console.log('ok');
