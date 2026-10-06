@@ -26,7 +26,7 @@ function run(level, player) {
   const ctx = vm.createContext({ db: {}, window: { _pageViewBuffer: [] }, parseInt, Date, document: { getElementById: id => els[id] || { innerHTML: '', style: {} }, querySelectorAll: () => [], querySelector: () => null },
     pvSyncToggleBtn() {}, ADMIN_SECTIONS: [], PV_STATS_VIEWS: [], PV_DEV_ONLY_SECTIONS: [], ADMIN_ONLY_TABS: new Set(), pvFlush: async () => {}, SERVER_RUN_QUEUE: Promise.resolve(), refreshLiveDbSnapshotForReadOnlyView: async () => {},
     query: sql => { seen.push(sql); if (/FROM Players/.test(sql)) return players; return []; }, console });
-  vm.runInContext(extract('roleFromOfficerValue') + extract('pvPlayersAtLevel') + extract('pvLevelClause') + extract('pvTabKey') + extract('pvTabLabel') + extract('pvDisplayKey') + extract('pvKnownTabKeys') + extract('pvUnusedKeys') + 'async ' + extract('loadPageViews', true).replace(/^async /, ''), ctx);
+  vm.runInContext(extract('roleFromOfficerValue') + extract('pvPlayersAtLevel') + extract('pvLevelClause') + extract('pvTestExcludeClause') + extract('playersHaveParticipationColumns') + extract('pvTabKey') + extract('pvTabLabel') + extract('pvDisplayKey') + extract('pvKnownTabKeys') + extract('pvUnusedKeys') + 'async ' + extract('loadPageViews', true).replace(/^async /, ''), ctx);
   return ctx.loadPageViews().then(() => ({ seen, els }));
 }
 (async () => {

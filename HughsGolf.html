@@ -1382,6 +1382,7 @@
       <button onclick="showAdminSection('serverlog')" id="adminBtnServerlog" class="admin-subbtn">📋 Server Log</button>
       <button onclick="showAdminSection('emaillog')" id="adminBtnEmaillog" class="admin-subbtn">✉️ Emails Sent</button>
       <button onclick="showAdminSection('pageviews')" id="adminBtnPageviews" class="admin-subbtn">📊 Usage</button>
+      <button onclick="showAdminSection('whoson')" id="adminBtnWhoson" class="admin-subbtn">🟢 Who's On</button>
     </div>
 
     <div id="adminPdfs" style="display:none">
@@ -1444,6 +1445,7 @@
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Carrier</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Email Stats</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Text Stats</th>
+            <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Plays</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Role</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Last Login</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Actions</th>
@@ -1837,6 +1839,27 @@
     </div>
     <!-- ── END COMPARE LIVE ────────────────────────────────────────────── -->
 
+    <div id="adminWhoson" style="display:none">
+      <div class="card">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+          <span>🟢 Who's On</span>
+          <div style="display:flex;gap:10px;align-items:center">
+            <label style="font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="whosonShowTest" onchange="loadWhoson()"> Show test accounts</label>
+            <button onclick="loadWhoson()" style="padding:5px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
+            <span id="whosonUpdated" style="font-size:11px;color:#aaa;font-weight:400"></span>
+          </div>
+        </div>
+        <div style="padding:12px 16px">
+          <div id="whosonSummary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
+          <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">People</div>
+          <div id="whosonPeople" style="overflow-x:auto"></div>
+          <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px">Open connections right now <span style="font-weight:400;text-transform:none;color:#999">(matched to the IPs players have used; an IP nobody has used is "unknown")</span></div>
+          <div id="whosonConnections" style="overflow-x:auto"></div>
+          <div style="font-size:11px;color:#999;margin-top:12px">An IP is not a person: households and phone carriers share them, and one player uses several. This screen is information for admins; it never blocks anyone from logging in. A person appears here only while they have the app open (it checks in about once a minute).</div>
+        </div>
+      </div>
+    </div>
+
     <div id="adminPageviews" style="display:none">
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
@@ -2200,6 +2223,19 @@
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="pmTextStats"> Text Stats</label>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="pmLogin"> Login Access</label>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="pmBlockSubs"> 🚫 Don't ask to sub</label>
+      </div>
+      <div id="pmParticipationSection" style="margin-bottom:12px;padding:10px 12px;background:#eef7ee;border:1px solid #c8e6c9;border-radius:6px">
+        <label style="font-size:11px;font-weight:700;color:#2e7d32;display:block;margin-bottom:6px">🏌️ LEAGUE PARTICIPATION <span style="font-weight:400;color:#777">(separate from the access role)</span></label>
+        <select id="pmParticipates" style="width:100%;padding:7px 10px;border:1px solid #c8e6c9;border-radius:6px;font-size:13px;background:white">
+          <option value="Y">Plays in the league (scoring, teams, payments, standings, prizes)</option>
+          <option value="N">Does not play (e.g. a non-playing admin or viewer)</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:8px;cursor:pointer"><input type="checkbox" id="pmIsTest" onchange="updateTestOwnerRow()"> 🧪 Test account (left out of real-player lists, counts and messages)</label>
+        <div id="pmTestOwnerRow" style="display:none;margin-top:6px">
+          <label style="font-size:11px;font-weight:600;color:var(--gray)">TEST ACCOUNT OWNER</label>
+          <select id="pmTestOwner" style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;background:white"></select>
+          <div id="pmTestInfo" style="font-size:11px;color:#777;margin-top:4px"></div>
+        </div>
       </div>
       <div id="pmRoleSection" style="display:none;margin-bottom:12px;padding:10px 12px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px">
         <label style="font-size:11px;font-weight:700;color:#e65100;display:block;margin-bottom:6px">🔐 ROLE (Developer only)</label>
@@ -2637,7 +2673,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261006.1';
+const APP_VERSION = '20261006.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3547,7 +3583,7 @@ async function sendServerSql(serverSql, sessionToken) {
       }
       return json;
     }
-    lastError = json.error || `HTTP ${resp.status}`;
+    lastError = (json.error === 'participation' && json.message) ? json.message : (json.error || `HTTP ${resp.status}`);   // the server's plain-English participation reason
     if (!/disk I\/O error|database is locked|database is busy/i.test(lastError)) break;
     await delay(250 * (attempt + 1));
   }
@@ -4249,6 +4285,7 @@ function playerAuditSnapshotFromForm() {
     TextStats: document.getElementById('pmTextStats').checked ? 'Y' : 'N',
     Login: document.getElementById('pmLogin').checked ? 'Y' : 'N',
     BlockSubs: document.getElementById('pmBlockSubs').checked ? 'Y' : 'N',
+    ...(playersHaveParticipationColumns() ? participationFormValues() : {}),
     Officer: (currentUser?.role === 'developer') ? (document.getElementById('pmOfficer')?.value || '') : undefined
   };
 }
@@ -11075,10 +11112,10 @@ function loadSchedule() {
 }
 
 // ── ADMIN TAB ──
-const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','emaillog','proposals'];
+const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals'];
 const ADMIN_GROUPS = {
   tables: ['players','teams','subs','leaguesettings'],
-  logging: ['loginactivity','serverlog','pageviews','emaillog']
+  logging: ['loginactivity','serverlog','pageviews','whoson','emaillog']
 };
 
 function adminIdSuffix(section) {
@@ -11141,6 +11178,8 @@ function showAdminSection(section) {
   if (section==='expenses')  loadExpenses();
   if (section==='compare')   loadCompareSection();
   if (section==='pageviews') loadPageViews();
+  if (section==='whoson')    loadWhoson();
+  else stopWhosonRefresh();
   if (section==='emaillog')  loadEmailLog();
   if (section==='testdb')    loadTestDbPanel();
 }
@@ -11908,6 +11947,61 @@ function roleFromOfficerValue(officer) {
   return 'player';
 }
 
+// ── League participation: who is IN the league, separate from the access role above ───────────────────────────────────
+// Players.Officer decides what someone may DO (player / admin / developer). Players.Participates ('Y'/'N'; blank = Y) and
+// Players.IsTest ('Y'/'N'; blank = N) decide whether they BELONG in scoring, teams, subs, payments, attendance, standings,
+// prizes and messages. A non-playing admin is Officer=admin + Participates=N; a test account is IsTest=Y (with a TestOwner).
+// The server (/run-sql) refuses to create scores, matches, team/sub rows or buy-ins for anyone who is not a participant.
+function playersHaveParticipationColumns() {
+  try { return !!db && hasDbColumn('Players', 'Participates') && hasDbColumn('Players', 'IsTest'); } catch (e) { return false; }
+}
+function participantRowOk(row) {
+  return String(row?.Participates ?? 'Y').trim().toUpperCase() !== 'N' && String(row?.IsTest ?? 'N').trim().toUpperCase() !== 'Y';
+}
+function participantSql(alias) {   // SQL condition for "is a real league participant"; always true on a DB without the columns
+  const a = alias ? alias + '.' : '';
+  return playersHaveParticipationColumns() ? `(COALESCE(${a}Participates,'Y')!='N' AND COALESCE(${a}IsTest,'N')!='Y')` : '1=1';
+}
+function notTestSql(alias) {       // SQL condition: not a test account (used for operational lists where a non-playing admin is still real)
+  const a = alias ? alias + '.' : '';
+  return playersHaveParticipationColumns() ? `COALESCE(${a}IsTest,'N')!='Y'` : '1=1';
+}
+// A test account's owner must be a real admin or developer account (never free text, another test account, or itself).
+function testOwnerCandidates(excludeName) {
+  return query(`SELECT Player, Officer FROM Players WHERE ${notTestSql()} ORDER BY Player`)
+    .filter(r => r.Player !== excludeName && ['admin', 'developer'].includes(roleFromOfficerValue(r.Officer))).map(r => r.Player);
+}
+function leaguePlayerNames() {     // everyone who may be picked for scoring, teams, subs, payments and prizes
+  return query(`SELECT Player FROM Players WHERE ${participantSql()} ORDER BY Player`).map(r => r.Player);
+}
+function participationLabel(row) { // for the Players list: what to show in the Plays column
+  const test = String(row?.IsTest ?? 'N').trim().toUpperCase() === 'Y';
+  if (test) return { kind: 'test', text: 'Test', owner: String(row?.TestOwner || '').trim() };
+  if (String(row?.Participates ?? 'Y').trim().toUpperCase() === 'N') return { kind: 'off', text: 'Not playing', owner: '' };
+  return { kind: 'on', text: 'Plays', owner: '' };
+}
+function participationCellHtml(row, validOwners) {   // validOwners: names that are real admin/developer accounts (omit to skip the check)
+  const l = participationLabel(row);
+  const esc = v => String(v).replace(/[<>&]/g, '');
+  if (l.kind === 'test') {
+    const badOwner = l.owner && validOwners && !validOwners.includes(l.owner);
+    return `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fff3e0;color:#e65100">Test</span>${l.owner ? (badOwner ? ` <span style="font-size:10px;color:#c62828">(owner ${esc(l.owner)} is not an admin)</span>` : ` <span style="font-size:10px;color:#999">(owner: ${esc(l.owner)})</span>`) : ' <span style="font-size:10px;color:#c62828">(no owner)</span>'}`;
+  }
+  if (l.kind === 'off') return `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:#f5f5f5;color:#777">Not playing</span>`;
+  return '<span style="color:#2e7d32;font-size:12px">✓ Plays</span>';
+}
+// Last login IP and device for a player, from the login log (shown to help identify a test account's owner; ownership itself
+// is recorded in TestOwner, never guessed from an IP because IPs are shared).
+function lastLoginIpInfo(name) {
+  try {
+    const r = query(`SELECT details, log_time FROM LogTable WHERE method='login' AND text=? ORDER BY log_time DESC LIMIT 1`, [`${name} logged in`])[0];
+    if (!r) return null;
+    const ip = (String(r.details || '').match(/\bip=([^\s]+)/) || [])[1] || '';
+    const device = (String(r.details || '').match(/\bdevice=(.+?)(?:\s+\w+=|$)/) || [])[1] || '';
+    return { ip, device: device.trim(), at: r.log_time };
+  } catch (e) { return null; }
+}
+
 // ── View mode: Developer / Admin / Player ───────────────────────────────────────────────────────────────────────────
 // A developer can view the app as Developer, Admin or Player; an admin as Admin or Player. Every role check in the app reads
 // currentUser.role, so a view mode simply swaps that (the real role is kept in realRole) and re-renders. A mode can only ever
@@ -12187,8 +12281,10 @@ async function saveDBToServer(successLabel, btnId, _retries = 1) {
         showStaleDbSavePrompt(json.serverModifiedMs);
         return;
       }
-      throw new Error(json.error || 'Save failed');
+      if (json.error === 'participation' && json.message) alert('Not saved: ' + json.message);
+      throw new Error(json.message || json.error || 'Save failed');
     }
+    if (json.participationStripped && json.message) alert(json.message);   // the server left non-participant rows out of a full save
     if (json.modifiedMs) {
       SERVER_DB_MODIFIED_MS = json.modifiedMs;
       SERVER_DB_MODIFIED = json.modifiedMs / 1000; // this tab's own save — don't flag it as "someone else"
@@ -12530,6 +12626,7 @@ function showNeedSub() {
     FROM Players p
     WHERE p.Player NOT IN (SELECT Player FROM Teams WHERE League="Hugh's" AND Year=${season})
       AND COALESCE(p.BlockSubs,'N') != 'Y'
+      AND ${participantSql('p')}
       AND COALESCE(p.Status,'') NOT IN ('Pending','Rejected')
       AND NOT (COALESCE(p.Status,'')='Approved' AND COALESCE(p.ContactOK,'')!='Y')
       AND (
@@ -13120,7 +13217,7 @@ function showKittyPay() {
   document.getElementById('kittyPayNotify').checked = true;
 
   // Populate player dropdown
-  const players = query(`SELECT Player FROM Players ORDER BY Player`);
+  const players = query(`SELECT Player FROM Players WHERE ${participantSql()} ORDER BY Player`);
   document.getElementById('kittyPayPlayer').innerHTML = players.map(r => `<option value="${r.Player}">${r.Player}</option>`).join('');
 
   // Update source dropdown labels with current balances
@@ -13234,6 +13331,12 @@ function pvLevelClause(names) {
 // screens, so those are not listed as "unused" for them.
 const PV_STATS_VIEWS = ['individual', 'rankings', 'leaders', 'h2h'];
 const PV_DEV_ONLY_SECTIONS = ['leaguesettings', 'backups', 'sql', 'sync'];
+function pvTestExcludeClause() {   // test accounts are not real users: leave their page views out of every Usage figure
+  try {
+    if (!playersHaveParticipationColumns()) return '';
+    return `AND (Player IS NULL OR Player NOT IN (SELECT Player FROM Players WHERE COALESCE(IsTest,'N')='Y'))`;
+  } catch (e) { return ''; }
+}
 function pvTabKey(tab, subNav) { return subNav ? `${tab} › ${subNav}` : tab; }
 // What the header calls a tab (e.g. 'scorecard' is the Scores tab, 'noshows' is Attendance); falls back to the stored name.
 function pvTabLabel(tab) {
@@ -13261,6 +13364,75 @@ function pvUnusedKeys(known, used) {
   return out;
 }
 
+// ── Who's On: the app checks in about once a minute; the server records player + real IP + tab + device ──────────────────
+const HEARTBEAT_MS = 60000;
+async function sendHeartbeat(login) {
+  try {
+    if (!currentUser?.name || (document.hidden && !login)) return null;
+    const token = await ensureSaveToken();
+    const resp = await fetch('/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Save-Token': token },
+      body: JSON.stringify({ player: currentUser.name, tab: activeTabName(), device: detectDevice(), login: !!login }) });
+    return await resp.json();
+  } catch (e) { return null; }   // presence is best-effort and must never get in the way of the app
+}
+function startHeartbeat() {
+  clearInterval(window._heartbeatTimer);
+  sendHeartbeat(true);
+  window._heartbeatTimer = setInterval(() => sendHeartbeat(false), HEARTBEAT_MS);
+}
+function whosonAgeText(sec) {
+  if (sec === null || sec === undefined) return 'unknown';
+  if (sec < 60) return 'just now';
+  const m = Math.round(sec / 60);
+  if (m < 90) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return h < 36 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+}
+// Pure renderer: data is what /whos-on returns; opts.showTest includes test accounts. Returns the three HTML blocks.
+function whosonRender(data, opts) {
+  opts = opts || {};
+  const e = v => String(v ?? '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+  const all = data?.people || [];
+  const people = all.filter(p => opts.showTest || !p.isTest);
+  const online = people.filter(p => p.online);
+  const roleBadge = r => r === 'developer' ? '<span style="font-size:10px;color:#4527a0">(developer)</span>' : r === 'admin' ? '<span style="font-size:10px;color:#0d47a1">(admin)</span>' : '';
+  const stat = (label, val) => `<div style="background:#f5f0e8;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--green)">${val}</div><div style="font-size:11px;color:#666">${label}</div></div>`;
+  const connections = data?.connections || [];
+  const unknown = connections.filter(c => c.unknown);
+  const summary = stat('On now', online.length) + stat('Seen recently', people.length - online.length) + stat('Open connections', connections.reduce((n, c) => n + c.count, 0)) + stat('Unknown IPs', unknown.length);
+  const th = t => `<th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:left;font-size:12px">${t}</th>`;
+  const td = (t, st = '') => `<td style="padding:5px 10px;font-size:12px;border-bottom:1px solid #eee;${st}">${t}</td>`;
+  const peopleHtml = people.length ? `<table style="border-collapse:collapse;width:100%"><thead><tr>${th('Player')}${th('Status')}${th('Viewing')}${th('Device')}${th('IP')}${th('Also seen on this IP')}</tr></thead><tbody>${
+    people.map(p => `<tr>${td(`<strong>${e(p.player)}</strong> ${roleBadge(p.role)}${p.isTest ? ' <span style="font-size:10px;color:#e65100">(test)</span>' : ''}${p.participates === false && !p.isTest ? ' <span style="font-size:10px;color:#777">(not playing)</span>' : ''}`)}${
+      td(p.online ? '<span style="color:#2e7d32">● on now</span>' : `<span style="color:#999">○ ${whosonAgeText(p.secondsAgo)}</span>`)}${td(e(p.tab) || '—')}${td(e(p.device) || '—')}${
+      td(`<span style="font-family:'DM Mono',monospace">${e(p.ip) || '—'}</span>${p.knownIps > 1 ? ` <span style="font-size:10px;color:#999">(${p.knownIps} IPs)</span>` : ''}`)}${
+      td((p.otherPlayersOnIp || []).length ? e(p.otherPlayersOnIp.join(', ')) : '<span style="color:#ccc">—</span>')}</tr>`).join('')}</tbody></table>`
+    : '<div style="color:#888;font-size:12px">Nobody has checked in yet. People appear here once they have the app open (updated about once a minute).</div>';
+  const connHtml = connections.length ? `<table style="border-collapse:collapse;width:100%"><thead><tr>${th('IP')}${th('Connections')}${th('Matches')}</tr></thead><tbody>${
+    connections.map(c => `<tr>${td(`<span style="font-family:'DM Mono',monospace">${e(c.ip)}</span>`)}${td(c.count)}${td(c.unknown ? '<span style="color:#e65100;font-weight:600">unknown</span>' : e(c.players.join(', ')))}</tr>`).join('')}</tbody></table>`
+    : '<div style="color:#888;font-size:12px">No open connections reported (this list only works when the server runs on Linux, such as the QNAP).</div>';
+  return { summary, people: peopleHtml, connections: connHtml };
+}
+async function loadWhoson() {
+  stopWhosonRefresh();
+  try {
+    const token = await ensureSaveToken();
+    const data = await (await fetch('/whos-on', { headers: { 'X-Save-Token': token } })).json();
+    if (!data.ok) throw new Error(data.error || 'failed');
+    const out = whosonRender(data, { showTest: !!document.getElementById('whosonShowTest')?.checked });
+    document.getElementById('whosonSummary').innerHTML = out.summary;
+    document.getElementById('whosonPeople').innerHTML = out.people;
+    document.getElementById('whosonConnections').innerHTML = out.connections;
+    const ts = document.getElementById('whosonUpdated');
+    if (ts) ts.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  } catch (err) {
+    const el = document.getElementById('whosonPeople');
+    if (el) el.innerHTML = `<div style="color:#c62828;font-size:12px">Could not load: ${String(err.message || err).replace(/[<>&]/g, '')}</div>`;
+  }
+  window._whosonTimer = setTimeout(() => { if (window._adminSection === 'whoson') loadWhoson(); }, 30000);   // keeps itself fresh while the screen is open
+}
+function stopWhosonRefresh() { clearTimeout(window._whosonTimer); }
+
 async function loadPageViews() {
   pvSyncToggleBtn();
   if (!db) return;
@@ -13274,7 +13446,7 @@ async function loadPageViews() {
 
   // Security level filter (developers / admins / players) narrows everything below, including the Player dropdown
   const levelNames = pvPlayersAtLevel(document.getElementById('pvLevelFilter')?.value || '', query(`SELECT Player, Officer FROM Players`));
-  const levelClause = pvLevelClause(levelNames);
+  const levelClause = pvLevelClause(levelNames) + ' ' + pvTestExcludeClause();
 
   // Populate player dropdown
   const pvPlayerSel = document.getElementById('pvPlayerFilter');
@@ -13451,9 +13623,10 @@ async function loadLoginActivity(options = {}) {
     ...query(`SELECT DISTINCT Player FROM Subs WHERE Player IS NOT NULL AND Player != ''`).map(r => r.Player)
   ]);
   const isTestGolfer = (player) => {
-    if (!excludeTestGolfers) return false;
     const name = String(player || '').trim();
     if (!name) return false;
+    if (playersHaveParticipationColumns() && query(`SELECT 1 FROM Players WHERE Player=? AND COALESCE(IsTest,'N')='Y' LIMIT 1`, [name]).length) return true;   // marked test account: always left out of real-player counts
+    if (!excludeTestGolfers) return false;
     const playerRow = query(`SELECT 1 FROM Players WHERE Player=? LIMIT 1`, [name]);
     return playerRow.length > 0 && !historicalLeaguePlayers.has(name);
   };
@@ -13630,7 +13803,7 @@ async function loadLoginActivity(options = {}) {
   const playerSel = document.getElementById('loginActivityPlayer');
   const previousPlayer = playerSel ? playerSel.value : '';
   if (playerSel) {
-    const players = query(`SELECT DISTINCT Player FROM Players WHERE Login='Y' ORDER BY Player`)
+    const players = query(`SELECT DISTINCT Player FROM Players WHERE Login='Y' AND ${notTestSql()} ORDER BY Player`)
       .filter(r => includeLoginStatPlayer(r.Player));
     playerSel.innerHTML = '<option value="">All players</option>' +
       players.map(r => `<option value="${r.Player}">${r.Player}</option>`).join('');
@@ -13750,7 +13923,7 @@ async function revokeLoginAccess(playerName) {
 
 // ── Known legitimate app routes (anything else is "suspicious") ─────────────
 const KNOWN_ROUTES = ['/', '/HughsGolf.html', '/HughsGolf.db', '/HughsGolf-test.db', '/db-info', '/db-info-test', '/save-token', '/save', '/save-test', '/reset-test-db', '/rebuild-test-db', '/delete-test-db', '/send-reset', '/verify-reset',
-  '/notify-login', '/flask-log', '/backup-list', '/restore-backup', '/delete-backup', '/undo-backup-delete', '/save-backup-note', '/restart-server', '/need-sub', '/send-report-pdf', '/notify-payout', '/fetch-gallus', '/get-ip', '/favicon.ico'];
+  '/notify-login', '/heartbeat', '/whos-on', '/flask-log', '/backup-list', '/restore-backup', '/delete-backup', '/undo-backup-delete', '/save-backup-note', '/restart-server', '/need-sub', '/send-report-pdf', '/notify-payout', '/fetch-gallus', '/get-ip', '/favicon.ico'];
 
 function parseLogLine(line) {
   // Typical format: IP - - [timestamp] "METHOD /path HTTP/1.1" STATUS -
@@ -15663,7 +15836,7 @@ async function doGallusSubmit() {
   // Resolve a Gallus-formatted name ("Last, First" or "Last First") to a Players table entry
   function resolveGallusPlayerName(gallusName) {
     // 1. Exact match first (case-insensitive)
-    let m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [gallusName]);
+    let m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${participantSql()} LIMIT 1`, [gallusName]);
     if (m.length) return m[0].Player;
 
     // 2. Gallus "Last, First" → flip to "First Last"
@@ -15671,7 +15844,7 @@ async function doGallusSubmit() {
       const parts = gallusName.split(',').map(s => s.trim());
       if (parts.length === 2) {
         const flipped = `${parts[1]} ${parts[0]}`;
-        m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [flipped]);
+        m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${participantSql()} LIMIT 1`, [flipped]);
         if (m.length) return m[0].Player;
       }
     } else {
@@ -15679,7 +15852,7 @@ async function doGallusSubmit() {
       const words = gallusName.trim().split(/\s+/);
       if (words.length === 2) {
         const flipped = `${words[1]} ${words[0]}`;
-        m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [flipped]);
+        m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${participantSql()} LIMIT 1`, [flipped]);
         if (m.length) return m[0].Player;
       }
     }
@@ -15687,7 +15860,7 @@ async function doGallusSubmit() {
     // 4. Last-name-only fuzzy fallback
     const lastName = gallusName.includes(',') ? gallusName.split(',')[0].trim() : gallusName.trim().split(/\s+/)[0];
     if (lastName.length >= 3) {
-      m = query(`SELECT DISTINCT Player FROM Players WHERE Player LIKE ? COLLATE NOCASE LIMIT 1`, [`%${lastName}%`]);
+      m = query(`SELECT DISTINCT Player FROM Players WHERE Player LIKE ? COLLATE NOCASE AND ${participantSql()} LIMIT 1`, [`%${lastName}%`]);
       if (m.length) return m[0].Player;
     }
 
@@ -15698,7 +15871,7 @@ async function doGallusSubmit() {
     const existing = document.getElementById('gallusRemapModal');
     if (existing) existing.remove();
 
-    const allPlayers = query(`SELECT DISTINCT Player FROM Players ORDER BY Player`).map(r => r.Player);
+    const allPlayers = leaguePlayerNames();
     const { players } = pendingImport;
 
     const modal = document.createElement('div');
@@ -15938,7 +16111,7 @@ async function handlePhotoUpload(file) {
 
 function showPhotoVerifyModal(players, frontBack, group) {
   // Get all known player names for the dropdowns
-  const allPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r => r.Player);
+  const allPlayers = leaguePlayerNames();
 
   // Try to auto-match each extracted name to a known player
   function bestMatch(extractedName) {
@@ -16155,7 +16328,7 @@ function loadGallusQueue() {
       _qSubFreq[reg.Player][s.Player] = (_qSubFreq[reg.Player][s.Player] || 0) + 1;
     });
   } catch(e) {}
-  const _qAllPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r => r.Player);
+  const _qAllPlayers = leaguePlayerNames();
 
 
   // Group rows by Date + URL
@@ -16436,7 +16609,7 @@ async function importAllPendingGallus() {
       // Resolve recorder
       let sentBy = '';
       if (recorder) {
-        const rm = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [recorder]);
+        const rm = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${notTestSql()} LIMIT 1`, [recorder]);   // the recorder may be a non-playing admin, never a test account
         sentBy = rm.length ? rm[0].Player : recorder;
       }
 
@@ -16448,7 +16621,7 @@ async function importAllPendingGallus() {
       try { db.run('ALTER TABLE GallusImport ADD COLUMN SentBy TEXT'); } catch(e) {}
 
       for (const p of players) {
-        const match = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [p.name]);
+        const match = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${participantSql()} LIMIT 1`, [p.name]);
         const resolvedName = match.length ? match[0].Player : p.name;
         if (roundGuid) {
           const dup = query(`SELECT ID FROM GallusImport WHERE Date=? AND GallusName=? AND URL LIKE ? LIMIT 1`,
@@ -16681,7 +16854,7 @@ function showGallusVerifyModal(url, date) {
     `;
   }
 
-  const allPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r => r.Player);
+  const allPlayers = leaguePlayerNames();
   renderGallusVerifyBody(allPlayers);
   document.getElementById('gallusVerifyModal').style.display = 'flex';
 }
@@ -16964,7 +17137,7 @@ async function doGallusFetch() {
 
     // Auto-detect recorder from page title
     if (json.recorder) {
-      const _recMatch2 = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [json.recorder]);
+      const _recMatch2 = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${notTestSql()} LIMIT 1`, [json.recorder]);
       window._gallusSentBy = _recMatch2.length ? _recMatch2[0].Player : json.recorder;
     }
 
@@ -16973,7 +17146,7 @@ async function doGallusFetch() {
     let previewHtml = `${_recLabel}<div style="font-weight:600;margin-bottom:6px;color:var(--green)">${frontBack} 9 — ${players.length} players found:</div>`;
     let matched = 0;
     players.forEach(p => {
-      const inSystem = query(`SELECT 1 FROM Players WHERE Player=?`, [p.name]).length > 0;
+      const inSystem = query(`SELECT 1 FROM Players WHERE Player=? AND ${participantSql()}`, [p.name]).length > 0;
       const scores = p.scores.map(s => s ?? '—').join('  ');
       previewHtml += `<div style="padding:4px 0;border-bottom:1px solid #f0f0f0">
         <span style="font-weight:600;color:${inSystem?'#2e7d32':'#c62828'}">${p.name}</span>
@@ -17930,6 +18103,8 @@ async function loginSuccess(player, opts = {}) {
     checkPlayerProfileOnLogin(player.Player);
   }
 
+  startHeartbeat();   // Who's On: record this login's IP and keep checking in while the app is open
+
   // ── Periodic check: has this session been kicked out by another login? ──
   clearInterval(window._sessionCheckInterval);
   window._sessionCheckInterval = setInterval(() => {
@@ -18103,6 +18278,7 @@ async function logoutUser(reason) {
     console.warn('logout final save failed:', e);
   }
   clearInterval(window._sessionCheckInterval);
+  clearInterval(window._heartbeatTimer);   // Who's On: stop checking in once logged out
   window._mySessionToken = null;
   currentUser = null;
   updateViewAsPlayerUi();                 // hides the View-as-Player button and banner
@@ -18736,6 +18912,7 @@ function loadAdminPlayers() {
       if (m) lastLoginMap[m[1]] = r.lt;
     });
 
+  const validTestOwners = playersHaveParticipationColumns() ? testOwnerCandidates('') : null;
   const tbody = document.getElementById('playersBody');
   tbody.innerHTML = '';
   rows.filter(r => {
@@ -18767,6 +18944,7 @@ function loadAdminPlayers() {
       <td style="padding:7px 12px;font-size:12px">${r.CellCarrier||''}</td>
       <td style="padding:7px 12px;text-align:center">${r.EmailStats==='Y'?'✓':''}</td>
       <td style="padding:7px 12px;text-align:center">${r.TextStats==='Y'?'✓':''}</td>
+      <td style="padding:7px 12px;white-space:nowrap">${participationCellHtml(r, validTestOwners)}</td>
       <td style="padding:7px 12px;white-space:nowrap">${playerRoleCellHtml(r.Officer)}</td>
       <td style="padding:7px 12px;font-size:11px;color:${lastLogin?'#333':'#bbb'}">${lastLogin ? formatUtcSqlTimestamp(lastLogin) : 'Never'}</td>
       <td style="padding:7px 12px;text-align:center">
@@ -18791,6 +18969,7 @@ function openPlayerModal(name) {
   document.getElementById('pmTextStats').checked = false;
   document.getElementById('pmLogin').checked = true;
   document.getElementById('pmBlockSubs').checked = false;
+  loadParticipationFields(null);
   document.getElementById('pmPassword1').value = '';
   document.getElementById('pmPassword2').value = '';
   document.getElementById('pmPasswordHasOne').textContent = '';
@@ -18818,6 +18997,36 @@ function normalizeCarrier(val) {
   return map[v] || 'Other';
 }
 
+function participationFormValues() {
+  const isTest = document.getElementById('pmIsTest')?.checked;
+  return {
+    Participates: document.getElementById('pmParticipates')?.value === 'N' ? 'N' : 'Y',
+    IsTest: isTest ? 'Y' : 'N',
+    TestOwner: isTest ? (document.getElementById('pmTestOwner')?.value || '') : ''
+  };
+}
+function updateTestOwnerRow() {
+  const on = !!document.getElementById('pmIsTest')?.checked;
+  const row = document.getElementById('pmTestOwnerRow'); if (row) row.style.display = on ? '' : 'none';
+}
+function loadParticipationFields(r) {
+  const sec = document.getElementById('pmParticipationSection');
+  const have = playersHaveParticipationColumns();
+  if (sec) sec.style.display = have ? '' : 'none';
+  if (!have) return;
+  document.getElementById('pmParticipates').value = String(r?.Participates ?? 'Y').toUpperCase() === 'N' ? 'N' : 'Y';
+  document.getElementById('pmIsTest').checked = String(r?.IsTest ?? 'N').toUpperCase() === 'Y';
+  const owners = testOwnerCandidates(r?.Player || '');   // real admin/developer accounts only
+  const sel = document.getElementById('pmTestOwner');
+  sel.innerHTML = '<option value="">— choose the owner —</option>' + owners.map(n => `<option value="${String(n).replace(/"/g, '&quot;')}">${String(n).replace(/[<>&]/g, '')}</option>`).join('');
+  sel.value = r?.TestOwner && owners.includes(r.TestOwner) ? r.TestOwner : '';
+  const info = r?.Player ? lastLoginIpInfo(r.Player) : null;
+  document.getElementById('pmTestInfo').textContent = info
+    ? `Last login: ${info.ip || 'unknown IP'}${info.device ? ' · ' + info.device : ''}. The owner is recorded here, not guessed from the IP (IPs are shared).`
+    : 'Ownership is recorded here, not guessed from an IP address (IPs are shared).';
+  updateTestOwnerRow();
+}
+
 function editPlayer(name) {
   const r = query(`SELECT * FROM Players WHERE Player=?`, [name])[0];
   if (!r) return;
@@ -18833,6 +19042,7 @@ function editPlayer(name) {
   document.getElementById('pmTextStats').checked = r.TextStats==='Y';
   document.getElementById('pmLogin').checked = r.Login==='Y';
   document.getElementById('pmBlockSubs').checked = r.BlockSubs==='Y';
+  loadParticipationFields(r);
   document.getElementById('pmPassword1').value = '';
   document.getElementById('pmPassword2').value = '';
   const hasPw = r.Password ? true : false;
@@ -19168,6 +19378,9 @@ async function savePlayer() {
   const afterAudit = playerAuditSnapshotFromForm();
 
   if (!fullName) { alert('Please enter a name'); return; }
+  const part = playersHaveParticipationColumns() ? participationFormValues() : null;
+  if (part && part.IsTest === 'Y' && !part.TestOwner) { alert('Choose who owns this test account.'); return; }
+  if (part && part.IsTest === 'Y' && !testOwnerCandidates(fullName).includes(part.TestOwner)) { alert('The test account owner must be a real admin or developer account.'); return; }
 
   if (pw1 || pw2) {
     if (pw1 !== pw2) { alert('Passwords do not match'); return; }
@@ -19189,6 +19402,7 @@ async function savePlayer() {
       'Login Access': o.Login,
       "Don't Ask to Sub": o.BlockSubs,
       ...(isDeveloper ? { 'Role (Officer)': o.Officer || '' } : {}),
+      ...(part ? { 'Plays in league': String(o.Participates || 'Y'), 'Test account': String(o.IsTest || 'N'), 'Test owner': o.TestOwner || '' } : {}),
     }, {
       'First Name': firstName,
       'Last Name': lastName,
@@ -19201,6 +19415,7 @@ async function savePlayer() {
       'Login Access': loginAccess,
       "Don't Ask to Sub": blockSubs,
       ...(isDeveloper ? { 'Role (Officer)': officerVal } : {}),
+      ...(part ? { 'Plays in league': part.Participates, 'Test account': part.IsTest, 'Test owner': part.TestOwner } : {}),
     });
     if (!proceed) return;
   }
@@ -19222,7 +19437,9 @@ async function savePlayer() {
           ca = carrier.replace(/'/g,"''"), on = originalName.replace(/'/g,"''"),
           fu = fullName.replace(/'/g,"''");
     const officerClause = isDeveloper ? `,Officer='${(officerVal||'').replace(/'/g,"''")}'` : '';
-    await runSqlPlayer(`UPDATE Players SET FirstName='${fn}',LastName='${ln}',Player='${fu}',Email='${em}',Phone='${ph}',CellCarrier='${ca}',EmailStats='${emailStats}',TextStats='${textStats}',Login='${loginAccess}',BlockSubs='${blockSubs}'${officerClause} WHERE Player='${on}'`);
+    const partClause = part ? `,Participates='${part.Participates}',IsTest='${part.IsTest}',TestOwner='${part.TestOwner.replace(/'/g,"''")}'` : '';
+    await runSqlPlayer(`UPDATE Players SET FirstName='${fn}',LastName='${ln}',Player='${fu}',Email='${em}',Phone='${ph}',CellCarrier='${ca}',EmailStats='${emailStats}',TextStats='${textStats}',Login='${loginAccess}',BlockSubs='${blockSubs}'${officerClause}${partClause} WHERE Player='${on}'`);
+    if (part) serverRun(`UPDATE Players SET Participates=?,IsTest=?,TestOwner=? WHERE Player=?`, [part.Participates, part.IsTest, part.TestOwner, originalName]);
     // Also update local memory for immediate UI
     if (isDeveloper) {
       serverRun(`UPDATE Players SET FirstName=?,LastName=?,Player=?,Email=?,Phone=?,CellCarrier=?,EmailStats=?,TextStats=?,Login=?,BlockSubs=?,Officer=? WHERE Player=?`,
@@ -19287,6 +19504,10 @@ async function savePlayer() {
           em = email.replace(/'/g,"''"), ph = phone.replace(/'/g,"''"),
           ca = carrier.replace(/'/g,"''"), fu = fullName.replace(/'/g,"''");
     await runSqlPlayer(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login,BlockSubs) VALUES ('${fn}','${ln}','${fu}','${em}','${ph}','${ca}','${emailStats}','${textStats}','${loginAccess}','${blockSubs}')`);
+    if (part) {
+      await runSqlPlayer(`UPDATE Players SET Participates='${part.Participates}',IsTest='${part.IsTest}',TestOwner='${part.TestOwner.replace(/'/g,"''")}' WHERE Player='${fu}'`);
+      serverRun(`UPDATE Players SET Participates=?,IsTest=?,TestOwner=? WHERE Player=?`, [part.Participates, part.IsTest, part.TestOwner, fullName]);
+    }
     serverRun(`INSERT INTO Players (FirstName,LastName,Player,Email,Phone,CellCarrier,EmailStats,TextStats,Login,BlockSubs) VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [firstName,lastName,fullName,email,phone,carrier,emailStats,textStats,loginAccess,blockSubs]);
     auditDbChange('player_add', 'Players', fullName, `${currentUser?.name || 'unknown'} added player ${fullName}`,
@@ -19384,7 +19605,7 @@ function loadAdminTeams() {
   });
 
   // Populate player dropdown in modal
-  const allPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r=>r.Player);
+  const allPlayers = leaguePlayerNames();
   document.getElementById('tpmPlayer').innerHTML = allPlayers.map(p=>`<option value="${p}">${p}</option>`).join('');
   makeSortable('teamsTable');
 }
@@ -19484,7 +19705,7 @@ function loadAdminSubs() {
   });
 
   // Populate player list in sub modal
-  const allPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r=>r.Player);
+  const allPlayers = leaguePlayerNames();
   document.getElementById('smPlayer').innerHTML = allPlayers.map(p=>`<option value="${p}">${p}</option>`).join('');
   document.getElementById('smDate').value = date;
 }
@@ -21463,7 +21684,7 @@ function buildEntryGrid() {
   const last5Map = getPlayerLast5Map(date);
 
   // All known players for sub picker (all who have ever played)
-  const allPlayers = query(`SELECT DISTINCT Player FROM Players ORDER BY Player`).map(r => r.Player);
+  const allPlayers = leaguePlayerNames();
 
   // Build slot list — one slot per team+grade
   // Each slot knows: team, grade, regularPlayer, activeName (sub or regular)
@@ -22483,7 +22704,7 @@ function openSubPicker(key) {
     GROUP BY Player ORDER BY cnt DESC`, [st.regular]).map(r=>r.Player)
     .filter(p => !slotFrequent.includes(p));
 
-  const allPlayers = st.allPlayers || query(`SELECT DISTINCT Player FROM Players ORDER BY Player`).map(r=>r.Player);
+  const allPlayers = st.allPlayers || leaguePlayerNames();
   const others = allPlayers.filter(p => p !== st.regular && !slotFrequent.includes(p) && !seasonFrequent.includes(p));
 
   // Store ordered player list for filtering
