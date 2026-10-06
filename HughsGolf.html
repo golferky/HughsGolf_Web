@@ -2637,7 +2637,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261003.1';
+const APP_VERSION = '20261006.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -11018,6 +11018,27 @@ function loadSchedule() {
   const roundLen = numTeams - 1;
 
   const tb = tbody('schedTable');
+  // Post-season nights are not in the Schedule table (no matchups: everyone plays); list them at the top (newest first) with the nine
+  // each week plays. Placed outside the round numbering below so Rnd labels do not move.
+  try {
+    const psDates = parsePostSeasonDates(getSeasonSettings(parseInt(year))?.PostSeasonDt);
+    if (psDates) {
+      const psMap = getPostSeasonFrontBackMap(psDates.week1, psDates.week2);
+      const have = new Set(rows.map(r => String(r.sDate)));
+      [[2, psDates.week2, psMap.week2Fb], [1, psDates.week1, psMap.week1Fb]].forEach(([wk, d, nine]) => {
+        if (have.has(String(d))) return;
+        const played = playedDates.has(String(d));
+        const tr = document.createElement('tr');
+        tr.style.background = '#f6eefb';
+        tr.innerHTML = `
+          <td style="background:#f6eefb;border-top:2px solid #7b1fa2"><strong>${fmtDate(d)}</strong>
+            <span style="margin-left:6px;font-size:10px;background:#7b1fa2;color:#fff;padding:1px 5px;border-radius:3px;font-weight:600">Post-season Wk ${wk}</span></td>
+          <td style="font-size:12px;background:#f6eefb;color:#7b1fa2">All players · ${nine} 9</td>
+          <td class="ctr" style="background:#f6eefb">${played ? '<span class="badge badge-win">✓ Played</span>' : '<span style="color:#ccc;font-size:11px">—</span>'}</td>`;
+        tb.appendChild(tr);
+      });
+    }
+  } catch (e) { console.warn('schedule post-season rows', e); }
   rows.forEach((r, idx) => {
     const matchups = [];
     for (let i=1; i<=24; i++) {
