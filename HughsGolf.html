@@ -11676,7 +11676,9 @@ function weekScoreCounts(date) {
   const scored = query(`SELECT DISTINCT Player FROM Scores WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Gross IS NOT NULL AND Gross != 0`).map(r => r.Player);
   if (ctx) {
     const field = getEoySkinPlayersForWeek(ctx.season, ctx.week);
-    return { playedCount: field.size, scoredCount: scored.filter(pl => field.has(pl)).length, postSeason: true };
+    const have = new Set(scored);
+    const missing = Array.from(field).filter(pl => !have.has(pl)).sort();
+    return { playedCount: field.size, scoredCount: field.size - missing.length, postSeason: true, missing };
   }
   const playedCount = query(`SELECT COUNT(DISTINCT Player) as c FROM Matches WHERE CAST(Date AS INTEGER)=${date} AND League="Hugh's" AND Points > 0`)[0]?.c || 0;
   return { playedCount, scoredCount: scored.length, postSeason: false };
@@ -11753,7 +11755,7 @@ async function sendWeekResults() {
   box.style.cssText = 'background:white;border-radius:12px;padding:28px;max-width:420px;width:90%;font-family:"DM Sans",sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.3)';
 
   const checks = [
-    { ok: scoresOk, label: `Scores`, detail: scoresOk ? `All ${playedCount} players have scores` : (wk.postSeason && !playedCount ? 'No post-season entries found for this week' : `${scoredCount} of ${playedCount} players have scores${wk.postSeason ? ' (post-season field)' : ' (excluding no-shows)'}`) },
+    { ok: scoresOk, label: `Scores`, detail: scoresOk ? `All ${playedCount} players have scores` : (wk.postSeason && !playedCount ? 'No post-season entries found for this week' : `${scoredCount} of ${playedCount} players have scores${wk.postSeason ? ` (post-season field) — no score yet: ${(wk.missing || []).join(', ')}` : ' (excluding no-shows)'}`) },
     { ok: ctpsOk,   label: `CTPs`,   detail: ctpsOk   ? `All ${par3Count} CTP hole(s) assigned` : `${ctpWinners} of ${par3Count} CTP hole(s) assigned` },
     { ok: moneyOk,  label: `Paid out`, detail: moneyOk ? 'All winners paid' : `${unpaidCount} winner(s) not yet paid` },
   ];
