@@ -2651,7 +2651,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261006.2';
+const APP_VERSION = '20261006.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3561,7 +3561,7 @@ async function sendServerSql(serverSql, sessionToken) {
       }
       return json;
     }
-    lastError = json.error || `HTTP ${resp.status}`;
+    lastError = (json.error === 'participation' && json.message) ? json.message : (json.error || `HTTP ${resp.status}`);   // the server's plain-English participation reason
     if (!/disk I\/O error|database is locked|database is busy/i.test(lastError)) break;
     await delay(250 * (attempt + 1));
   }
@@ -11936,6 +11936,15 @@ function participantSql(alias) {   // SQL condition for "is a real league partic
   const a = alias ? alias + '.' : '';
   return playersHaveParticipationColumns() ? `(COALESCE(${a}Participates,'Y')!='N' AND COALESCE(${a}IsTest,'N')!='Y')` : '1=1';
 }
+function notTestSql(alias) {       // SQL condition: not a test account (used for operational lists where a non-playing admin is still real)
+  const a = alias ? alias + '.' : '';
+  return playersHaveParticipationColumns() ? `COALESCE(${a}IsTest,'N')!='Y'` : '1=1';
+}
+// A test account's owner must be a real admin or developer account (never free text, another test account, or itself).
+function testOwnerCandidates(excludeName) {
+  return query(`SELECT Player, Officer FROM Players WHERE ${notTestSql()} ORDER BY Player`)
+    .filter(r => r.Player !== excludeName && ['admin', 'developer'].includes(roleFromOfficerValue(r.Officer))).map(r => r.Player);
+}
 function leaguePlayerNames() {     // everyone who may be picked for scoring, teams, subs, payments and prizes
   return query(`SELECT Player FROM Players WHERE ${participantSql()} ORDER BY Player`).map(r => r.Player);
 }
@@ -11945,10 +11954,13 @@ function participationLabel(row) { // for the Players list: what to show in the 
   if (String(row?.Participates ?? 'Y').trim().toUpperCase() === 'N') return { kind: 'off', text: 'Not playing', owner: '' };
   return { kind: 'on', text: 'Plays', owner: '' };
 }
-function participationCellHtml(row) {
+function participationCellHtml(row, validOwners) {   // validOwners: names that are real admin/developer accounts (omit to skip the check)
   const l = participationLabel(row);
   const esc = v => String(v).replace(/[<>&]/g, '');
-  if (l.kind === 'test') return `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fff3e0;color:#e65100">Test</span>${l.owner ? ` <span style="font-size:10px;color:#999">(owner: ${esc(l.owner)})</span>` : ' <span style="font-size:10px;color:#c62828">(no owner)</span>'}`;
+  if (l.kind === 'test') {
+    const badOwner = l.owner && validOwners && !validOwners.includes(l.owner);
+    return `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fff3e0;color:#e65100">Test</span>${l.owner ? (badOwner ? ` <span style="font-size:10px;color:#c62828">(owner ${esc(l.owner)} is not an admin)</span>` : ` <span style="font-size:10px;color:#999">(owner: ${esc(l.owner)})</span>`) : ' <span style="font-size:10px;color:#c62828">(no owner)</span>'}`;
+  }
   if (l.kind === 'off') return `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:#f5f5f5;color:#777">Not playing</span>`;
   return '<span style="color:#2e7d32;font-size:12px">✓ Plays</span>';
 }
@@ -12243,8 +12255,10 @@ async function saveDBToServer(successLabel, btnId, _retries = 1) {
         showStaleDbSavePrompt(json.serverModifiedMs);
         return;
       }
-      throw new Error(json.error || 'Save failed');
+      if (json.error === 'participation' && json.message) alert('Not saved: ' + json.message);
+      throw new Error(json.message || json.error || 'Save failed');
     }
+    if (json.participationStripped && json.message) alert(json.message);   // the server left non-participant rows out of a full save
     if (json.modifiedMs) {
       SERVER_DB_MODIFIED_MS = json.modifiedMs;
       SERVER_DB_MODIFIED = json.modifiedMs / 1000; // this tab's own save — don't flag it as "someone else"
@@ -13291,6 +13305,12 @@ function pvLevelClause(names) {
 // screens, so those are not listed as "unused" for them.
 const PV_STATS_VIEWS = ['individual', 'rankings', 'leaders', 'h2h'];
 const PV_DEV_ONLY_SECTIONS = ['leaguesettings', 'backups', 'sql', 'sync'];
+function pvTestExcludeClause() {   // test accounts are not real users: leave their page views out of every Usage figure
+  try {
+    if (!playersHaveParticipationColumns()) return '';
+    return `AND (Player IS NULL OR Player NOT IN (SELECT Player FROM Players WHERE COALESCE(IsTest,'N')='Y'))`;
+  } catch (e) { return ''; }
+}
 function pvTabKey(tab, subNav) { return subNav ? `${tab} › ${subNav}` : tab; }
 // What the header calls a tab (e.g. 'scorecard' is the Scores tab, 'noshows' is Attendance); falls back to the stored name.
 function pvTabLabel(tab) {
@@ -13331,7 +13351,7 @@ async function loadPageViews() {
 
   // Security level filter (developers / admins / players) narrows everything below, including the Player dropdown
   const levelNames = pvPlayersAtLevel(document.getElementById('pvLevelFilter')?.value || '', query(`SELECT Player, Officer FROM Players`));
-  const levelClause = pvLevelClause(levelNames);
+  const levelClause = pvLevelClause(levelNames) + ' ' + pvTestExcludeClause();
 
   // Populate player dropdown
   const pvPlayerSel = document.getElementById('pvPlayerFilter');
@@ -13508,10 +13528,10 @@ async function loadLoginActivity(options = {}) {
     ...query(`SELECT DISTINCT Player FROM Subs WHERE Player IS NOT NULL AND Player != ''`).map(r => r.Player)
   ]);
   const isTestGolfer = (player) => {
-    if (!excludeTestGolfers) return false;
     const name = String(player || '').trim();
     if (!name) return false;
-    if (playersHaveParticipationColumns() && query(`SELECT 1 FROM Players WHERE Player=? AND COALESCE(IsTest,'N')='Y' LIMIT 1`, [name]).length) return true;   // marked as a test account
+    if (playersHaveParticipationColumns() && query(`SELECT 1 FROM Players WHERE Player=? AND COALESCE(IsTest,'N')='Y' LIMIT 1`, [name]).length) return true;   // marked test account: always left out of real-player counts
+    if (!excludeTestGolfers) return false;
     const playerRow = query(`SELECT 1 FROM Players WHERE Player=? LIMIT 1`, [name]);
     return playerRow.length > 0 && !historicalLeaguePlayers.has(name);
   };
@@ -13688,7 +13708,7 @@ async function loadLoginActivity(options = {}) {
   const playerSel = document.getElementById('loginActivityPlayer');
   const previousPlayer = playerSel ? playerSel.value : '';
   if (playerSel) {
-    const players = query(`SELECT DISTINCT Player FROM Players WHERE Login='Y' ORDER BY Player`)
+    const players = query(`SELECT DISTINCT Player FROM Players WHERE Login='Y' AND ${notTestSql()} ORDER BY Player`)
       .filter(r => includeLoginStatPlayer(r.Player));
     playerSel.innerHTML = '<option value="">All players</option>' +
       players.map(r => `<option value="${r.Player}">${r.Player}</option>`).join('');
@@ -15721,7 +15741,7 @@ async function doGallusSubmit() {
   // Resolve a Gallus-formatted name ("Last, First" or "Last First") to a Players table entry
   function resolveGallusPlayerName(gallusName) {
     // 1. Exact match first (case-insensitive)
-    let m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [gallusName]);
+    let m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${participantSql()} LIMIT 1`, [gallusName]);
     if (m.length) return m[0].Player;
 
     // 2. Gallus "Last, First" → flip to "First Last"
@@ -15729,7 +15749,7 @@ async function doGallusSubmit() {
       const parts = gallusName.split(',').map(s => s.trim());
       if (parts.length === 2) {
         const flipped = `${parts[1]} ${parts[0]}`;
-        m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [flipped]);
+        m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${participantSql()} LIMIT 1`, [flipped]);
         if (m.length) return m[0].Player;
       }
     } else {
@@ -15737,7 +15757,7 @@ async function doGallusSubmit() {
       const words = gallusName.trim().split(/\s+/);
       if (words.length === 2) {
         const flipped = `${words[1]} ${words[0]}`;
-        m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [flipped]);
+        m = query(`SELECT DISTINCT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${participantSql()} LIMIT 1`, [flipped]);
         if (m.length) return m[0].Player;
       }
     }
@@ -15745,7 +15765,7 @@ async function doGallusSubmit() {
     // 4. Last-name-only fuzzy fallback
     const lastName = gallusName.includes(',') ? gallusName.split(',')[0].trim() : gallusName.trim().split(/\s+/)[0];
     if (lastName.length >= 3) {
-      m = query(`SELECT DISTINCT Player FROM Players WHERE Player LIKE ? COLLATE NOCASE LIMIT 1`, [`%${lastName}%`]);
+      m = query(`SELECT DISTINCT Player FROM Players WHERE Player LIKE ? COLLATE NOCASE AND ${participantSql()} LIMIT 1`, [`%${lastName}%`]);
       if (m.length) return m[0].Player;
     }
 
@@ -15756,7 +15776,7 @@ async function doGallusSubmit() {
     const existing = document.getElementById('gallusRemapModal');
     if (existing) existing.remove();
 
-    const allPlayers = query(`SELECT DISTINCT Player FROM Players ORDER BY Player`).map(r => r.Player);
+    const allPlayers = leaguePlayerNames();
     const { players } = pendingImport;
 
     const modal = document.createElement('div');
@@ -15996,7 +16016,7 @@ async function handlePhotoUpload(file) {
 
 function showPhotoVerifyModal(players, frontBack, group) {
   // Get all known player names for the dropdowns
-  const allPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r => r.Player);
+  const allPlayers = leaguePlayerNames();
 
   // Try to auto-match each extracted name to a known player
   function bestMatch(extractedName) {
@@ -16213,7 +16233,7 @@ function loadGallusQueue() {
       _qSubFreq[reg.Player][s.Player] = (_qSubFreq[reg.Player][s.Player] || 0) + 1;
     });
   } catch(e) {}
-  const _qAllPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r => r.Player);
+  const _qAllPlayers = leaguePlayerNames();
 
 
   // Group rows by Date + URL
@@ -16494,7 +16514,7 @@ async function importAllPendingGallus() {
       // Resolve recorder
       let sentBy = '';
       if (recorder) {
-        const rm = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [recorder]);
+        const rm = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${notTestSql()} LIMIT 1`, [recorder]);   // the recorder may be a non-playing admin, never a test account
         sentBy = rm.length ? rm[0].Player : recorder;
       }
 
@@ -16506,7 +16526,7 @@ async function importAllPendingGallus() {
       try { db.run('ALTER TABLE GallusImport ADD COLUMN SentBy TEXT'); } catch(e) {}
 
       for (const p of players) {
-        const match = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [p.name]);
+        const match = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${participantSql()} LIMIT 1`, [p.name]);
         const resolvedName = match.length ? match[0].Player : p.name;
         if (roundGuid) {
           const dup = query(`SELECT ID FROM GallusImport WHERE Date=? AND GallusName=? AND URL LIKE ? LIMIT 1`,
@@ -16739,7 +16759,7 @@ function showGallusVerifyModal(url, date) {
     `;
   }
 
-  const allPlayers = query(`SELECT Player FROM Players ORDER BY Player`).map(r => r.Player);
+  const allPlayers = leaguePlayerNames();
   renderGallusVerifyBody(allPlayers);
   document.getElementById('gallusVerifyModal').style.display = 'flex';
 }
@@ -17022,7 +17042,7 @@ async function doGallusFetch() {
 
     // Auto-detect recorder from page title
     if (json.recorder) {
-      const _recMatch2 = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE LIMIT 1`, [json.recorder]);
+      const _recMatch2 = query(`SELECT Player FROM Players WHERE Player=? COLLATE NOCASE AND ${notTestSql()} LIMIT 1`, [json.recorder]);
       window._gallusSentBy = _recMatch2.length ? _recMatch2[0].Player : json.recorder;
     }
 
@@ -17031,7 +17051,7 @@ async function doGallusFetch() {
     let previewHtml = `${_recLabel}<div style="font-weight:600;margin-bottom:6px;color:var(--green)">${frontBack} 9 — ${players.length} players found:</div>`;
     let matched = 0;
     players.forEach(p => {
-      const inSystem = query(`SELECT 1 FROM Players WHERE Player=?`, [p.name]).length > 0;
+      const inSystem = query(`SELECT 1 FROM Players WHERE Player=? AND ${participantSql()}`, [p.name]).length > 0;
       const scores = p.scores.map(s => s ?? '—').join('  ');
       previewHtml += `<div style="padding:4px 0;border-bottom:1px solid #f0f0f0">
         <span style="font-weight:600;color:${inSystem?'#2e7d32':'#c62828'}">${p.name}</span>
@@ -18794,6 +18814,7 @@ function loadAdminPlayers() {
       if (m) lastLoginMap[m[1]] = r.lt;
     });
 
+  const validTestOwners = playersHaveParticipationColumns() ? testOwnerCandidates('') : null;
   const tbody = document.getElementById('playersBody');
   tbody.innerHTML = '';
   rows.filter(r => {
@@ -18825,7 +18846,7 @@ function loadAdminPlayers() {
       <td style="padding:7px 12px;font-size:12px">${r.CellCarrier||''}</td>
       <td style="padding:7px 12px;text-align:center">${r.EmailStats==='Y'?'✓':''}</td>
       <td style="padding:7px 12px;text-align:center">${r.TextStats==='Y'?'✓':''}</td>
-      <td style="padding:7px 12px;white-space:nowrap">${participationCellHtml(r)}</td>
+      <td style="padding:7px 12px;white-space:nowrap">${participationCellHtml(r, validTestOwners)}</td>
       <td style="padding:7px 12px;white-space:nowrap">${playerRoleCellHtml(r.Officer)}</td>
       <td style="padding:7px 12px;font-size:11px;color:${lastLogin?'#333':'#bbb'}">${lastLogin ? formatUtcSqlTimestamp(lastLogin) : 'Never'}</td>
       <td style="padding:7px 12px;text-align:center">
@@ -18897,7 +18918,7 @@ function loadParticipationFields(r) {
   if (!have) return;
   document.getElementById('pmParticipates').value = String(r?.Participates ?? 'Y').toUpperCase() === 'N' ? 'N' : 'Y';
   document.getElementById('pmIsTest').checked = String(r?.IsTest ?? 'N').toUpperCase() === 'Y';
-  const owners = query(`SELECT Player FROM Players WHERE COALESCE(IsTest,'N')!='Y' AND Player != ? ORDER BY Player`, [r?.Player || '']).map(x => x.Player);
+  const owners = testOwnerCandidates(r?.Player || '');   // real admin/developer accounts only
   const sel = document.getElementById('pmTestOwner');
   sel.innerHTML = '<option value="">— choose the owner —</option>' + owners.map(n => `<option value="${String(n).replace(/"/g, '&quot;')}">${String(n).replace(/[<>&]/g, '')}</option>`).join('');
   sel.value = r?.TestOwner && owners.includes(r.TestOwner) ? r.TestOwner : '';
@@ -19261,6 +19282,7 @@ async function savePlayer() {
   if (!fullName) { alert('Please enter a name'); return; }
   const part = playersHaveParticipationColumns() ? participationFormValues() : null;
   if (part && part.IsTest === 'Y' && !part.TestOwner) { alert('Choose who owns this test account.'); return; }
+  if (part && part.IsTest === 'Y' && !testOwnerCandidates(fullName).includes(part.TestOwner)) { alert('The test account owner must be a real admin or developer account.'); return; }
 
   if (pw1 || pw2) {
     if (pw1 !== pw2) { alert('Passwords do not match'); return; }

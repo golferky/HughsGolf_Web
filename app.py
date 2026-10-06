@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261006.2-sandbox'
+VERSION    = '20261006.3-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -669,9 +669,27 @@ def save_db():
                 _tc.close()
             except Exception as e:
                 print(f'[{now_local():%H:%M:%S}] future-score strip failed: {e}')
+        # League participation: the same central rule as /run-sql, for the full-database save
+        _p_stripped = []
+        try:
+            _p_rows, _p_invalid = participation_check_db(tmp, DB_PATH)
+        except Exception as e:
+            _p_rows, _p_invalid = [], set()
+            print(f'[{now_local():%H:%M:%S}] participation check failed: {e}')
+        if _p_invalid:
+            os.remove(tmp)
+            _pmsg = _participation_message([], _p_invalid)
+            print(f'[{now_local():%H:%M:%S}] BLOCKED full save (participation): {_pmsg[:140]}')
+            return jsonify({'ok': False, 'error': 'participation', 'message': _pmsg}), 403
+        if _p_rows:
+            participation_strip(tmp, _p_rows)
+            _p_stripped = sorted({(t, p) for _, t, p in _p_rows})
+            print(f'[{now_local():%H:%M:%S}] save: stripped {len(_p_rows)} non-participant row(s): {_p_stripped}')
         os.replace(tmp, DB_PATH)
         try:
             _ac = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            if _p_rows:
+                audit_data_change(_ac.cursor(), f'FULL SAVE stripped {len(_p_rows)} non-participant row(s)', len(_p_rows), action='BLOCKED_NON_PARTICIPANT')
             audit_data_change(_ac.cursor(), 'FULL DATABASE SAVE', None, action='SAVE_DB')
             _ac.commit(); _ac.close()
         except Exception as e:
@@ -679,7 +697,12 @@ def save_db():
         modified_ms = db_modified_ms()
 
     print(f'[{now_local():%H:%M:%S}] DB saved — {len(data):,} bytes')
-    return jsonify({'ok': True, 'bytes': len(data), 'modifiedMs': modified_ms})
+    _resp = {'ok': True, 'bytes': len(data), 'modifiedMs': modified_ms}
+    if _p_stripped:
+        _resp['participationStripped'] = [{'table': t, 'player': p} for t, p in _p_stripped]
+        _resp['message'] = ('Not saved for non-participants: ' + ', '.join(sorted({p for _, p in _p_stripped})) +
+                            '. They are not playing (or are test accounts), so new scores, matches, team/sub rows and buy-ins were left out.')
+    return jsonify(_resp)
 
 
 @app.route('/backup-list')
@@ -844,9 +867,10 @@ def refresh_sandbox_from_live():
                 shutil.copy2(DB_PATH, safety_path)
 
             source = None
+            _incoming = DB_PATH + '.refresh.tmp'
             if os.path.isfile(LIVE_DB_PATH):
                 # Local file available (Mac dev environment)
-                shutil.copy2(LIVE_DB_PATH, DB_PATH)
+                shutil.copy2(LIVE_DB_PATH, _incoming)
                 source = LIVE_DB_PATH
             else:
                 # Fetch from live server via HTTP (QNAP environment)
@@ -854,9 +878,14 @@ def refresh_sandbox_from_live():
                 print(f'[{now_local():%H:%M:%S}] Fetching live DB from {url}')
                 import urllib.request
                 with urllib.request.urlopen(url, timeout=30) as resp:
-                    with open(DB_PATH, 'wb') as f:
+                    with open(_incoming, 'wb') as f:
                         f.write(resp.read())
                 source = url
+            _p_rows, _p_invalid = participation_check_db(_incoming, DB_PATH)
+            if _p_rows or _p_invalid:
+                os.remove(_incoming)
+                return jsonify({'ok': False, 'error': 'participation', 'message': 'Not refreshed: ' + _participation_message(_p_rows, _p_invalid)}), 409
+            os.replace(_incoming, DB_PATH)
 
         print(f'[{now_local():%H:%M:%S}] Refreshed sandbox DB from {source} (safety copy: {safety_name})')
         return jsonify({'ok': True, 'source': source, 'safetyBackup': safety_name})
@@ -880,6 +909,9 @@ def restore_backup():
     if not os.path.isfile(src):
         return jsonify({'ok': False, 'error': 'Backup not found'}), 404
 
+    _p_rows, _p_invalid = participation_check_db(src, DB_PATH)
+    if _p_rows or _p_invalid:
+        return jsonify({'ok': False, 'error': 'participation', 'message': 'Not restored: ' + _participation_message(_p_rows, _p_invalid)}), 409
     try:
         with DB_WRITE_LOCK:
             env_backup_dir = backup_dir()
@@ -2571,43 +2603,180 @@ def audit_data_change(cur, sql, rowcount=None, action=None):
     except Exception as e:
         print(f'[{now_local():%H:%M:%S}] audit log failed: {e}')
 
-# ── League participation guard ──────────────────────────────────────────────
-# Access role (Players.Officer) and league participation (Players.Participates / IsTest) are independent. Nobody who is not a
-# participant (not playing, or a test account) may be given scores, matches, team or sub rows, or a buy-in payment.
-# Only rows that would be NEW are blocked, so history already on file and later edits (refunds, paid dates) are untouched.
-_PARTICIPATION_TABLES = {          # table -> extra condition (buy-ins only for Payments; refunds and winnings are allowed)
-    'scores': '', 'matches': '', 'teams': '', 'subs': '',
-    'payments': " AND t.Detail = 'Payment'",
-}
-_PARTICIPATION_BLOCKED_SQL = "(COALESCE(p.Participates,'Y')='N' OR COALESCE(p.IsTest,'N')='Y')"
+# ── League participation: ONE central server-side check ─────────────────────
+# Access role (Players.Officer) and league participation (Players.Participates / IsTest) are independent. Every write path
+# (/run-sql statements, the full-database /save, /restore-backup, /refresh-sandbox-from-live) goes through the functions below,
+# so there is a single definition of the rule:
+#   * Nobody who is not a participant (Participates='N', or a test account) may get a NEW current-season row in Scores, Matches,
+#     Teams, Subs, or a buy-in (Payments.Detail='Payment'). History from earlier seasons, and rows already on file, stay as they are.
+#   * A test account's TestOwner must be a real admin or developer account (not free text, not another test account, not itself).
+_PARTICIPATION_TABLES = ('Scores', 'Matches', 'Teams', 'Subs', 'Payments')
+_OWNER_OFFICERS = ('admin', 'president', 'secretary', 'developer')   # the officer values that count as an admin/developer account
 _RENAME_ONLY_RE = _audit_re.compile(r'^\s*UPDATE\s+\w+\s+SET\s+Player\s*=', _audit_re.I)
+_RENAME_OLD_RE = _audit_re.compile(r"WHERE\s+Player\s*=\s*'((?:[^']|'')*)'", _audit_re.I)
 
-def _participation_active(cur):
-    """True if any player is marked not-playing or test (fast path: no flags = nothing to check)."""
+def _is_rename_cascade(cur, sql):
+    """A player-rename cascade (UPDATE <table> SET Player='New' WHERE Player='Old') run after the Players row was already renamed.
+    It is NOT a rename if 'Old' is still a player: that would hand someone's rows to another person."""
+    if not _RENAME_ONLY_RE.match(sql or ''):
+        return False
+    m = _RENAME_OLD_RE.search(sql or '')
+    if not m:
+        return False
+    old = m.group(1).replace("''", "'")
     try:
-        cur.execute("SELECT 1 FROM Players WHERE COALESCE(Participates,'Y')='N' OR COALESCE(IsTest,'N')='Y' LIMIT 1")
-        return cur.fetchone() is not None
+        cur.execute("SELECT 1 FROM Players WHERE Player=? LIMIT 1", (old,))
+        return cur.fetchone() is None
     except Exception:
         return False
 
-def _nonparticipant_rows(cur, table):
-    """{(rowid, player)} of rows in `table` that belong to a non-participant."""
-    extra = _PARTICIPATION_TABLES[table]
+def _flagged_names(cur):
+    """Players who are not participants: not playing, or a test account."""
     try:
-        cur.execute(f'SELECT t.rowid, t.Player FROM "{table}" t JOIN Players p ON p.Player = t.Player WHERE {_PARTICIPATION_BLOCKED_SQL}{extra}')
-        return set((r[0], r[1]) for r in cur.fetchall())
+        cur.execute("SELECT Player FROM Players WHERE COALESCE(Participates,'Y')='N' OR COALESCE(IsTest,'N')='Y'")
+        return {r[0] for r in cur.fetchall() if r[0]}
     except Exception:
         return set()
 
-def _participation_table_for(sql):
-    """The guarded table this statement writes to (INSERT/UPDATE/REPLACE only), else None."""
+def _current_season(cur):
+    try:
+        cur.execute("SELECT MAX(CAST(Season AS INTEGER)) FROM SeasonSettings")
+        v = cur.fetchone()[0]
+        if v:
+            return int(v)
+    except Exception:
+        pass
+    return now_local().year
+
+def _season_condition(table, season):
+    if table == 'Teams':
+        return 'CAST(Year AS INTEGER) = ?', (season,)
+    return 'CAST(Date AS INTEGER) >= ? AND CAST(Date AS INTEGER) < ?', (season * 10000 + 101, (season + 1) * 10000 + 101)
+
+def participation_offenders(cur, flagged, season, by='rowid'):
+    """Current-season rows that belong to a non-participant, as {key: (rowid, player)}.
+    by='rowid'   -> key (table, rowid, player): used inside one database, so editing an existing row is fine but giving a row to
+                    a non-participant (or inserting one) is new.
+    by='content' -> key (table, every column): used to compare two database files."""
+    out = {}
+    names = sorted(flagged)
+    for table in _PARTICIPATION_TABLES:
+        cond, params = _season_condition(table, season)
+        extra = " AND Detail = 'Payment'" if table == 'Payments' else ''
+        for i in range(0, len(names), 400):
+            chunk = names[i:i + 400]
+            ph = ','.join('?' * len(chunk))
+            try:
+                cur.execute(f'SELECT rowid, * FROM "{table}" WHERE Player IN ({ph}) AND {cond}{extra}', (*chunk, *params))
+                cols = [d[0] for d in cur.description]
+                pi = cols.index('Player')
+                for row in cur.fetchall():
+                    key = (table, row[0], row[pi]) if by == 'rowid' else (table,) + tuple(row[1:])
+                    out[key] = (row[0], row[pi])
+            except Exception:
+                continue            # table or column missing in this database: nothing to check
+    return out
+
+def invalid_test_accounts(cur):
+    """Test accounts whose TestOwner is not a real admin/developer account."""
+    bad = set()
+    try:
+        cur.execute("SELECT Player, TestOwner FROM Players WHERE COALESCE(IsTest,'N')='Y'")
+        tests = cur.fetchall()
+    except Exception:
+        return bad
+    for name, owner in tests:
+        owner = (owner or '').strip()
+        ok = False
+        if owner and owner != name:
+            try:
+                cur.execute("SELECT Officer, COALESCE(IsTest,'N') FROM Players WHERE Player=?", (owner,))
+                row = cur.fetchone()
+                ok = bool(row) and (row[0] or '').strip().lower() in _OWNER_OFFICERS and row[1] != 'Y'
+            except Exception:
+                ok = False
+        if not ok:
+            bad.add(name)
+    return bad
+
+def _participation_message(rows, invalid):
+    parts = []
+    if rows:
+        who = ', '.join(sorted({r[-1] for r in rows}))
+        parts.append(f'{who} is not a league participant (not playing, or a test account), so no new scores, matches, team or sub rows or buy-ins can be saved for them this season. '
+                     f'Change "Plays in the league" on their player record first.')
+    if invalid:
+        parts.append(f'Test account owner for {", ".join(sorted(invalid))} must be a real admin or developer account.')
+    return ' '.join(parts)
+
+def participation_begin(cur, sql):
+    """Call before executing one statement. Returns a state for participation_violation(), or None if the statement is not guarded."""
     m = _AUDIT_TABLE_RE.match(sql or '')
-    if not m or m.group(1).lower() not in _PARTICIPATION_TABLES:
+    if not m:
         return None
+    table = m.group(1)
     head = (sql or '').lstrip().upper()
-    if head.startswith('DELETE') or _RENAME_ONLY_RE.match(sql or ''):
+    if head.startswith(('DELETE', 'ALTER', 'CREATE', 'DROP')):
         return None
-    return m.group(1).lower()
+    if table.lower() == 'players':
+        return {'kind': 'players', 'invalid': invalid_test_accounts(cur)}
+    t = next((x for x in _PARTICIPATION_TABLES if x.lower() == table.lower()), None)
+    if not t or _is_rename_cascade(cur, sql):
+        return None
+    flagged = _flagged_names(cur)
+    if not flagged:
+        return None                  # nobody flagged: nothing can violate (fast path)
+    season = _current_season(cur)
+    return {'kind': 'rows', 'flagged': flagged, 'season': season,
+            'before': participation_offenders(cur, flagged, season)}
+
+def participation_violation(cur, state):
+    """Call after executing the statement (same transaction). Returns an error message, or None if the statement is fine."""
+    if not state:
+        return None
+    if state['kind'] == 'players':
+        new = invalid_test_accounts(cur) - state['invalid']
+        return _participation_message([], new) if new else None
+    flagged = state['flagged'] | _flagged_names(cur)
+    after = participation_offenders(cur, flagged, state['season'])
+    new = [v for k, v in after.items() if k not in state['before']]
+    return _participation_message(new, set()) if new else None
+
+def participation_check_db(incoming_path, live_path):
+    """Compare a whole database file about to replace the live one with the live one.
+    Returns (new_offending_rows, new_invalid_test_accounts); rows are [(rowid_in_incoming, table, player)]."""
+    try:
+        inc = sqlite3.connect(f'file:{incoming_path}?mode=ro', uri=True)
+    except Exception:
+        return [], set()
+    live = None
+    try:
+        if live_path and os.path.exists(live_path):
+            live = sqlite3.connect(f'file:{live_path}?mode=ro', uri=True)
+        ic = inc.cursor(); lc = live.cursor() if live else None
+        flagged = _flagged_names(ic) | (_flagged_names(lc) if lc else set())
+        season = _current_season(lc) if lc else _current_season(ic)
+        rows = []
+        if flagged:
+            off_in = participation_offenders(ic, flagged, season, by='content')
+            off_live = participation_offenders(lc, flagged, season, by='content') if lc else {}
+            rows = [(rid, k[0], player) for k, (rid, player) in off_in.items() if k not in off_live]
+        invalid = invalid_test_accounts(ic) - (invalid_test_accounts(lc) if lc else set())
+        return rows, invalid
+    finally:
+        inc.close()
+        if live:
+            live.close()
+
+def participation_strip(db_path, rows):
+    """Delete the offending new rows from a database file that is about to be saved (same approach as the future-score strip)."""
+    c = sqlite3.connect(db_path)
+    try:
+        for rid, table, _player in rows:
+            c.execute(f'DELETE FROM "{table}" WHERE rowid = ?', (rid,))
+        c.commit()
+    finally:
+        c.close()
 
 @app.route('/run-sql', methods=['POST'])
 def run_sql():
@@ -2631,26 +2800,21 @@ def run_sql():
             _guard = bool(_m and _m.group(1).lower() == 'scores' and not _future_override()
                           and not sql.lstrip().upper().startswith('DELETE'))
             _before = _future_score_keys(cur) if _guard else None
-            _ptab = _participation_table_for(sql) if _participation_active(cur) else None
-            _pbefore = _nonparticipant_rows(cur, _ptab) if _ptab else None
+            _pstate = participation_begin(cur, sql)
             cur.execute(sql)
             _rc = cur.rowcount
-            if _ptab:
-                _new = _nonparticipant_rows(cur, _ptab) - _pbefore
-                if _new:
-                    conn.rollback(); conn.close()
-                    names = sorted({n for _, n in _new})
-                    actor, role = _audit_actor()
-                    print(f'[{now_local():%H:%M:%S}] BLOCKED non-participant row in {_ptab} by {actor}: {", ".join(names)}')
-                    try:
-                        _lc = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
-                        audit_data_change(_lc.cursor(), sql, 0, action='BLOCKED_NON_PARTICIPANT')
-                        _lc.commit(); _lc.close()
-                    except Exception:
-                        pass
-                    return jsonify({'ok': False, 'error': 'participation',
-                                    'message': f'{", ".join(names)} is not a league participant (not playing, or a test account), so no {_ptab} can be saved for them. '
-                                               f'Change Plays in the league on their player record first.'}), 403
+            _pmsg = participation_violation(cur, _pstate)
+            if _pmsg:
+                conn.rollback(); conn.close()
+                actor, role = _audit_actor()
+                print(f'[{now_local():%H:%M:%S}] BLOCKED participation violation by {actor}: {_pmsg[:140]}')
+                try:
+                    _lc = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+                    audit_data_change(_lc.cursor(), sql, 0, action='BLOCKED_NON_PARTICIPANT')
+                    _lc.commit(); _lc.close()
+                except Exception:
+                    pass
+                return jsonify({'ok': False, 'error': 'participation', 'message': _pmsg}), 403
             if _guard and (_future_score_keys(cur) - _before):
                 conn.rollback(); conn.close()
                 actor, role = _audit_actor()
