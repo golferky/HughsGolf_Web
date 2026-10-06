@@ -1382,6 +1382,7 @@
       <button onclick="showAdminSection('serverlog')" id="adminBtnServerlog" class="admin-subbtn">📋 Server Log</button>
       <button onclick="showAdminSection('emaillog')" id="adminBtnEmaillog" class="admin-subbtn">✉️ Emails Sent</button>
       <button onclick="showAdminSection('pageviews')" id="adminBtnPageviews" class="admin-subbtn">📊 Usage</button>
+      <button onclick="showAdminSection('whoson')" id="adminBtnWhoson" class="admin-subbtn">🟢 Who's On</button>
     </div>
 
     <div id="adminPdfs" style="display:none">
@@ -1837,6 +1838,27 @@
       </div>
     </div>
     <!-- ── END COMPARE LIVE ────────────────────────────────────────────── -->
+
+    <div id="adminWhoson" style="display:none">
+      <div class="card">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+          <span>🟢 Who's On</span>
+          <div style="display:flex;gap:10px;align-items:center">
+            <label style="font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="whosonShowTest" onchange="loadWhoson()"> Show test accounts</label>
+            <button onclick="loadWhoson()" style="padding:5px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
+            <span id="whosonUpdated" style="font-size:11px;color:#aaa;font-weight:400"></span>
+          </div>
+        </div>
+        <div style="padding:12px 16px">
+          <div id="whosonSummary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
+          <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">People</div>
+          <div id="whosonPeople" style="overflow-x:auto"></div>
+          <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px">Open connections right now <span style="font-weight:400;text-transform:none;color:#999">(matched to the IPs players have used; an IP nobody has used is "unknown")</span></div>
+          <div id="whosonConnections" style="overflow-x:auto"></div>
+          <div style="font-size:11px;color:#999;margin-top:12px">An IP is not a person: households and phone carriers share them, and one player uses several. This screen is information for admins; it never blocks anyone from logging in. A person appears here only while they have the app open (it checks in about once a minute).</div>
+        </div>
+      </div>
+    </div>
 
     <div id="adminPageviews" style="display:none">
       <div class="card">
@@ -2651,7 +2673,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261006.3';
+const APP_VERSION = '20261006.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -11090,10 +11112,10 @@ function loadSchedule() {
 }
 
 // ── ADMIN TAB ──
-const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','emaillog','proposals'];
+const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals'];
 const ADMIN_GROUPS = {
   tables: ['players','teams','subs','leaguesettings'],
-  logging: ['loginactivity','serverlog','pageviews','emaillog']
+  logging: ['loginactivity','serverlog','pageviews','whoson','emaillog']
 };
 
 function adminIdSuffix(section) {
@@ -11156,6 +11178,8 @@ function showAdminSection(section) {
   if (section==='expenses')  loadExpenses();
   if (section==='compare')   loadCompareSection();
   if (section==='pageviews') loadPageViews();
+  if (section==='whoson')    loadWhoson();
+  else stopWhosonRefresh();
   if (section==='emaillog')  loadEmailLog();
   if (section==='testdb')    loadTestDbPanel();
 }
@@ -13338,6 +13362,75 @@ function pvUnusedKeys(known, used) {
   return out;
 }
 
+// ── Who's On: the app checks in about once a minute; the server records player + real IP + tab + device ──────────────────
+const HEARTBEAT_MS = 60000;
+async function sendHeartbeat(login) {
+  try {
+    if (!currentUser?.name || (document.hidden && !login)) return null;
+    const token = await ensureSaveToken();
+    const resp = await fetch('/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Save-Token': token },
+      body: JSON.stringify({ player: currentUser.name, tab: activeTabName(), device: detectDevice(), login: !!login }) });
+    return await resp.json();
+  } catch (e) { return null; }   // presence is best-effort and must never get in the way of the app
+}
+function startHeartbeat() {
+  clearInterval(window._heartbeatTimer);
+  sendHeartbeat(true);
+  window._heartbeatTimer = setInterval(() => sendHeartbeat(false), HEARTBEAT_MS);
+}
+function whosonAgeText(sec) {
+  if (sec === null || sec === undefined) return 'unknown';
+  if (sec < 60) return 'just now';
+  const m = Math.round(sec / 60);
+  if (m < 90) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return h < 36 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+}
+// Pure renderer: data is what /whos-on returns; opts.showTest includes test accounts. Returns the three HTML blocks.
+function whosonRender(data, opts) {
+  opts = opts || {};
+  const e = v => String(v ?? '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+  const all = data?.people || [];
+  const people = all.filter(p => opts.showTest || !p.isTest);
+  const online = people.filter(p => p.online);
+  const roleBadge = r => r === 'developer' ? '<span style="font-size:10px;color:#4527a0">(developer)</span>' : r === 'admin' ? '<span style="font-size:10px;color:#0d47a1">(admin)</span>' : '';
+  const stat = (label, val) => `<div style="background:#f5f0e8;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--green)">${val}</div><div style="font-size:11px;color:#666">${label}</div></div>`;
+  const connections = data?.connections || [];
+  const unknown = connections.filter(c => c.unknown);
+  const summary = stat('On now', online.length) + stat('Seen recently', people.length - online.length) + stat('Open connections', connections.reduce((n, c) => n + c.count, 0)) + stat('Unknown IPs', unknown.length);
+  const th = t => `<th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:left;font-size:12px">${t}</th>`;
+  const td = (t, st = '') => `<td style="padding:5px 10px;font-size:12px;border-bottom:1px solid #eee;${st}">${t}</td>`;
+  const peopleHtml = people.length ? `<table style="border-collapse:collapse;width:100%"><thead><tr>${th('Player')}${th('Status')}${th('Viewing')}${th('Device')}${th('IP')}${th('Also seen on this IP')}</tr></thead><tbody>${
+    people.map(p => `<tr>${td(`<strong>${e(p.player)}</strong> ${roleBadge(p.role)}${p.isTest ? ' <span style="font-size:10px;color:#e65100">(test)</span>' : ''}${p.participates === false && !p.isTest ? ' <span style="font-size:10px;color:#777">(not playing)</span>' : ''}`)}${
+      td(p.online ? '<span style="color:#2e7d32">● on now</span>' : `<span style="color:#999">○ ${whosonAgeText(p.secondsAgo)}</span>`)}${td(e(p.tab) || '—')}${td(e(p.device) || '—')}${
+      td(`<span style="font-family:'DM Mono',monospace">${e(p.ip) || '—'}</span>${p.knownIps > 1 ? ` <span style="font-size:10px;color:#999">(${p.knownIps} IPs)</span>` : ''}`)}${
+      td((p.otherPlayersOnIp || []).length ? e(p.otherPlayersOnIp.join(', ')) : '<span style="color:#ccc">—</span>')}</tr>`).join('')}</tbody></table>`
+    : '<div style="color:#888;font-size:12px">Nobody has checked in yet. People appear here once they have the app open (updated about once a minute).</div>';
+  const connHtml = connections.length ? `<table style="border-collapse:collapse;width:100%"><thead><tr>${th('IP')}${th('Connections')}${th('Matches')}</tr></thead><tbody>${
+    connections.map(c => `<tr>${td(`<span style="font-family:'DM Mono',monospace">${e(c.ip)}</span>`)}${td(c.count)}${td(c.unknown ? '<span style="color:#e65100;font-weight:600">unknown</span>' : e(c.players.join(', ')))}</tr>`).join('')}</tbody></table>`
+    : '<div style="color:#888;font-size:12px">No open connections reported (this list only works when the server runs on Linux, such as the QNAP).</div>';
+  return { summary, people: peopleHtml, connections: connHtml };
+}
+async function loadWhoson() {
+  stopWhosonRefresh();
+  try {
+    const token = await ensureSaveToken();
+    const data = await (await fetch('/whos-on', { headers: { 'X-Save-Token': token } })).json();
+    if (!data.ok) throw new Error(data.error || 'failed');
+    const out = whosonRender(data, { showTest: !!document.getElementById('whosonShowTest')?.checked });
+    document.getElementById('whosonSummary').innerHTML = out.summary;
+    document.getElementById('whosonPeople').innerHTML = out.people;
+    document.getElementById('whosonConnections').innerHTML = out.connections;
+    const ts = document.getElementById('whosonUpdated');
+    if (ts) ts.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  } catch (err) {
+    const el = document.getElementById('whosonPeople');
+    if (el) el.innerHTML = `<div style="color:#c62828;font-size:12px">Could not load: ${String(err.message || err).replace(/[<>&]/g, '')}</div>`;
+  }
+  window._whosonTimer = setTimeout(() => { if (window._adminSection === 'whoson') loadWhoson(); }, 30000);   // keeps itself fresh while the screen is open
+}
+function stopWhosonRefresh() { clearTimeout(window._whosonTimer); }
+
 async function loadPageViews() {
   pvSyncToggleBtn();
   if (!db) return;
@@ -13828,7 +13921,7 @@ async function revokeLoginAccess(playerName) {
 
 // ── Known legitimate app routes (anything else is "suspicious") ─────────────
 const KNOWN_ROUTES = ['/', '/HughsGolf.html', '/HughsGolf.db', '/HughsGolf-test.db', '/db-info', '/db-info-test', '/save-token', '/save', '/save-test', '/reset-test-db', '/rebuild-test-db', '/delete-test-db', '/send-reset', '/verify-reset',
-  '/notify-login', '/flask-log', '/backup-list', '/restore-backup', '/delete-backup', '/undo-backup-delete', '/save-backup-note', '/restart-server', '/need-sub', '/send-report-pdf', '/notify-payout', '/fetch-gallus', '/get-ip', '/favicon.ico'];
+  '/notify-login', '/heartbeat', '/whos-on', '/flask-log', '/backup-list', '/restore-backup', '/delete-backup', '/undo-backup-delete', '/save-backup-note', '/restart-server', '/need-sub', '/send-report-pdf', '/notify-payout', '/fetch-gallus', '/get-ip', '/favicon.ico'];
 
 function parseLogLine(line) {
   // Typical format: IP - - [timestamp] "METHOD /path HTTP/1.1" STATUS -
@@ -18008,6 +18101,8 @@ async function loginSuccess(player, opts = {}) {
     checkPlayerProfileOnLogin(player.Player);
   }
 
+  startHeartbeat();   // Who's On: record this login's IP and keep checking in while the app is open
+
   // ── Periodic check: has this session been kicked out by another login? ──
   clearInterval(window._sessionCheckInterval);
   window._sessionCheckInterval = setInterval(() => {
@@ -18181,6 +18276,7 @@ async function logoutUser(reason) {
     console.warn('logout final save failed:', e);
   }
   clearInterval(window._sessionCheckInterval);
+  clearInterval(window._heartbeatTimer);   // Who's On: stop checking in once logged out
   window._mySessionToken = null;
   currentUser = null;
   updateViewAsPlayerUi();                 // hides the View-as-Player button and banner

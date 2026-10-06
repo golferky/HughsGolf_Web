@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261006.3-sandbox'
+VERSION    = '20261006.4-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -2968,6 +2968,12 @@ def ensure_schema():
         )""")
         conn.commit()
         # Create LeagueExpenses table if missing
+        # Who has been seen on which IP (one row per player + IP) and the current "who's on" presence (one row per player).
+        cur.execute("""CREATE TABLE IF NOT EXISTS PlayerSeen (
+            Player TEXT NOT NULL, IP TEXT NOT NULL, Device TEXT, FirstSeen TEXT, LastSeen TEXT, Hits INTEGER DEFAULT 0,
+            PRIMARY KEY (Player, IP))""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS PlayerPresence (
+            Player TEXT PRIMARY KEY, LastSeen TEXT, IP TEXT, Tab TEXT, Device TEXT)""")
         cur.execute("""CREATE TABLE IF NOT EXISTS LeagueExpenses (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
             League TEXT,
@@ -3019,6 +3025,146 @@ def run_server():
     threading.Thread(target=clear_stale_sessions, daemon=True).start()
     threading.Thread(target=sweep_future_scores, daemon=True).start()
     app.run(host='0.0.0.0', port=PORT, debug=False)
+
+
+# ── Who's on: IP table + live presence ────────────────────────────────────────────────────────────────────────────
+# The app sends a small "I'm here" signal about once a minute while it is open (and once at login). The server records the
+# player, the IP the request really came from, the device and the tab. IPs are NOT identity (households and carriers share them,
+# one player uses several), so this is information for admins: it never blocks a login.
+PRESENCE_ONLINE_SECONDS = 180            # "on now" = signal within the last 3 minutes
+SHARED_IP_DAYS = 90                      # another player on the same IP within this many days is shown as "also seen on this IP"
+
+def _utc_now_str():
+    return datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
+def _role_from_officer(officer):
+    o = (officer or '').strip().lower()
+    return 'developer' if o == 'developer' else 'admin' if o in ('admin', 'president', 'secretary') else 'player'
+
+def record_presence(cur, player, ip, device, tab, login=False, now=None):
+    """Upsert PlayerSeen + PlayerPresence for a known player. Returns {'ipStatus': 'new'|'known', 'sharedWith': [names]}."""
+    now = now or _utc_now_str()
+    cur.execute("SELECT 1 FROM Players WHERE Player=?", (player,))
+    if not cur.fetchone() or not ip:
+        return None
+    cur.execute("SELECT Hits FROM PlayerSeen WHERE Player=? AND IP=?", (player, ip))
+    row = cur.fetchone()
+    status = 'known' if row else 'new'
+    if row:
+        cur.execute("UPDATE PlayerSeen SET LastSeen=?, Hits=COALESCE(Hits,0)+1, Device=COALESCE(NULLIF(?,''),Device) WHERE Player=? AND IP=?", (now, device, player, ip))
+    else:
+        cur.execute("INSERT INTO PlayerSeen (Player, IP, Device, FirstSeen, LastSeen, Hits) VALUES (?,?,?,?,?,1)", (player, ip, device, now, now))
+    cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=SHARED_IP_DAYS)).strftime('%Y-%m-%d %H:%M:%S')
+    cur.execute("SELECT DISTINCT Player FROM PlayerSeen WHERE IP=? AND Player!=? AND LastSeen>=? ORDER BY Player", (ip, player, cutoff))
+    shared = [r[0] for r in cur.fetchall()]
+    cur.execute("INSERT INTO PlayerPresence (Player, LastSeen, IP, Tab, Device) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(Player) DO UPDATE SET LastSeen=excluded.LastSeen, IP=excluded.IP, Tab=excluded.Tab, Device=excluded.Device",
+                (player, now, ip, tab or '', device or ''))
+    if login and status == 'new':
+        cur.execute('INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)',
+                    (now, 'INFO', 'ip_new', 'WhosOn', f'{player} logged in from a new IP',
+                     f'ip={ip}' + (f' also_seen_on_ip={",".join(shared)}' if shared else ''), now))
+    return {'ipStatus': status, 'sharedWith': shared}
+
+def parse_proc_tcp(text, port):
+    """Remote IPs of ESTABLISHED connections to local `port`, from the text of /proc/net/tcp or /proc/net/tcp6."""
+    ips = []
+    for line in (text or '').splitlines()[1:]:
+        parts = line.split()
+        if len(parts) < 4 or parts[3] != '01':          # 01 = ESTABLISHED
+            continue
+        try:
+            lhost, lport = parts[1].split(':'); rhost, _rport = parts[2].split(':')
+            if int(lport, 16) != port:
+                continue
+            if len(rhost) == 8:                          # IPv4, little-endian hex
+                ips.append('.'.join(str(int(rhost[i:i + 2], 16)) for i in (6, 4, 2, 0)))
+            elif len(rhost) == 32:                       # IPv6: four 32-bit words, each printed little-endian
+                words = [rhost[i:i + 8] for i in range(0, 32, 8)]
+                if words[0] == '00000000' and words[1] == '00000000' and words[2].upper() == 'FFFF0000':   # v4-mapped: shown as plain IPv4
+                    ips.append('.'.join(str(int(words[3][i:i + 2], 16)) for i in (6, 4, 2, 0)))
+                else:
+                    raw = ''.join(w[6:8] + w[4:6] + w[2:4] + w[0:2] for w in words)
+                    ips.append(':'.join(raw[i:i + 4] for i in range(0, 32, 4)).lower())
+        except Exception:
+            continue
+    return ips
+
+def open_connection_ips():
+    """Remote IPs currently connected to this server's port (Linux only; empty elsewhere)."""
+    ips = []
+    for f in ('/proc/net/tcp', '/proc/net/tcp6'):
+        try:
+            with open(f) as fh:
+                ips += parse_proc_tcp(fh.read(), PORT)
+        except Exception:
+            pass
+    return ips
+
+@app.route('/heartbeat', methods=['POST'])
+def heartbeat():
+    """The app says it is open: record player + real IP + tab + device. At login (login=true) also report whether the IP is new."""
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    body = request.get_json(silent=True) or {}
+    player = (body.get('player') or '').strip()
+    if not player:
+        return jsonify({'ok': True, 'recorded': False})
+    try:
+        with DB_WRITE_LOCK:
+            conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+            cur = conn.cursor()
+            res = record_presence(cur, player, _audit_ip(), (body.get('device') or '')[:80], (body.get('tab') or '')[:60], bool(body.get('login')))
+            conn.commit(); conn.close()
+        return jsonify({'ok': True, 'recorded': bool(res), **(res or {})})
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] heartbeat error: {e}')
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+@app.route('/whos-on')
+def whos_on():
+    """Who is on now / recently, with IPs, and the open connections matched to players (admin screen; token required)."""
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        now = datetime.datetime.utcnow()
+        cutoff = (now - datetime.timedelta(days=SHARED_IP_DAYS)).strftime('%Y-%m-%d %H:%M:%S')
+        try:
+            cur.execute("SELECT p.Player, p.LastSeen, p.IP, p.Tab, p.Device, pl.Officer, "
+                        "COALESCE(pl.Participates,'Y') AS Participates, COALESCE(pl.IsTest,'N') AS IsTest "
+                        "FROM PlayerPresence p LEFT JOIN Players pl ON pl.Player = p.Player ORDER BY p.LastSeen DESC")
+            presence = [dict(r) for r in cur.fetchall()]
+        except Exception:
+            presence = []
+        people = []
+        for r in presence:
+            try:
+                age = max(0, int((now - datetime.datetime.strptime(r['LastSeen'], '%Y-%m-%d %H:%M:%S')).total_seconds()))
+            except Exception:
+                age = None
+            cur.execute("SELECT DISTINCT Player FROM PlayerSeen WHERE IP=? AND Player!=? AND LastSeen>=? ORDER BY Player", (r['IP'], r['Player'], cutoff))
+            others = [x[0] for x in cur.fetchall()]
+            cur.execute("SELECT COUNT(*) FROM PlayerSeen WHERE Player=?", (r['Player'],))
+            people.append({'player': r['Player'], 'role': _role_from_officer(r['Officer']), 'participates': r['Participates'] != 'N',
+                           'isTest': r['IsTest'] == 'Y', 'lastSeen': r['LastSeen'], 'secondsAgo': age, 'online': age is not None and age <= PRESENCE_ONLINE_SECONDS,
+                           'tab': r['Tab'] or '', 'device': r['Device'] or '', 'ip': r['IP'] or '', 'otherPlayersOnIp': others, 'knownIps': cur.fetchone()[0]})
+        counts = {}
+        for ip in open_connection_ips():
+            counts[ip] = counts.get(ip, 0) + 1
+        connections = []
+        for ip, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+            cur.execute("SELECT DISTINCT Player FROM PlayerSeen WHERE IP=? AND LastSeen>=? ORDER BY Player", (ip, cutoff))
+            names = [x[0] for x in cur.fetchall()]
+            connections.append({'ip': ip, 'count': n, 'players': names, 'unknown': not names})
+        conn.close()
+        return jsonify({'ok': True, 'now': now.strftime('%Y-%m-%d %H:%M:%S'), 'onlineSeconds': PRESENCE_ONLINE_SECONDS,
+                        'people': people, 'connections': connections})
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] whos-on error: {e}')
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @app.route('/api/recent-logins')
