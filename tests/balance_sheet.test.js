@@ -161,6 +161,15 @@ assert.strictEqual(comp.reduce((t, x) => t + x.count, 0), rows.length, 'every ro
   assert.strictEqual(k.skin.ledger[0].payers[0].player, 'Bo'); assert.strictEqual(k.ctp.ledger[0].payers[0].player, 'Cy');
   assert(/Player as player, COALESCE\(PayMethod/.test(extract('bsGatherPoolLedger')) && /PayMethod/.test(extract('bsGatherKittyLedger')), 'gatherers return player and method');
 }
+// ── weeks not calculated yet show as pending rows on the EOY pool ledger ──
+{
+  const g = extract('bsGatherPoolLedger');
+  assert(/psWeekSkinState\(season, w\)/.test(g) && /status !== 'preview'/.test(g) && /psComputeWeekWinners\(season, w\)/.test(g) && /pending/.test(g), 'preview rows for uncalculated weeks');
+  assert(!/serverRun|INSERT|DELETE/.test(g), 'read-only');
+  assert(/bsRenderLedger\(eoy\.ledger, eoyData\.pending\)/.test(src), 'pending rows are rendered');
+  const html = c.bsRenderLedger([], [{ label: 'Week 2 Skin winners (2 skins)', total: 88 }]);
+  assert(html.includes('Week 2 Skin winners') && html.includes('not awarded yet'));
+}
 // ── wiring ──
 assert(/id="adminBtnBalance"[^>]*>📒 Balance Sheet</.test(src) && /id="adminBalance"/.test(src) && /id="balanceBody"/.test(src) && /id="balanceSeason"/.test(src));
 assert(/ADMIN_SECTIONS = \[[^\]]*'balance'/.test(src) && /if \(section==='balance'\)\s+loadBalanceSheet\(\);/.test(src));
@@ -179,8 +188,8 @@ assert(/<details class="bsPanel"/.test(extract('bsPanel')) && /localStorage/.tes
   assert(/<details/.test(bad.bsPanel('c', 'T', '', 'B', true)));
 }
 const loader = extract('loadBalanceSheet') + extract('bsGatherDues') + extract('bsGatherPool') + extract('bsGatherKitty') + extract('bsGatherPoolLedger') + extract('bsGatherKittyLedger');
-assert(/bsEoyLedger\(bsGatherPoolLedger\(season\)\)/.test(src) && /bsKittyLedgers\(bsGatherKittyLedger\(season\)\)/.test(src), 'the EOY pool and the kitties are shown as pool ledgers');
+assert(/bsEoyLedger\(eoyData\)/.test(src) && /bsGatherPoolLedger\(season\)/.test(src) && /bsKittyLedgers\(bsGatherKittyLedger\(season\)\)/.test(src), 'the EOY pool and the kitties are shown as pool ledgers');
 assert(!/serverRun|INSERT|UPDATE |DELETE/.test(loader.replace(/UPDATE/g, '')), 'the Balance Sheet only reads');
 assert(/LeagueExpenses/.test(extract('bsGatherDues')), 'expenses come from the Expenses screen table');
-assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && ((v) => v[0] > '20261007' || (v[0] === '20261007' && +v[1] >= 9))(src.match(/const APP_VERSION = '([^']+)';/)[1].split('.')));
+assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && ((v) => v[0] > '20261007' || (v[0] === '20261007' && +v[1] >= 11))(src.match(/const APP_VERSION = '([^']+)';/)[1].split('.')));
 console.log('ok');

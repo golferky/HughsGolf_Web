@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.10';
+const APP_VERSION = '20261007.11';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -23383,7 +23383,20 @@ function bsGatherPoolLedger(season) {
     .map(r => ({ date: r.date, week: weekOf(r.date), player: r.player, hole: r.hole, amount: r.amount, paid: !!r.dp }));
   const remainders = [];
   if (ps) [1, 2].forEach(w => { const st = psWeekSkinState(season, w); if (st && st.recorded) remainders.push({ date: st.date, week: w, amount: st.payout.remainder }); });
-  return { entries, transfersIn, refunds, skinWinners: win('Skin'), ctpWinners: win('CTP'), remainders };
+  // Weeks whose Skins have not been calculated yet: read-only preview of what the week would move out of the pool.
+  const pending = [];
+  if (ps) [1, 2].forEach(w => {
+    try {
+      const st = psWeekSkinState(season, w);
+      if (!st || st.status !== 'preview' || !st.potPlayers.length) return;
+      if (!courseData) loadCourse(lp.Course || 'Boone Links');
+      if (!courseData) return;
+      const won = psComputeWeekWinners(season, w).winners;
+      const pay = psWeekSkinPayout(st.potPlayers.length, won.length, st.skinAmt);
+      if (pay.paid > 0) pending.push({ label: `Week ${w} Skin winners (${won.length} skin${won.length === 1 ? '' : 's'}, ${st.potPlayers.length} players; calculate on the score entry screen)`, total: pay.paid });
+    } catch (e) {}
+  });
+  return { entries, transfersIn, refunds, skinWinners: win('Skin'), ctpWinners: win('CTP'), remainders, pending };
 }
 function bsGatherKittyLedger(season) {
   const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`, ex = psKittyExclude(season);
@@ -23447,10 +23460,11 @@ function loadBalanceSheet() {
       cards([['Pool now', dues.poolBalance, '#1b5e20'], ['Dues collected', dues.moneyIn, '#2e7d32'], ['Expenses', -dues.expenseTotal, '#c62828'], ['Moved to winners', -dues.awardedTotal, '#c62828'], ['Still owed to winners', dues.owed, '#e65100']]) +
       bsPanel('dues-ledger', 'Dues pool ledger', `Pool ${bsMoney(dues.poolBalance)}`, scroll(bsRenderLedger(dues.ledger, dues.estimates)), true) +
       bsPanel('dues-totals', 'Dues totals and checks', `Owed ${bsMoney(dues.owed)}`, bsRenderRows(dues.rows), false));
-    const eoy = bsEoyLedger(bsGatherPoolLedger(season));
+    const eoyData = bsGatherPoolLedger(season);
+    const eoy = bsEoyLedger(eoyData);
     html += sec('🏆 EOY Skins and post-season CTP pool', 'The $10 per player per week entry ($7 Skins + $3 CTP) goes into one pool. Refunds, Skin winners and CTP winners move from the pool to a person, and each week\'s remainder moves to the Skins kitty.',
       cards([['Pool now', eoy.poolBalance, '#1b5e20'], ['Entries in', eoy.in, '#2e7d32'], ['Moved to winners', -eoy.winners, '#c62828'], ['Refunded', -eoy.refunds, '#c62828'], ['Still owed to people', eoy.owed, '#e65100']]) +
-      bsPanel('eoy-ledger', 'EOY pool ledger', `Pool ${bsMoney(eoy.poolBalance)}`, scroll(bsRenderLedger(eoy.ledger, [])), true) +
+      bsPanel('eoy-ledger', 'EOY pool ledger', `Pool ${bsMoney(eoy.poolBalance)}`, scroll(bsRenderLedger(eoy.ledger, eoyData.pending)), true) +
       bsPanel('eoy-totals', 'EOY pool totals and checks', `Owed ${bsMoney(eoy.owed)}`, bsRenderRows(bsPoolSheet(bsGatherPool(season)).rows), false));
     const kl = bsKittyLedgers(bsGatherKittyLedger(season));
     html += sec('🎯 Regular-season Skins and CTP kitties', 'Each night\'s Skin and CTP entries go into a kitty; winners and Pay-from-Kitty payouts move from the kitty to a person.',
