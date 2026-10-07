@@ -149,6 +149,7 @@ assert.strictEqual(comp.reduce((t, x) => t + x.count, 0), rows.length, 'every ro
   assert(/bsDetailRow" style="display:none/.test(html) && html.includes('Amy') && html.includes('Venmo'), 'payer detail rows start hidden');
   const awardHtml = c.bsRenderLedger([{ kind: 'award', date: '20261231', label: 'Pool \u2192 X', amount: -10, balance: 0, paid: false }], []);
   assert(!/bsExpandRow/.test(awardHtml), 'rows without payers are not clickable');
+  assert(/SELECT Player as player,[^`]*'League Dues'/.test(extract('bsGatherDues')), 'gatherer returns the lowercase player key the sheet reads');
   assert(/function bsToggleDetail/.test(src) && /PayMethod/.test(extract('bsGatherDues')), 'toggle + method wired');
 }
 // ── wiring ──
@@ -172,5 +173,5 @@ const loader = extract('loadBalanceSheet') + extract('bsGatherDues') + extract('
 assert(/bsEoyLedger\(bsGatherPoolLedger\(season\)\)/.test(src) && /bsKittyLedgers\(bsGatherKittyLedger\(season\)\)/.test(src), 'the EOY pool and the kitties are shown as pool ledgers');
 assert(!/serverRun|INSERT|UPDATE |DELETE/.test(loader.replace(/UPDATE/g, '')), 'the Balance Sheet only reads');
 assert(/LeagueExpenses/.test(extract('bsGatherDues')), 'expenses come from the Expenses screen table');
-assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.8');
+assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.9');
 console.log('ok');
