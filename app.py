@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261007.2-sandbox'
+VERSION    = '20261007.3-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -2974,6 +2974,16 @@ def ensure_schema():
             PRIMARY KEY (Player, IP))""")
         cur.execute("""CREATE TABLE IF NOT EXISTS PlayerPresence (
             Player TEXT PRIMARY KEY, LastSeen TEXT, IP TEXT, Tab TEXT, Device TEXT)""")
+        # SeasonSettings.Carryover: the League Settings form has always had this field, but the column was missing, which made the
+        # whole season-settings save fail once every field unlocked (after the season ended). Add it so the form works.
+        try:
+            cur.execute("PRAGMA table_info(SeasonSettings)")
+            _ss_cols = {r[1] for r in cur.fetchall()}
+            if _ss_cols and 'Carryover' not in _ss_cols:
+                cur.execute("ALTER TABLE SeasonSettings ADD COLUMN Carryover TEXT")
+                print(f'[{now_local():%H:%M:%S}] Schema check: added SeasonSettings.Carryover column')
+        except Exception as e:
+            print(f'[{now_local():%H:%M:%S}] Schema check (SeasonSettings.Carryover): {e}')
         cur.execute("""CREATE TABLE IF NOT EXISTS LeagueExpenses (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
             League TEXT,
