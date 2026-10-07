@@ -674,7 +674,6 @@
   <div class="tab" data-tab="payments">Payments</div>
   <div class="tab" data-tab="prizemoney">PrizeMoney</div>
   <div class="tab" data-tab="skins">Skins/CTPs</div>
-  <div class="tab" data-tab="awards">🏆 Award Prizes</div>
   <div class="tab" data-tab="stableford">Stableford</div>
   <div class="tab" data-tab="noshows">Attendance</div>
   <div class="tab" data-tab="schedule">Schedule</div>
@@ -1078,47 +1077,6 @@
     </div>
   </div>
 
-  <!-- AWARD PRIZES (admin): everything we assign or pay to winners -->
-  <div class="section" id="tab-awards">
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-header">🎯 Award CTP Winners</div>
-      <div style="padding:12px">
-        <div class="controls">
-          <div class="filter-group">
-            <label>Season</label>
-            <select id="ctpsSeason" onchange="populateCtpsDateDropdown()"></select>
-          </div>
-          <div class="filter-group">
-            <label>Week</label>
-            <select id="ctpsDate" onchange="syncSkinsToCtpsDate()"></select>
-          </div>
-        </div>
-        <div id="ctpsContent" style="margin-top:16px"></div>
-      </div>
-    </div>
-    <div class="controls">
-      <div class="filter-group">
-        <label>Season (half-season and championship awards)</label>
-        <select id="awardSeason" onchange="renderAwardPrizes()"></select>
-      </div>
-    </div>
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-header">🏆 Award Half-Season Winners</div>
-      <div id="awardHalfBody" style="padding:12px"></div>
-    </div>
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-header">🏆 Award League Championship Winners</div>
-      <div id="awardChampBody" style="padding:12px"></div>
-    </div>
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-header">Other prize actions</div>
-      <div style="padding:12px;display:flex;gap:10px;flex-wrap:wrap">
-        <button onclick="switchTab('prizemoney')" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">💰 Pay from Kitty / refunds (Prize Money)</button>
-        <button onclick="switchTab('skins')" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">🎯 Post-season Skins: Calculate / Restate (Skins/CTPs)</button>
-      </div>
-    </div>
-  </div>
-
   <!-- NO-SHOWS -->
   <div class="section" id="tab-noshows">
     <div class="controls">
@@ -1394,6 +1352,8 @@
       <button onclick="showAdminSection('proposals')" id="adminBtnProposals" class="admin-btn">📋 Proposals</button>
       <button onclick="showAdminSection('changelog')" id="adminBtnChangelog" class="admin-btn">📝 Changelog</button>
       <button onclick="showAdminSection('expenses')" id="adminBtnExpenses" class="admin-btn">💰 Expenses</button>
+      <button onclick="showAdminSection('awards')" id="adminBtnAwards" class="admin-btn">🏆 Award Prizes</button>
+      <button onclick="showAdminSection('balance')" id="adminBtnBalance" class="admin-btn">📒 Balance Sheet</button>
       <button onclick="showAdminSection('pageviews')" id="adminBtnPageviewsTop" class="admin-btn">📊 Usage</button>
       <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
       <button onclick="showAdminSection('compare');setTimeout(()=>{const s=document.getElementById('compareDateSel');if(s&&s.value)runCompareWithLive();},100)" id="adminBtnCompare" class="admin-btn" style="display:none">📊 Compare Live</button>
@@ -1413,6 +1373,61 @@
       <button onclick="showAdminSection('emaillog')" id="adminBtnEmaillog" class="admin-subbtn">✉️ Emails Sent</button>
       <button onclick="showAdminSection('pageviews')" id="adminBtnPageviews" class="admin-subbtn">📊 Usage</button>
       <button onclick="showAdminSection('whoson')" id="adminBtnWhoson" class="admin-subbtn">🟢 Who's On</button>
+    </div>
+
+    <!-- AWARD PRIZES (Admin section): everything we assign or pay to winners -->
+    <div id="adminAwards" style="display:none">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">🎯 Award CTP Winners</div>
+      <div style="padding:12px">
+        <div class="controls">
+          <div class="filter-group">
+            <label>Season</label>
+            <select id="ctpsSeason" onchange="populateCtpsDateDropdown()"></select>
+          </div>
+          <div class="filter-group">
+            <label>Week</label>
+            <select id="ctpsDate" onchange="syncSkinsToCtpsDate()"></select>
+          </div>
+        </div>
+        <div id="ctpsContent" style="margin-top:16px"></div>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="filter-group">
+        <label>Season (half-season and championship awards)</label>
+        <select id="awardSeason" onchange="renderAwardPrizes()"></select>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">🏆 Award Half-Season Winners</div>
+      <div id="awardHalfBody" style="padding:12px"></div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">🏆 Award League Championship Winners</div>
+      <div id="awardChampBody" style="padding:12px"></div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">Other prize actions</div>
+      <div style="padding:12px;display:flex;gap:10px;flex-wrap:wrap">
+        <button onclick="switchTab('prizemoney')" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">💰 Pay from Kitty / refunds (Prize Money)</button>
+        <button onclick="switchTab('skins')" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">🎯 Post-season Skins: Calculate / Restate (Skins/CTPs)</button>
+      </div>
+    </div>
+  </div>
+
+    <!-- BALANCE SHEET (Admin section): where the money came in and where it went -->
+    <div id="adminBalance" style="display:none">
+      <div class="card">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+          <span>📒 Balance Sheet</span>
+          <div style="display:flex;gap:10px;align-items:center">
+            <label style="font-size:12px;font-weight:600">Season <select id="balanceSeason" onchange="loadBalanceSheet()" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border)"></select></label>
+            <button onclick="loadBalanceSheet()" style="padding:5px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
+          </div>
+        </div>
+        <div id="balanceBody" style="padding:12px 16px"></div>
+      </div>
     </div>
 
     <div id="adminPdfs" style="display:none">
@@ -2703,7 +2718,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.3';
+const APP_VERSION = '20261007.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3435,7 +3450,7 @@ dz.addEventListener('drop', e => {
 dz.addEventListener('click', () => document.getElementById('fileInput').click());
 
 // ── Tabs ──
-const ADMIN_ONLY_TABS = new Set(['admin', 'payments', 'schedule', 'awards']);
+const ADMIN_ONLY_TABS = new Set(['admin', 'payments', 'schedule']);
 
 // ── What's New changelog — prepend a new entry each deploy ──────────────────
 // Each entry: { version, date, items: ['...','...'] }
@@ -4795,7 +4810,7 @@ function loadPrizeMoney(options = {}) {
       <div style="background:#e8eaf6;border:1px solid #3949ab;border-radius:8px;padding:12px 20px;min-width:260px">
         <div style="font-size:11px;color:#3949ab;font-weight:600;margin-bottom:8px">HALF-SEASON STANDINGS PAYOUTS</div>
         <div style="display:flex;gap:6px">
-          <button onclick="switchTab('awards')" style="padding:6px 12px;background:#3949ab;color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer">🏆 Award Half-Season Winners →</button>
+          <button onclick="openAwardPrizes()" style="padding:6px 12px;background:#3949ab;color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer">🏆 Award Half-Season Winners →</button>
         </div>
       </div>` : ''}
       ${(currentUser?.role==='admin'||currentUser?.role==='developer') ? `
@@ -5609,7 +5624,6 @@ function refreshTab(tab) {
   if (tab === 'standings') loadStandings();
   if (tab === 'stableford') { loadStablefordTab(); loadSfStandings(); }
   if (tab === 'skins') { initSkinsTab(); loadCtpsTab(); }
-  if (tab === 'awards') loadAwardPrizesTab();
   if (tab === 'noshows') loadNoShows();
   if (tab === 'handicaps') loadHandicaps();
   if (tab === 'matches') loadMatchesTab();
@@ -11144,7 +11158,7 @@ function loadSchedule() {
 }
 
 // ── ADMIN TAB ──
-const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals'];
+const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals','awards','balance'];
 const ADMIN_GROUPS = {
   tables: ['players','teams','subs','leaguesettings'],
   logging: ['loginactivity','serverlog','pageviews','whoson','emaillog']
@@ -11209,6 +11223,8 @@ function showAdminSection(section) {
   if (section==='proposals') loadProposalsAdmin();
   if (section==='expenses')  loadExpenses();
   if (section==='compare')   loadCompareSection();
+  if (section==='awards')    loadAwardPrizesTab();
+  if (section==='balance')   loadBalanceSheet();
   if (section==='pageviews') loadPageViews();
   if (section==='whoson')    loadWhoson();
   else stopWhosonRefresh();
@@ -23085,6 +23101,243 @@ function calcHalfSeasonWinners(season, half) {
 // Awarding writes the winners' payout rows (Payments, unpaid until you mark them paid); nothing is ever written on load. Tied
 // places share the combined prizes of the places they cover, split equally (the same rule as the leaderboard's CC $ column); there
 // is no tie-break. A recorded award can be reset only while none of it has been paid.
+// ── Balance Sheet (Admin, read-only audit) ───────────────────────────────────────────────────────────────────────────────
+// Shows where league money came in and where it went, straight from the recorded Payments / Expenses rows. Nothing here ever
+// writes. Three sheets: (1) League Dues, (2) EOY Skins and post-season CTP pools, (3) regular-season Skins and CTP kitties, plus a
+// completeness table that lists every payment row of the season by type so nothing recorded can be left off unnoticed.
+const bsR2 = x => Math.round((parseFloat(x) || 0) * 100) / 100;
+function bsMoney(v) {
+  const n = bsR2(v);
+  const s = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n < 0 ? `($${s})` : `$${s}`;
+}
+const bsSum = (a, f) => bsR2((a || []).reduce((t, r) => t + (parseFloat(f ? f(r) : r.amount) || 0), 0));
+
+// (1) League Dues: money in (dues) vs money out (expenses and the prizes awarded from dues).
+function bsDuesSheet(d) {
+  const dues = d.dues || [], expenses = d.expenses || [];
+  const moneyIn = bsSum(dues), expenseTotal = bsSum(expenses);
+  const byCat = {};
+  expenses.forEach(e => { const c = e.category || 'Other'; byCat[c] = bsR2((byCat[c] || 0) + (parseFloat(e.amount) || 0)); });
+  const groups = (d.awards || []).map(g => {
+    const total = bsSum(g.rows), paid = bsSum(g.rows.filter(r => r.paid));
+    return { key: g.key, label: g.label, rows: g.rows, total, paid, owed: bsR2(total - paid) };
+  });
+  const estimates = (d.estimates || []).filter(e => e.total > 0);
+  const awardedTotal = bsSum(groups, g => g.total), paidOut = bsSum(groups, g => g.paid), owed = bsSum(groups, g => g.owed);
+  const estimateTotal = bsSum(estimates, e => e.total);
+  const afterExpenses = bsR2(moneyIn - expenseTotal);
+  const cashOnHand = bsR2(afterExpenses - paidOut);
+  const afterAwards = bsR2(afterExpenses - awardedTotal);
+  const projected = bsR2(afterAwards - estimateTotal);
+  const rows = [];
+  rows.push({ kind: 'head', label: 'Money in' });
+  rows.push({ kind: 'in', label: `League dues collected (${dues.length} payment${dues.length === 1 ? '' : 's'})`, amount: moneyIn });
+  rows.push({ kind: 'head', label: 'Money out' });
+  rows.push({ kind: 'out', label: `Expenses (${expenses.length} item${expenses.length === 1 ? '' : 's'}, from the Expenses screen)`, amount: expenseTotal });
+  Object.keys(byCat).sort().forEach(c => rows.push({ kind: 'sub', label: c, amount: byCat[c] }));
+  groups.filter(g => g.rows.length).forEach(g => {
+    rows.push({ kind: 'out', label: `${g.label} (awarded)`, amount: g.total, note: `paid ${bsMoney(g.paid)}, owed ${bsMoney(g.owed)}` });
+    g.rows.forEach(r => rows.push({ kind: 'sub', label: `${r.place ? r.place + ' · ' : ''}${r.player}`, amount: bsR2(r.amount), note: r.paid ? 'paid' : 'owed' }));
+  });
+  estimates.forEach(e => rows.push({ kind: 'est', label: `${e.label} (not awarded yet, estimate)`, amount: bsR2(e.total) }));
+  rows.push({ kind: 'total', label: 'Balance after expenses', amount: afterExpenses });
+  rows.push({ kind: 'total', label: 'Cash on hand from dues (after the prizes already paid out)', amount: cashOnHand });
+  rows.push({ kind: 'note', label: 'Still owed to winners (awarded, not yet marked paid)', amount: owed });
+  rows.push({ kind: 'total', label: 'Balance after all the awards made', amount: afterAwards });
+  if (estimateTotal > 0) rows.push({ kind: 'total', label: 'Projected balance after the awards not yet made (estimate)', amount: projected });
+  if ((d.rosterUnpaid || []).length) rows.push({ kind: 'note', label: `Roster players with no dues payment recorded: ${d.rosterUnpaid.join(', ')}` });
+  return { moneyIn, expenseTotal, byCat, groups, awardedTotal, paidOut, owed, estimateTotal, afterExpenses, cashOnHand, afterAwards, projected, rows };
+}
+
+// (2) EOY Skins and post-season CTP: entries in, refunds, and what each week's pots did.
+function bsPoolSheet(d) {
+  const e = d.entries || {}, rf = d.refunds || {};
+  const paymentsIn = bsR2(e.paymentsIn), transfersIn = bsR2(e.transfersIn);
+  const refundsIssued = bsR2(rf.issued), refundsPaid = bsR2(rf.paid), refundsOwed = bsR2(refundsIssued - refundsPaid);
+  const netIn = bsR2(paymentsIn + transfersIn - refundsIssued);
+  const weeks = (d.weeks || []).map(w => {
+    const P = (w.potPlayers || 0), F = (w.fieldPlayers || 0);
+    const skinPot = bsR2(P * w.skinAmt), ctpPot = bsR2(P * w.ctpAmt);
+    const skinWon = bsSum(w.skinWinners), ctpWon = bsSum(w.ctpWinners);
+    const skinLeft = bsR2(skinPot - skinWon), ctpLeft = bsR2(ctpPot - ctpWon);
+    const recorded = bsR2(w.skinRemainderRecorded || 0);
+    const held = bsR2(Math.max(0, F - P) * w.weekEntry);
+    return { week: w.week, date: w.date, nine: w.nine, P, F, skinPot, ctpPot, skinWon, ctpWon,
+      skinWonPaid: bsSum((w.skinWinners || []).filter(r => r.paid)), ctpWonPaid: bsSum((w.ctpWinners || []).filter(r => r.paid)),
+      skinLeft, ctpLeft, recorded, toRecord: bsR2(skinLeft - recorded), held, total: bsR2(skinPot + ctpPot + held),
+      skinCount: (w.skinWinners || []).length, ctpCount: (w.ctpWinners || []).length };
+  });
+  const accounted = bsSum(weeks, w => w.total);
+  const difference = bsR2(netIn - accounted);
+  const rows = [];
+  rows.push({ kind: 'head', label: 'Money in' });
+  rows.push({ kind: 'in', label: `EOY Skins entries paid (${e.paymentCount || 0} payment${e.paymentCount === 1 ? '' : 's'})`, amount: paymentsIn });
+  if (transfersIn) rows.push({ kind: 'in', label: 'Moved in from another pool (Pool Transfer)', amount: transfersIn });
+  if (refundsIssued) rows.push({ kind: 'out', label: 'Refunds issued to players', amount: refundsIssued, note: `paid ${bsMoney(refundsPaid)}, owed ${bsMoney(refundsOwed)}` });
+  rows.push({ kind: 'total', label: 'Net money in the pools', amount: netIn });
+  weeks.forEach(w => {
+    rows.push({ kind: 'head', label: `Week ${w.week} (${w.nine ? w.nine + ' 9, ' : ''}${w.date})` });
+    rows.push({ kind: 'note', label: `${w.P} player${w.P === 1 ? '' : 's'} in the pot (paid and scored)` });
+    rows.push({ kind: 'in', label: `Skins pot (${w.P} × ${bsMoney(w.P ? w.skinPot / w.P : 0)})`, amount: w.skinPot });
+    rows.push({ kind: 'out', label: `Skin winners (${w.skinCount})`, amount: w.skinWon, note: `paid ${bsMoney(w.skinWonPaid)}, owed ${bsMoney(bsR2(w.skinWon - w.skinWonPaid))}` });
+    rows.push({ kind: 'sub', label: 'Skins left over (pot minus winners)', amount: w.skinLeft, note: w.skinCount ? `recorded to the Skins kitty: ${bsMoney(w.recorded)}${Math.abs(w.toRecord) > 0.005 ? `, still to record: ${bsMoney(w.toRecord)}` : ''}` : 'no winners recorded yet' });
+    rows.push({ kind: 'in', label: `CTP pot (${w.P} × ${bsMoney(w.P ? w.ctpPot / w.P : 0)})`, amount: w.ctpPot });
+    rows.push({ kind: 'out', label: `CTP winners (${w.ctpCount})`, amount: w.ctpWon, note: `paid ${bsMoney(w.ctpWonPaid)}, owed ${bsMoney(bsR2(w.ctpWon - w.ctpWonPaid))}` });
+    rows.push({ kind: 'sub', label: 'CTP left over (pot minus winners)', amount: w.ctpLeft, note: w.ctpCount ? '' : 'no winners recorded yet' });
+    if (w.held) rows.push({ kind: 'sub', label: `Paid in but not in the pot (${Math.max(0, w.F - w.P)} player${w.F - w.P === 1 ? '' : 's'}: no score, so held until refunded or scored)`, amount: w.held });
+  });
+  rows.push({ kind: 'total', label: 'Accounted for by the weekly pots and held entries', amount: accounted });
+  rows.push({ kind: Math.abs(difference) > 0.005 ? 'check-bad' : 'check-ok', label: Math.abs(difference) > 0.005 ? 'Not explained by the weeks above (entries not assigned to a week, or a transfer)' : 'Everything paid in is accounted for', amount: difference });
+  if (d.unassignedPayments) rows.push({ kind: 'check-bad', label: `${d.unassignedPayments} EOY payment(s) are not assigned to a week (see Prize Money)` });
+  return { paymentsIn, transfersIn, refundsIssued, refundsPaid, refundsOwed, netIn, weeks, accounted, difference, rows };
+}
+
+// (3) Regular-season Skins and CTP kitties, with the figure the Prize Money tab shows next to it.
+function bsKittySheet(d) {
+  const s = d.skin || {}, c = d.ctp || {};
+  const skinBalance = bsR2(s.in - s.winners - s.transfersOut - s.kittyPayouts + s.remainderCredit);
+  const skinPmShows = bsR2(s.in - s.winners - s.transfersOut + s.remainderCredit);
+  const ctpLeft = bsR2(c.in - c.winners - c.kittyPayouts - c.transfersOut);
+  const rows = [];
+  rows.push({ kind: 'head', label: 'Skins' });
+  rows.push({ kind: 'in', label: 'Skin entries paid in', amount: bsR2(s.in) });
+  rows.push({ kind: 'out', label: 'Skin winners', amount: bsR2(s.winners), note: `paid ${bsMoney(s.winnersPaid)}, owed ${bsMoney(bsR2(s.winners - s.winnersPaid))}` });
+  if (s.transfersOut) rows.push({ kind: 'out', label: 'Moved to another pool (Pool Transfer)', amount: bsR2(s.transfersOut) });
+  if (s.kittyPayouts) rows.push({ kind: 'out', label: 'Paid out of the kitty to players (Pay from Kitty)', amount: bsR2(s.kittyPayouts) });
+  if (s.remainderCredit) rows.push({ kind: 'in', label: 'Post-season Skins remainders added to the kitty', amount: bsR2(s.remainderCredit) });
+  rows.push({ kind: 'total', label: 'Skins kitty balance', amount: skinBalance });
+  rows.push({ kind: Math.abs(skinPmShows - skinBalance) > 0.005 ? 'check-bad' : 'check-ok',
+    label: Math.abs(skinPmShows - skinBalance) > 0.005 ? 'Check: the Prize Money tab shows a different Skins kitty (it does not subtract Pay-from-Kitty payouts)' : 'Matches the Skins kitty on the Prize Money tab', amount: skinPmShows });
+  rows.push({ kind: 'head', label: 'CTP' });
+  rows.push({ kind: 'in', label: 'CTP entries paid in', amount: bsR2(c.in) });
+  rows.push({ kind: 'out', label: 'CTP winners', amount: bsR2(c.winners), note: `paid ${bsMoney(c.winnersPaid)}, owed ${bsMoney(bsR2(c.winners - c.winnersPaid))}` });
+  if (c.transfersOut) rows.push({ kind: 'out', label: 'Moved to another pool (Pool Transfer)', amount: bsR2(c.transfersOut) });
+  if (c.kittyPayouts) rows.push({ kind: 'out', label: 'Paid out of the kitty to players (Pay from Kitty)', amount: bsR2(c.kittyPayouts) });
+  rows.push({ kind: 'total', label: 'CTP money not paid to a winner (entries minus winners and payouts)', amount: ctpLeft });
+  rows.push({ kind: 'note', label: 'Carryover held per hole on the Prize Money tab', amount: bsR2(c.carryoverHeld) });
+  return { skinBalance, skinPmShows, ctpLeft, rows };
+}
+
+// Every payment row of the season, grouped by what it is, and which sheet shows it. Unknown types are flagged.
+function bsClassifyPayment(desc, detail, player) {
+  const d = String(desc || ''), t = String(detail || ''), p = String(player || '');
+  if (d === 'League Dues' && t === 'Payment') return { type: 'League dues paid in', on: 'League Dues' };
+  if (/^Reg Season Champ-/.test(d) || d === 'League Championship') return { type: 'Prize awarded from dues', on: 'League Dues' };
+  if (d === 'EOY Skins' && t === 'Payment') return { type: 'EOY Skins entry paid in', on: 'EOY Skins & post-season CTP' };
+  if (d === 'EOY Skins' && t === 'Refund') return { type: 'EOY refund', on: 'EOY Skins & post-season CTP' };
+  if (d === 'EOY Skins' && t === 'Pool Transfer') return { type: 'Pool transfer (EOY Skins)', on: 'EOY Skins & post-season CTP' };
+  if (d === 'EOY Skins' && p === 'Kitty') return { type: 'Remainder leaving the EOY pool', on: 'EOY Skins & post-season CTP' };
+  if ((d === 'Skin' || d === 'CTP') && t === 'Payment') return { type: `${d} entry paid in`, on: 'Skins & CTP kitties' };
+  if ((d === 'Skin' || d === 'CTP') && /^#/.test(t) && p !== 'Kitty') return { type: `${d} winner`, on: 'Skins & CTP kitties / post-season pots' };
+  if ((d === 'Skin' || d === 'CTP') && t === 'Kitty Payout') return { type: `${d} paid out of the kitty`, on: 'Skins & CTP kitties' };
+  if ((d === 'Skin' || d === 'CTP') && t === 'Pool Transfer') return { type: `${d} pool transfer`, on: 'Skins & CTP kitties' };
+  if (d === 'CTP' && p === 'Kitty' && /^Carryover/.test(t)) return { type: 'CTP carryover record', on: 'Skins & CTP kitties' };
+  if (d === 'Skin' && p === 'Kitty') return { type: 'Skins kitty record (remainder)', on: 'Skins & CTP kitties' };
+  return { type: `${d || '(blank)'} / ${t || '(blank)'}`, on: '' };
+}
+function bsCompleteness(rows) {
+  const g = {};
+  (rows || []).forEach(r => {
+    const c = bsClassifyPayment(r.d, r.t, r.p), key = c.type + '|' + c.on;
+    (g[key] = g[key] || { type: c.type, on: c.on, count: 0, total: 0 });
+    g[key].count++; g[key].total = bsR2(g[key].total + (parseFloat(r.e) || 0));
+  });
+  return Object.values(g).sort((a, b) => (a.on === '') - (b.on === '') || a.on.localeCompare(b.on) || a.type.localeCompare(b.type));
+}
+
+function bsRenderRows(rows) {
+  const e = v => String(v ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+  return `<table style="border-collapse:collapse;width:100%;max-width:820px;font-size:13px">${rows.map(r => {
+    const amt = r.amount === undefined || r.amount === null ? '' : bsMoney(r.kind === 'out' ? -r.amount : r.amount);
+    const color = r.kind === 'in' ? '#2e7d32' : r.kind === 'out' ? '#c62828' : r.kind === 'est' ? '#e65100' : r.kind === 'check-bad' ? '#c62828' : r.kind === 'check-ok' ? '#2e7d32' : '#333';
+    if (r.kind === 'head') return `<tr><td colspan="3" style="padding:10px 6px 4px;font-weight:700;color:var(--green);border-bottom:2px solid var(--green)">${e(r.label)}</td></tr>`;
+    const pad = r.kind === 'sub' ? 'padding-left:26px;color:#666;font-size:12px' : '';
+    const bold = r.kind === 'total' ? 'font-weight:700;border-top:1px solid #bbb;' : '';
+    const italic = r.kind === 'est' ? 'font-style:italic;' : '';
+    return `<tr><td style="padding:4px 6px;${bold}${italic}${pad}">${e(r.label)}</td><td style="padding:4px 6px;text-align:right;font-family:'DM Mono',monospace;white-space:nowrap;color:${color};${bold}${italic}">${amt}</td><td style="padding:4px 6px;font-size:11px;color:#888">${e(r.note || '')}</td></tr>`;
+  }).join('')}</table>`;
+}
+
+function bsGatherDues(season) {
+  const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`;
+  const dues = query(`SELECT Player, CAST(Earned AS REAL) as amount FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ? AND Date < ?`, [S0, S1]);
+  let expenses = [];
+  try { expenses = query(`SELECT Date, Category, Description, Amount FROM LeagueExpenses WHERE League="Hugh's" AND Season=?`, [season]).map(r => ({ category: r.Category, description: r.Description, amount: r.Amount })); } catch (e) {}
+  const defs = [['half1', '1st half winners', 'Reg Season Champ-1st half'], ['half2', '2nd half winners', 'Reg Season Champ-2nd half'], ['champ', 'League Championship winners', 'League Championship']];
+  const awards = defs.map(([key, label, desc]) => ({ key, label, rows: awardRecordedRows(season, desc).map(r => ({ player: r.Player, place: String(r.Comment || r.Detail).split('-')[0], amount: parseFloat(r.Earned || 0), paid: awardIsPaid(r) })) }));
+  const estimates = [];
+  try {
+    [1, 2].forEach(h => { if (!awards[h - 1].rows.length) { const p = halfSeasonAwardPlan(season, h); if (p.ok) estimates.push({ key: 'half' + h, label: `${h === 1 ? '1st' : '2nd'} half winners`, total: bsSum(p.rows, r => r.prize) }); } });
+    if (!awards[2].rows.length) { const p = champAwardPlan(season); if (p.ok) estimates.push({ key: 'champ', label: 'League Championship winners', total: bsSum(p.paid, r => r.prize * (r.players || []).length) }); }
+  } catch (e) {}
+  const payers = new Set(query(`SELECT DISTINCT Player FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ? AND Date < ?`, [S0, S1]).map(r => r.Player));
+  const rosterUnpaid = query(`SELECT DISTINCT Player FROM Teams WHERE League="Hugh's" AND Year=?`, [season]).map(r => r.Player).filter(p => !payers.has(p)).sort();
+  return { dues, expenses, awards, estimates, rosterUnpaid };
+}
+function bsGatherPool(season) {
+  const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`;
+  const one = (sql, args) => query(sql, args)[0] || {};
+  const pay = one(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t, COUNT(*) as n FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ? AND Date < ?`, [S0, S1]);
+  const tr = one(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Pool Transfer' AND Date >= ? AND Date < ?`, [S0, S1]);
+  const rf = query(`SELECT CAST(Earned AS REAL) as e, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ? AND Date < ?`, [S0, S1]);
+  const lp = getSeasonSettings(season), ps = lp?.PostSeasonDt ? parsePostSeasonDates(lp.PostSeasonDt) : null;
+  const weeks = [];
+  if (ps) [1, 2].forEach(w => {
+    const st = psWeekSkinState(season, w); if (!st) return;
+    const ctp = query(`SELECT Player, CAST(Earned AS REAL) AS amount, COALESCE(DatePaid,'') AS dp FROM Payments WHERE League="Hugh's" AND "Desc"='CTP' AND Detail LIKE '#%' AND Player!='Kitty' AND CAST(Date AS INTEGER)=CAST(? AS INTEGER)`, [st.date]);
+    weeks.push({ week: w, date: fmtDate(st.date), nine: getPostSeasonWeek1Nine(season) === 'Back' ? (w === 1 ? 'Back' : 'Front') : (w === 1 ? 'Front' : 'Back'),
+      potPlayers: st.potPlayers.length, fieldPlayers: getEoySkinPlayersForWeek(season, w).size, weekEntry: getPostSeasonWeekEntry(season).total, skinAmt: st.skinAmt, ctpAmt: st.ctpAmt,
+      skinWinners: st.stored.map(r => ({ player: r.Player, amount: r.Earned, paid: !!r.DatePaid })), ctpWinners: ctp.map(r => ({ player: r.Player, amount: r.amount, paid: !!r.dp })),
+      skinRemainderRecorded: st.recorded ? st.payout.remainder : 0 });
+  });
+  let unassigned = 0; try { unassigned = (computeEoyGrossByWeek(season).unassigned || []).length; } catch (e) {}
+  return { entries: { paymentsIn: pay.t || 0, paymentCount: pay.n || 0, transfersIn: tr.t || 0 },
+    refunds: { issued: bsSum(rf, r => Math.abs(r.e)), paid: bsSum(rf.filter(r => r.dp), r => Math.abs(r.e)) }, weeks, unassignedPayments: unassigned };
+}
+function bsGatherKitty(season) {
+  const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`, ex = psKittyExclude(season);
+  const n = (sql, args) => parseFloat((query(sql, args)[0] || {}).t || 0);
+  const winners = (desc, extra) => query(`SELECT CAST(Earned AS REAL) as e, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"='${desc}' AND Detail LIKE '#%' AND Player != 'Kitty' AND Date >= ? AND Date < ?${extra}`, [S0, S1]);
+  const sw = winners('Skin', ex), cw = winners('CTP', '');
+  const tot = (desc, detail) => n(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='${desc}' AND Detail=? AND Date >= ? AND Date < ?${detail === 'Payment' && desc === 'Skin' ? ex : ''}`, [detail, S0, S1]);
+  // Carryover held per hole (same rule as the Prize Money tab): the latest carryover record per hole with no winner since
+  const rows = query(`SELECT Detail, Earned, Date as cDate FROM Payments WHERE League="Hugh's" AND "Desc"='CTP' AND Player='Kitty' AND Date >= ? AND Date < ? ORDER BY Date DESC`, [S0, S1]);
+  const seen = {}; let held = 0;
+  rows.forEach(r => { const m = r.Detail?.match(/Carryover(\d+)/); if (!m) return; const h = parseInt(m[1]); if (seen[h] !== undefined) return;
+    seen[h] = true; if (!query(`SELECT 1 FROM Payments WHERE "Desc"='CTP' AND Detail='#${h}' AND Player!='Kitty' AND Date >= ? LIMIT 1`, [r.cDate]).length) held += parseFloat(r.Earned || 0); });
+  return { skin: { in: tot('Skin', 'Payment'), winners: bsSum(sw, r => r.e), winnersPaid: bsSum(sw.filter(r => r.dp), r => r.e), transfersOut: tot('Skin', 'Pool Transfer'), kittyPayouts: tot('Skin', 'Kitty Payout'), remainderCredit: psSkinRemainderCredit(season) },
+           ctp: { in: tot('CTP', 'Payment'), winners: bsSum(cw, r => r.e), winnersPaid: bsSum(cw.filter(r => r.dp), r => r.e), transfersOut: tot('CTP', 'Pool Transfer'), kittyPayouts: tot('CTP', 'Kitty Payout'), carryoverHeld: held } };
+}
+
+function loadBalanceSheet() {
+  if (!db) return;
+  const sel = document.getElementById('balanceSeason'); if (!sel) return;
+  if (!sel.options.length) {
+    const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+    sel.innerHTML = seasons.map(x => `<option value="${x}">${x}</option>`).join('');
+    sel.value = String(getCurrentSeason());
+  }
+  const season = parseInt(sel.value) || getCurrentSeason();
+  const box = document.getElementById('balanceBody'); if (!box) return;
+  const sec = (title, sub, html) => `<div style="margin-bottom:22px"><div style="font-weight:700;font-size:15px;color:var(--green)">${title}</div><div style="font-size:12px;color:#777;margin-bottom:6px">${sub}</div>${html}</div>`;
+  let html = '';
+  try {
+    html += sec('📥 League Dues', 'Dues collected, the expenses paid from them, and the prizes awarded from them. Awards you have not made yet are shown as estimates.', bsRenderRows(bsDuesSheet(bsGatherDues(season)).rows));
+    html += sec('🏆 EOY Skins and post-season CTP', 'The $10 per player per week entry ($7 Skins + $3 CTP), what each week\'s pots did, and refunds.', bsRenderRows(bsPoolSheet(bsGatherPool(season)).rows));
+    html += sec('🎯 Regular-season Skins and CTP', 'Weekly Skins and CTP entries, winners, and what is left in the kitties.', bsRenderRows(bsKittySheet(bsGatherKitty(season)).rows));
+    const all = query(`SELECT "Desc" as d, Detail as t, Player as p, CAST(Earned AS REAL) as e FROM Payments WHERE League="Hugh's" AND Date >= ? AND Date < ?`, [`${season}0101`, `${season + 1}0101`]);
+    const comp = bsCompleteness(all);
+    html += sec('🔎 Every payment row this season', 'Each recorded payment row by type and the sheet above that shows it. A type with no sheet is flagged so nothing recorded is left off.',
+      `<table style="border-collapse:collapse;width:100%;max-width:820px;font-size:12px"><thead><tr><th style="text-align:left;padding:4px 6px;background:var(--green);color:var(--gold)">Type</th><th style="text-align:right;padding:4px 6px;background:var(--green);color:var(--gold)">Rows</th><th style="text-align:right;padding:4px 6px;background:var(--green);color:var(--gold)">Total</th><th style="text-align:left;padding:4px 6px;background:var(--green);color:var(--gold)">Shown on</th></tr></thead><tbody>${
+      comp.map(c => `<tr><td style="padding:3px 6px;border-bottom:1px solid #eee">${escapeHtml(c.type)}</td><td style="padding:3px 6px;text-align:right;border-bottom:1px solid #eee">${c.count}</td><td style="padding:3px 6px;text-align:right;font-family:'DM Mono',monospace;border-bottom:1px solid #eee">${bsMoney(c.total)}</td><td style="padding:3px 6px;border-bottom:1px solid #eee;${c.on ? '' : 'color:#c62828;font-weight:600'}">${c.on ? escapeHtml(c.on) : '⚠ not on a sheet'}</td></tr>`).join('') || '<tr><td colspan="4" style="padding:6px;color:#999">No payment rows this season.</td></tr>'}</tbody></table>`);
+  } catch (err) { html = `<div style="color:#c62828;font-size:12px">Could not build the balance sheet: ${String(err.message || err).replace(/[<>&]/g, '')}</div>`; }
+  box.innerHTML = html;
+}
+
+// Award Prizes lives under the Admin tab.
+function openAwardPrizes() { switchTab('admin'); showAdminSection('awards'); }
+
 function awardPlaceLabel(n) { return n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`; }
 
 // entries: best-first, each { id, score, players[] }; prizes: amount for place 1, 2, 3...; Returns one row per entry with its place,

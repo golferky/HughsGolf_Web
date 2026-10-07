@@ -106,16 +106,18 @@ let rd = J(c.halfSeasonAwardReadiness(2026, 2)); assert.strictEqual(rd.ready, fa
   c.awardReset(2026, 'League Championship'); assert(c.calls.some(x => /DELETE FROM Payments .*DatePaid IS NULL OR DatePaid=''/.test(x.sql)), 'removes only unpaid rows'); 
 
   // ── wiring ──
-  const skins = src.slice(src.indexOf('id="tab-skins"'), src.indexOf('id="tab-awards"'));
-  const awards = src.slice(src.indexOf('id="tab-awards"'), src.indexOf('id="tab-noshows"'));
+  const skins = src.slice(src.indexOf('id="tab-skins"'), src.indexOf('id="tab-noshows"'));
+  const awards = src.slice(src.indexOf('id="adminAwards"'), src.indexOf('<!-- BALANCE SHEET (Admin section)'));
   assert(/id="ctpsContent"/.test(awards) && /id="ctpsSeason"/.test(awards) && /id="ctpsDate"/.test(awards), 'CTP assignment moved to Award Prizes');
   assert(!/id="ctpsContent"|id="ctpsSeason"|id="ctpsDate"/.test(skins), 'and is gone from Skins/CTPs');
   assert(/id="skinWinners"/.test(skins) && /id="ctpWinners"/.test(skins) && /id="skinsParticipantsWrap"/.test(skins), 'everyone still sees skin winners, CTP winners and participants on Skins/CTPs');
-  assert(/data-tab="awards">🏆 Award Prizes</.test(src) && /ADMIN_ONLY_TABS = new Set\(\[[^\]]*'awards'/.test(src), 'admin-only tab');
-  assert(/if \(tab === 'awards'\) loadAwardPrizesTab\(\);/.test(src));
+  assert(!/data-tab="awards"/.test(src) && !/ADMIN_ONLY_TABS = new Set\(\[[^\]]*'awards'/.test(src), 'no longer a top-level tab');
+  assert(/id="adminBtnAwards"[^>]*>🏆 Award Prizes</.test(src) && /ADMIN_SECTIONS = \[[^\]]*'awards'/.test(src), 'an Admin section instead');
+  assert(/if \(section==='awards'\)\s+loadAwardPrizesTab\(\);/.test(src));
+  assert(/function openAwardPrizes\(\) \{ switchTab\('admin'\); showAdminSection\('awards'\); \}/.test(src));
   assert(/Award Half-Season Winners/.test(awards) && /Award League Championship Winners/.test(awards) && /Award CTP Winners/.test(awards));
   assert(!/function previewHalfSeasonWinners|function saveHalfSeasonWinners|previewHalfSeasonWinners\(/.test(src), 'the preview-only buttons are replaced by the Award Prizes tab');
-  assert(/switchTab\('awards'\)/.test(src.slice(src.indexOf('HALF-SEASON STANDINGS PAYOUTS'), src.indexOf('HALF-SEASON STANDINGS PAYOUTS') + 2500)), 'Prize Money links to the new tab');
+  assert(/openAwardPrizes\(\)/.test(src.slice(src.indexOf('HALF-SEASON STANDINGS PAYOUTS'), src.indexOf('HALF-SEASON STANDINGS PAYOUTS') + 2500)), 'Prize Money links to the Award Prizes section');
   assert(/_emailToastShownDates\.add\(date\)/.test(extract('awardMarkPaid')) && /_afterMarkPaidCallback = \(\) => renderAwardPrizes\(\)/.test(extract('awardMarkPaid')), 'paying a season award does not offer a league-night email');
   assert(/allRanked: ranked/.test(src));
   assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.2');
