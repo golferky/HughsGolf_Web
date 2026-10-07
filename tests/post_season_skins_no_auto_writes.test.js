@@ -232,7 +232,7 @@ let withRemainderNow = false;
     while ((m = re.exec(html))) { const e = enclosing(m.index); if (e && e.name !== fnName) callers.add(`${e.name} -> ${fnName}`); }
   }
   assert.deepStrictEqual([...callers].sort(), [
-    'doGallusConfirm -> saveSkinWinnersForDate', 'issuePostSeasonRefunds -> calcEoySkins', 'manualRecalcSkins -> saveSkinWinnersForDate',
+    'doGallusConfirm -> calcEoySkins' /* post-season Gallus import: read-only marker refresh, same as savePlayerScoreNow */, 'doGallusConfirm -> saveSkinWinnersForDate', 'issuePostSeasonRefunds -> calcEoySkins', 'manualRecalcSkins -> saveSkinWinnersForDate',
     'removeSub -> saveSkinWinnersForDate', 'saveEntryToDB -> saveSkinWinnersForDate', 'savePlayerScoreNow -> calcEoySkins',
     'saveSkinWinnersForDate -> calcEoySkins', 'toggleEntryPaid -> saveSkinWinnersForDate', 'undoGallusImport -> saveSkinWinnersForDate',
     '_runScoreRecalc -> saveSkinWinnersForDate'].sort(), 'a new caller of the calculators appeared: review it');

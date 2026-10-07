@@ -7,3 +7,6 @@ anthropic_key.txt
 *.log
 pip-cache/
 HughsGolf-test*.db
+
+__pycache__/
+*.pyc

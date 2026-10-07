@@ -8499,7 +8499,9 @@ function populateSkinsDateDropdown(loadAfter = true) {
     UNION
     SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League="Hugh's"), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     ORDER BY sDate DESC`);
-  skSel.innerHTML = skinDates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
+  // Post-season nights have no per-night 'Skin' buy-in (their buy-in is EOY Skins), so add them explicitly, newest first, as the CTP list does
+  const skinKeys = getCtpDateKeys(skinDates.map(r => r.sDate), season);
+  skSel.innerHTML = skinKeys.map(d => `<option value="${d}">${fmtDate(d)}</option>`).join('');
   if (loadAfter) loadSkins();
 }
 
@@ -17210,13 +17212,35 @@ function cancelGallusReview() {
   _gallusData = null;
 }
 
+// The nine a post-season night plays ('Front' / 'Back'): Week 1 follows the season's Week 1 nine setting, Week 2 is the other.
+// Returns null for a regular-season date.
+function psNineForDate(date) {
+  let ctx = null;
+  try { ctx = getPostSeasonContextForDate(date); } catch (e) {}
+  if (!ctx) return null;
+  const w1 = getPostSeasonWeek1Nine(ctx.season);
+  return ctx.week === 1 ? w1 : (w1 === 'Back' ? 'Front' : 'Back');
+}
+
 async function doGallusConfirm() {
   if (!_gallusData) return;
   const { players, frontBack } = _gallusData;
 
+  // Post-season: the grid holds all 18 holes (Front = slots 0-8, Back = slots 9-17) and each night plays one nine. A Gallus card goes
+  // into the nine that night plays; a card for the other nine is refused instead of being written into the wrong holes.
+  const isPS = isPostSeasonEntryMode();
+  const psDate = document.getElementById('entryDate').value;
+  const psNine = isPS ? psNineForDate(psDate) : null;
+  if (isPS && psNine && psNine !== frontBack) {
+    const msg = `This Gallus card is the ${frontBack} 9, but ${fmtDate(psDate)} is the ${psNine} 9 night. Pick the ${frontBack} 9 night's date and import again.`;
+    if (Array.isArray(window._importAllBatch)) console.warn(msg); else alert(msg);
+    return;
+  }
+  const holeOffset = isPS && frontBack === 'Back' ? 9 : 0;
+
   // Switch Front/Back if needed
   const fb = document.getElementById('entry9').value;
-  if (fb !== frontBack) {
+  if (!isPS && fb !== frontBack) {
     if (confirm(`Gallus scorecard is ${frontBack} 9 but entry is set to ${fb}. Switch to ${frontBack}?`)) {
       document.getElementById('entry9').value = frontBack;
       await buildEntryGrid();
@@ -17230,7 +17254,7 @@ async function doGallusConfirm() {
       s.active === p.name || s.regular === p.name || s.sub === p.name
     );
     if (!slot) return;
-    const hasExisting = slot.holes.some(h => h !== '' && h != null);
+    const hasExisting = slot.holes.slice(holeOffset, holeOffset + 9).some(h => h !== '' && h != null);   // only the nine being imported
     if (hasExisting) playersWithExistingScores.push(p.name);
   });
 
@@ -17265,7 +17289,7 @@ async function doGallusConfirm() {
     }
     if (!slot) return;
     p.scores.forEach((score, i) => {
-      if (score !== null && score > 0) slot.holes[i] = String(score);
+      if (score !== null && score > 0) slot.holes[holeOffset + i] = String(score);
     });
     imported++;
     // Find this slot's key for save-triggering
@@ -17308,6 +17332,7 @@ async function doGallusConfirm() {
   const skinAmt = parseFloat(lp?.Skins || 2);
   const ctpAmt  = parseFloat(lp?.Closest || 1);
 
+  let psSkipped = 0;
   for (const key of importedKeys) {
     const st = entryState[key];
     const gross = calcGross(st.holes);
@@ -17317,6 +17342,21 @@ async function doGallusConfirm() {
     // Write handicap FIRST so st.phdcp reflects effectivePhdcp for first-timers
     updateCompletedEntryHandicap(key, nine, true);
     // Now net uses the corrected st.phdcp
+    if (isPS) {
+      // Post-season: save just the imported nine on this night, exactly as the grid does (one row per nine and date). No regular-season
+      // Skin/CTP buy-ins are created (the post-season buy-in is EOY Skins), and an unfinished card is left in the grid unsaved.
+      const nine9 = st.holes.slice(holeOffset, holeOffset + 9);
+      if (!nine9.every(v => parseInt(v) > 0)) { psSkipped++; continue; }
+      const course9 = frontBack === 'Back' ? courseData.back : courseData.front;
+      const gross9 = nine9.reduce((a, v) => a + (parseInt(v) || 0), 0);
+      const net9 = calcNet(nine9, course9.pars, course9.hcps, st.phdcp);
+      serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND FrontBack=? AND League=?`, [playerName, date, frontBack, league]);
+      serverRun(`INSERT INTO Scores (League,Player,Date,FrontBack,"1","2","3","4","5","6","7","8","9",Gross,Net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [league, playerName, date, frontBack, nine9[0]||null, nine9[1]||null, nine9[2]||null, nine9[3]||null, nine9[4]||null,
+         nine9[5]||null, nine9[6]||null, nine9[7]||null, nine9[8]||null, gross9, net9]);
+      if (frontBack === 'Back') st._lastSavedBackSig = nine9.join('-'); else st._lastSavedFrontSig = nine9.join('-');
+      continue;
+    }
     const net = calcNet(st.holes, nine.pars, nine.hcps, st.phdcp);
     // Write score
     serverRun(`DELETE FROM Scores WHERE Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND League=?`, [playerName, date, league]);
@@ -17339,9 +17379,13 @@ async function doGallusConfirm() {
     }
   }
 
-  // Recalculate matches + skins once for all players
-  await calcMatchesForDate(date);
-  await saveSkinWinnersForDate(date);
+  // Recalculate matches + skins once for all players (post-season has no matches; its prize figures are refreshed instead)
+  if (isPS) {
+    calcEoySkins(parseInt(String(date).substring(0, 4)), true);
+  } else {
+    await calcMatchesForDate(date);
+    await saveSkinWinnersForDate(date);
+  }
   // Wait for all serverRun calls to complete so SERVER_DB_MODIFIED_MS is current before binary save
   await SERVER_RUN_QUEUE;
   await saveDBToServer();
@@ -17358,11 +17402,12 @@ async function doGallusConfirm() {
   });
 
   reRenderEntry();
+  if (isPS) { try { loadScores(); } catch (e) {} }   // post-season: refresh the leaderboard / scores table for the new nine
   scheduleScoreClassRefresh(nine, 200);
 
   // Skip the popup in batch (Import All) mode — toast is already shown
   if (!Array.isArray(window._importAllBatch)) {
-    alert(`✓ Imported scores for ${imported} players from Gallus Golf.`);
+    alert(`✓ Imported scores for ${imported} players from Gallus Golf.` + (psSkipped ? `\n\n${psSkipped} card(s) were not complete (all 9 holes needed) and were left unsaved in the grid.` : ''));
   }
 }
 // ─────────────────────────────────────────────────────────────────────────────
