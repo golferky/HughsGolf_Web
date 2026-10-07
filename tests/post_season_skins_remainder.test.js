@@ -218,7 +218,7 @@ const remRows = () => Object.keys(rem).sort();
   assert(html.includes("Math.round((collected - paidOut - transferred + psSkinRemainderCredit(s)) * 100) / 100"), 'Pool Transfer balance');
   assert(html.includes("Math.round((collected - paidOut - moved + psSkinRemainderCredit(s)) * 100) / 100"), 'Clear Kitty');
   assert(html.includes("Math.round((skinCollected - skinPaidOut + psSkinRemainderCredit(season)) * 100) / 100"), 'Admin kitty card');
-  assert.strictEqual((html.match(/psSkinRemainderCredit\(/g) || []).length, 5, '4 kitty call sites + the definition');
+  assert.strictEqual((html.match(/psSkinRemainderCredit\(/g) || []).length, 6, '4 kitty call sites + the read-only Balance Sheet + the definition');
   // the kitty and the EOY balance move by the same dollars in opposite directions
   const base = { skinKitty: -11, eoyCollected: 240, eoyPaidOut: 0 };                        // -$11: the regular-season kitty as it is today
   const after = c => ({ skinKitty: base.skinKitty + c, eoyBalance: base.eoyCollected - base.eoyPaidOut - c, eoyCollected: base.eoyCollected });
