@@ -674,6 +674,7 @@
   <div class="tab" data-tab="payments">Payments</div>
   <div class="tab" data-tab="prizemoney">PrizeMoney</div>
   <div class="tab" data-tab="skins">Skins/CTPs</div>
+  <div class="tab" data-tab="awards">🏆 Award Prizes</div>
   <div class="tab" data-tab="stableford">Stableford</div>
   <div class="tab" data-tab="noshows">Attendance</div>
   <div class="tab" data-tab="schedule">Schedule</div>
@@ -1065,18 +1066,6 @@
       </div>
     </div>
 
-  <!-- CTPS -->
-    <div class="controls" style="margin-top:20px">
-      <div class="filter-group">
-        <label>Season</label>
-        <select id="ctpsSeason" onchange="populateCtpsDateDropdown()"></select>
-      </div>
-      <div class="filter-group">
-        <label>Week</label>
-        <select id="ctpsDate" onchange="syncSkinsToCtpsDate()"></select>
-      </div>
-    </div>
-    <div id="ctpsContent" style="margin-top:16px"></div>
     <div class="card" style="margin-top:20px">
       <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
         <span>Participants</span>
@@ -1086,6 +1075,47 @@
         <thead><tr><th>Player</th><th class="num">Skin Paid</th><th class="num">CTP Paid</th></tr></thead>
         <tbody></tbody>
       </table></div>
+    </div>
+  </div>
+
+  <!-- AWARD PRIZES (admin): everything we assign or pay to winners -->
+  <div class="section" id="tab-awards">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">🎯 Award CTP Winners</div>
+      <div style="padding:12px">
+        <div class="controls">
+          <div class="filter-group">
+            <label>Season</label>
+            <select id="ctpsSeason" onchange="populateCtpsDateDropdown()"></select>
+          </div>
+          <div class="filter-group">
+            <label>Week</label>
+            <select id="ctpsDate" onchange="syncSkinsToCtpsDate()"></select>
+          </div>
+        </div>
+        <div id="ctpsContent" style="margin-top:16px"></div>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="filter-group">
+        <label>Season (half-season and championship awards)</label>
+        <select id="awardSeason" onchange="renderAwardPrizes()"></select>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">🏆 Award Half-Season Winners</div>
+      <div id="awardHalfBody" style="padding:12px"></div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">🏆 Award League Championship Winners</div>
+      <div id="awardChampBody" style="padding:12px"></div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">Other prize actions</div>
+      <div style="padding:12px;display:flex;gap:10px;flex-wrap:wrap">
+        <button onclick="switchTab('prizemoney')" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">💰 Pay from Kitty / refunds (Prize Money)</button>
+        <button onclick="switchTab('skins')" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">🎯 Post-season Skins: Calculate / Restate (Skins/CTPs)</button>
+      </div>
     </div>
   </div>
 
@@ -2673,7 +2703,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261006.4';
+const APP_VERSION = '20261007.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3405,7 +3435,7 @@ dz.addEventListener('drop', e => {
 dz.addEventListener('click', () => document.getElementById('fileInput').click());
 
 // ── Tabs ──
-const ADMIN_ONLY_TABS = new Set(['admin', 'payments', 'schedule']);
+const ADMIN_ONLY_TABS = new Set(['admin', 'payments', 'schedule', 'awards']);
 
 // ── What's New changelog — prepend a new entry each deploy ──────────────────
 // Each entry: { version, date, items: ['...','...'] }
@@ -4765,8 +4795,7 @@ function loadPrizeMoney(options = {}) {
       <div style="background:#e8eaf6;border:1px solid #3949ab;border-radius:8px;padding:12px 20px;min-width:260px">
         <div style="font-size:11px;color:#3949ab;font-weight:600;margin-bottom:8px">HALF-SEASON STANDINGS PAYOUTS</div>
         <div style="display:flex;gap:6px">
-          <button onclick="previewHalfSeasonWinners(${season},1)" style="padding:6px 12px;background:#3949ab;color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer">Preview 1st Half</button>
-          <button onclick="previewHalfSeasonWinners(${season},2)" style="padding:6px 12px;background:#3949ab;color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer">Preview 2nd Half</button>
+          <button onclick="switchTab('awards')" style="padding:6px 12px;background:#3949ab;color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer">🏆 Award Half-Season Winners →</button>
         </div>
       </div>` : ''}
       ${(currentUser?.role==='admin'||currentUser?.role==='developer') ? `
@@ -5580,6 +5609,7 @@ function refreshTab(tab) {
   if (tab === 'standings') loadStandings();
   if (tab === 'stableford') { loadStablefordTab(); loadSfStandings(); }
   if (tab === 'skins') { initSkinsTab(); loadCtpsTab(); }
+  if (tab === 'awards') loadAwardPrizesTab();
   if (tab === 'noshows') loadNoShows();
   if (tab === 'handicaps') loadHandicaps();
   if (tab === 'matches') loadMatchesTab();
@@ -22994,46 +23024,216 @@ function calcHalfSeasonWinners(season, half) {
     parseFloat(lp?.StandPlace3 ?? 90),
   ].slice(0, payPlaces); // team totals — split per player at payment time
 
-  return { ok: true, ranked: ranked.slice(0, payPlaces), amounts: teamAmounts, midDate };
+  return { ok: true, ranked: ranked.slice(0, payPlaces), allRanked: ranked, amounts: teamAmounts, midDate };
 }
 
-function saveHalfSeasonWinners(season, half) {
-  const result = calcHalfSeasonWinners(season, half);
-  if (!result.ok) return result;
+// ── Award Prizes (admin): award half-season winners and League Championship winners ───────────────────────────────────────
+// Awarding writes the winners' payout rows (Payments, unpaid until you mark them paid); nothing is ever written on load. Tied
+// places share the combined prizes of the places they cover, split equally (the same rule as the leaderboard's CC $ column); there
+// is no tie-break. A recorded award can be reset only while none of it has been paid.
+function awardPlaceLabel(n) { return n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`; }
 
-  const league = "Hugh's";
-  const halfLabel = half === 1 ? '1st' : '2nd';
-  const placeLabels = ['1st','2nd','3rd'];
-  const desc = `Reg Season Champ-${halfLabel} half`;
+// entries: best-first, each { id, score, players[] }; prizes: amount for place 1, 2, 3...; Returns one row per entry with its place,
+// whether it is tied, the prize for the entry, and the per-player share (cents). Entries with the same score share a place.
+function awardPlacesWithTies(entries, prizes) {
+  const out = []; let i = 0;
+  while (i < entries.length) {
+    let k = 1;
+    while (i + k < entries.length && entries[i + k].score === entries[i].score) k++;
+    const place = i + 1;
+    let pool = 0;
+    for (let q = place; q < place + k; q++) pool += prizes[q - 1] || 0;
+    const each = Math.round(pool / k * 100) / 100;
+    for (let j = 0; j < k; j++) {
+      const e = entries[i + j];
+      const n = (e.players || []).length || 1;
+      out.push({ id: e.id, score: e.score, players: e.players, place, tied: k > 1, tiedWith: k, prize: each, perPlayer: Math.round(each / n * 100) / 100 });
+    }
+    i += k;
+  }
+  return out;
+}
+function awardDetailFor(row) { return `Earned-${awardPlaceLabel(row.place)}`; }
+function awardCommentFor(row, tag) { return `${row.tied ? 'T' : ''}${awardPlaceLabel(row.place)}-${tag}`; }
 
-  // Clear existing regular-season champion payouts for this season/half before recreating.
-  serverRun(`DELETE FROM Payments WHERE League=? AND "Desc"=? AND Date >= ? AND Date < ?`, [league, desc, `${season}0101`, `${parseInt(season)+1}0101`]);
+function awardRecordedRows(season, desc) {
+  return query(`SELECT Player, Detail, Earned, DatePaid, Comment FROM Payments WHERE League="Hugh's" AND "Desc"=? AND Date >= ? AND Date < ? ORDER BY Detail, Player`,
+    [desc, `${season}0101`, `${parseInt(season) + 1}0101`]);
+}
+function awardIsPaid(r) { return !!String(r.DatePaid || '').trim(); }
 
-  result.ranked.forEach((team, i) => {
-    const teamTotal = result.amounts[i];
-    const players = [team.aPlayer, team.bPlayer].filter(Boolean);
-    const perPlayer = players.length > 0 ? Math.round((teamTotal / players.length) * 100) / 100 : teamTotal;
-    players.forEach(player => {
+// Half-season: team match points for the half, from calcHalfSeasonWinners (which also reports every team's total).
+function halfSeasonAwardPlan(season, half) {
+  const res = calcHalfSeasonWinners(season, half);
+  if (!res.ok) return res;
+  const entries = (res.allRanked || []).map(t => ({ id: t.team, score: t.total, players: [t.aPlayer, t.bPlayer].filter(Boolean), team: t.team }));
+  const prizes = res.amounts;                                      // team amounts for the paid places
+  const rows = awardPlacesWithTies(entries, prizes).filter(r => r.prize > 0).map(r => ({ ...r, team: entries.find(e => e.id === r.id).team }));
+  return { ok: true, rows, amounts: prizes, midDate: res.midDate };
+}
+// Is the half over? Every scheduled date in it has scores. Returns { ready, missing: [dates] }.
+function halfSeasonAwardReadiness(season, half) {
+  const dates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= '${season}0101' AND Date < '${parseInt(season) + 1}0101' ORDER BY Date`).map(r => String(r.sDate));
+  if (!dates.length) return { ready: false, missing: [], reason: 'No schedule found for this season.' };
+  const mid = dates[Math.floor(dates.length / 2)];
+  const half_ = dates.filter(d => half === 1 ? d < mid : d >= mid);
+  const scored = new Set(query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="Hugh's" AND Date >= ${season}0101 AND Date < ${parseInt(season) + 1}0101`).map(r => String(r.sDate)));
+  const missing = half_.filter(d => !scored.has(d));
+  return { ready: missing.length === 0, missing };
+}
+
+// League Championship: 18-hole net over BOTH post-season weeks, roster players only (subs can't compete), both weeks required.
+function champAwardPlan(season) {
+  const lp = getSeasonSettings(season);
+  const ps = lp?.PostSeasonDt ? parsePostSeasonDates(lp.PostSeasonDt) : null;
+  if (!ps) return { ok: false, message: 'No post-season dates are set for this season.' };
+  const rows = query(`SELECT Player, CAST(Date AS INTEGER) as D, SUM(COALESCE(Net,0)) as Net, SUM(COALESCE(Gross,0)) as Gross FROM Scores
+    WHERE League="Hugh's" AND CAST(Date AS INTEGER) IN (?,?) AND COALESCE(CAST(Gross AS REAL),0) > 0 GROUP BY Player, CAST(Date AS INTEGER)`, [ps.week1, ps.week2]);
+  const by = {};
+  rows.forEach(r => { (by[r.Player] = by[r.Player] || {})[r.D === ps.week1 ? 1 : 2] = parseFloat(r.Net || 0); });
+  const eligible = [], missingWeek = [];
+  Object.keys(by).sort().forEach(pl => {
+    if (!ccRosterEligible(pl, season)) return;                    // subs can't compete for the League Championship
+    if (by[pl][1] !== undefined && by[pl][2] !== undefined) eligible.push({ id: pl, score: by[pl][1] + by[pl][2], players: [pl], net: by[pl][1] + by[pl][2] });
+    else missingWeek.push({ player: pl, week: by[pl][1] === undefined ? 1 : 2 });
+  });
+  eligible.sort((x, y) => x.score - y.score || x.id.localeCompare(y.id));
+  const dues = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ${season}0101 AND Date < ${parseInt(season) + 1}0101`)[0]?.t || 0);
+  const prizes = psCcPrizeSchedule(lp, dues);
+  const placed = awardPlacesWithTies(eligible, prizes);
+  const week1Scored = rows.some(r => r.D === ps.week1), week2Scored = rows.some(r => r.D === ps.week2);
+  return { ok: true, placed, paid: placed.filter(r => r.prize > 0), missingWeek, prizes, week1Scored, week2Scored, ps };
+}
+
+function awardReset(season, desc) {
+  if (!requireOfficer()) return;
+  const rows = awardRecordedRows(season, desc);
+  if (!rows.length) return;
+  if (rows.some(awardIsPaid)) { alert('Some of this award has already been marked paid, so it cannot be reset here.'); return; }
+  if (!confirm(`Reset this award?\n\nRemoves the ${rows.length} unpaid payout row(s) so the award can be made again. Nothing has been paid.`)) return;
+  serverRun(`DELETE FROM Payments WHERE League="Hugh's" AND "Desc"=? AND Date >= ? AND Date < ? AND (DatePaid IS NULL OR DatePaid='')`, [desc, `${season}0101`, `${parseInt(season) + 1}0101`]);
+  SERVER_RUN_QUEUE.then(() => saveDBToServer()).then(() => renderAwardPrizes());
+  logIt('Award reset', `${desc} ${season} by=${currentUser?.name || 'unknown'}`, 'INFO', 'awardReset');
+}
+
+async function awardWrite(season, desc, planRows, tag, summaryLines) {
+  if (!requireOfficer()) return;
+  if (awardRecordedRows(season, desc).length) { alert('This award has already been made. Reset it first if it needs to be made again.'); return; }
+  if (!confirm(`${summaryLines.join('\n')}\n\nThis records an unpaid payout for each winner. Award now?`)) return;
+  planRows.forEach(r => {
+    r.players.forEach(player => {
       serverRun(`INSERT INTO Payments (League,Player,Date,"Desc",Detail,Earned,DatePaid,Comment,PayMethod) VALUES (?,?,?,?,?,?,?,?,?)`,
-        [league, player, `${season}1231`, desc, `Earned-${placeLabels[i]}`, perPlayer, '', `${placeLabels[i]}-${halfLabel} half`, '']);
+        ["Hugh's", player, `${season}1231`, desc, awardDetailFor(r), r.perPlayer, '', awardCommentFor(r, tag), '']);
     });
   });
-
-  return { ok: true, count: result.ranked.length };
+  await SERVER_RUN_QUEUE;
+  await saveDBToServer();
+  logIt('Award made', `${desc} ${season} winners=${planRows.length} by=${currentUser?.name || 'unknown'}`, 'INFO', 'awardWinners');
+  renderAwardPrizes();
 }
 
-function previewHalfSeasonWinners(season, half) {
-  const result = calcHalfSeasonWinners(season, half);
-  if (!result.ok) { alert(result.message || 'Could not calculate.'); return; }
+async function awardHalfSeasonWinners(season, half) {
+  const plan = halfSeasonAwardPlan(season, half);
+  if (!plan.ok) { alert(plan.message || 'Could not calculate.'); return; }
+  const ready = halfSeasonAwardReadiness(season, half);
+  if (!ready.ready) { alert(`The ${half === 1 ? '1st' : '2nd'} half is not finished yet (${ready.missing.length} date(s) have no scores).`); return; }
+  const lines = [`Award ${half === 1 ? '1st' : '2nd'} half winners (${season})`, ''].concat(plan.rows.map(r =>
+    `${r.tied ? 'T' : ''}${awardPlaceLabel(r.place)}: Team ${r.team} (${r.players.join(' / ')}) - ${r.score.toFixed(1)} pts - $${r.prize.toFixed(2)} ($${r.perPlayer.toFixed(2)} each)${r.tied ? ` — tied: the combined prizes are split` : ''}`));
+  await awardWrite(season, `Reg Season Champ-${half === 1 ? '1st' : '2nd'} half`, plan.rows, `${half === 1 ? '1st' : '2nd'} half`, lines);
+}
+async function awardChampionshipWinners(season) {
+  const plan = champAwardPlan(season);
+  if (!plan.ok) { alert(plan.message); return; }
+  if (!plan.week1Scored || !plan.week2Scored) { alert('Both post-season weeks need scores before the League Championship can be awarded.'); return; }
+  if (!plan.paid.length) { alert('No prize money is set for the League Championship places (see League Settings).'); return; }
+  const lines = [`Award League Championship winners (${season})`, ''].concat(plan.paid.map(r =>
+    `${r.tied ? 'T' : ''}${awardPlaceLabel(r.place)}: ${r.players.join(' / ')} - 18 net ${r.score} - $${r.perPlayer.toFixed(2)}${r.tied ? ` — tied: the combined prizes are split` : ''}`));
+  await awardWrite(season, 'League Championship', plan.paid, 'League Championship', lines);
+}
 
-  const halfLabel = half === 1 ? '1st Half' : '2nd Half';
-  const placeLabels = ['1st','2nd','3rd'];
-  const lines = result.ranked.map((team, i) => {
-    const players = [team.aPlayer, team.bPlayer].filter(Boolean);
-    const perPlayer = players.length > 0 ? Math.round((result.amounts[i] / players.length) * 100) / 100 : result.amounts[i];
-    return `${placeLabels[i]}: Team ${team.team} (${players.join(' / ')}) - ${team.total.toFixed(1)} pts - $${result.amounts[i]} total ($${perPlayer} each)`;
-  });
-  alert(`${halfLabel} standings payout preview for ${season}\n\n${lines.join('\n')}\n\nNo payment records were created.`);
+function awardPayButton(r, desc, season) {
+  const amt = parseFloat(r.Earned || 0);
+  return awardIsPaid(r)
+    ? `<span style="color:#2e7d32;font-size:12px">✓ paid ${escapeHtml(String(r.DatePaid))}</span>`
+    : `<button onclick="awardMarkPaid('${String(r.Player).replace(/'/g, "\\'")}','${season}1231','${desc.replace(/'/g, "\\'")}','${String(r.Detail).replace(/'/g, "\\'")}',${amt})" style="padding:3px 10px;border:1px solid #2e7d32;border-radius:4px;background:#e8f5e9;color:#2e7d32;cursor:pointer;font-size:11px;font-weight:600">Mark paid</button>`;
+}
+function awardMarkPaid(player, date, desc, detail, amount) {
+  if (!window._emailToastShownDates) window._emailToastShownDates = new Set();
+  window._emailToastShownDates.add(date);          // the "all winners paid, email results?" prompt is for a league night, not a season award
+  window._afterMarkPaidCallback = () => renderAwardPrizes();
+  doMarkPaid(player, date, desc, detail, amount);
+}
+
+function awardRecordedTable(rows, desc, season) {
+  const th = t => `<th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:left;font-size:12px">${t}</th>`;
+  const td = (t, st = '') => `<td style="padding:5px 10px;font-size:12px;border-bottom:1px solid #eee;${st}">${t}</td>`;
+  return `<table style="border-collapse:collapse;width:100%;max-width:640px"><thead><tr>${th('Place')}${th('Winner')}${th('Prize')}${th('Payment')}</tr></thead><tbody>${
+    rows.map(r => `<tr>${td(escapeHtml(String(r.Comment || r.Detail).split('-')[0]))}${td(`<strong>${escapeHtml(r.Player)}</strong>`)}${td('$' + parseFloat(r.Earned || 0).toFixed(2), "font-family:'DM Mono',monospace")}${td(awardPayButton(r, desc, season))}</tr>`).join('')}</tbody></table>
+    ${rows.some(awardIsPaid) ? '' : `<button onclick="awardReset(${season},'${desc.replace(/'/g, "\\'")}')" style="margin-top:8px;padding:5px 12px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:12px">Reset award</button>`}`;
+}
+
+function renderAwardHalf(season) {
+  const el = document.getElementById('awardHalfBody'); if (!el) return;
+  const th = t => `<th style="background:#3949ab;color:white;padding:6px 10px;text-align:left;font-size:12px">${t}</th>`;
+  const td = (t, st = '') => `<td style="padding:5px 10px;font-size:12px;border-bottom:1px solid #eee;${st}">${t}</td>`;
+  el.innerHTML = [1, 2].map(half => {
+    const label = half === 1 ? '1st Half' : '2nd Half', desc = `Reg Season Champ-${half === 1 ? '1st' : '2nd'} half`;
+    const recorded = awardRecordedRows(season, desc);
+    let body;
+    if (recorded.length) {
+      body = `<div style="font-size:12px;color:#2e7d32;margin-bottom:6px">✓ Awarded</div>` + awardRecordedTable(recorded, desc, season);
+    } else {
+      const plan = halfSeasonAwardPlan(season, half), ready = halfSeasonAwardReadiness(season, half);
+      if (!plan.ok) body = `<div style="color:#888;font-size:12px">${escapeHtml(plan.message || 'Not available.')}</div>`;
+      else body = `<table style="border-collapse:collapse;width:100%;max-width:640px"><thead><tr>${th('Place')}${th('Team')}${th('Pts')}${th('Prize')}${th('Each')}</tr></thead><tbody>${
+        plan.rows.map(r => `<tr>${td(`${r.tied ? 'T' : ''}${awardPlaceLabel(r.place)}`)}${td(`Team ${r.team} (${escapeHtml(r.players.join(' / '))})`)}${td(r.score.toFixed(1))}${td('$' + r.prize.toFixed(2))}${td('$' + r.perPlayer.toFixed(2))}</tr>`).join('')}</tbody></table>${
+        plan.rows.some(r => r.tied) ? '<div style="font-size:11px;color:#e65100;margin-top:4px">Tied teams split the combined prizes of the places they cover. There is no tie-break.</div>' : ''}
+        <div style="margin-top:8px">${ready.ready
+          ? `<button onclick="awardHalfSeasonWinners(${season},${half})" style="padding:8px 16px;background:#3949ab;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">🏆 Award ${label} Winners</button>`
+          : `<span style="font-size:12px;color:#e65100">Not finished: ${ready.missing.length} date(s) in this half have no scores yet.</span>`}</div>`;
+    }
+    return `<div style="margin-bottom:16px"><div style="font-weight:700;font-size:13px;color:#3949ab;margin-bottom:6px">${label}</div>${body}</div>`;
+  }).join('');
+}
+
+function renderAwardChamp(season) {
+  const el = document.getElementById('awardChampBody'); if (!el) return;
+  const desc = 'League Championship';
+  const recorded = awardRecordedRows(season, desc);
+  if (recorded.length) { el.innerHTML = `<div style="font-size:12px;color:#2e7d32;margin-bottom:6px">✓ Awarded</div>` + awardRecordedTable(recorded, desc, season); return; }
+  const plan = champAwardPlan(season);
+  if (!plan.ok) { el.innerHTML = `<div style="color:#888;font-size:12px">${escapeHtml(plan.message)}</div>`; return; }
+  const th = t => `<th style="background:#1b5e20;color:white;padding:6px 10px;text-align:left;font-size:12px">${t}</th>`;
+  const td = (t, st = '') => `<td style="padding:5px 10px;font-size:12px;border-bottom:1px solid #eee;${st}">${t}</td>`;
+  const ready = plan.week1Scored && plan.week2Scored;
+  el.innerHTML = `<div style="font-size:12px;color:#666;margin-bottom:8px">18-hole net over both post-season weeks. Roster players only (subs can't compete) and a score in both weeks is required.</div>
+    ${plan.placed.length ? `<table style="border-collapse:collapse;width:100%;max-width:640px"><thead><tr>${th('Place')}${th('Player')}${th('18 Net')}${th('Prize')}</tr></thead><tbody>${
+      plan.placed.slice(0, Math.max(plan.paid.length, 0) + 3).map(r => `<tr>${td(`${r.tied ? 'T' : ''}${awardPlaceLabel(r.place)}`)}${td(escapeHtml(r.players.join(' / ')))}${td(r.score)}${td(r.prize > 0 ? '$' + r.perPlayer.toFixed(2) : '—')}</tr>`).join('')}</tbody></table>` : '<div style="color:#888;font-size:12px">No eligible scores yet.</div>'}
+    ${plan.placed.some(r => r.tied && r.prize > 0) ? '<div style="font-size:11px;color:#e65100;margin-top:4px">Tied players split the combined prizes of the places they cover. There is no tie-break.</div>' : ''}
+    ${plan.missingWeek.length ? `<div style="font-size:11px;color:#999;margin-top:6px">Not eligible (missing a week): ${escapeHtml(plan.missingWeek.map(m => `${m.player} (no Week ${m.week})`).join(', '))}</div>` : ''}
+    <div style="margin-top:8px">${ready
+      ? `<button onclick="awardChampionshipWinners(${season})" style="padding:8px 16px;background:#1b5e20;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">🏆 Award League Championship Winners</button>`
+      : '<span style="font-size:12px;color:#e65100">Both post-season weeks need scores before this can be awarded.</span>'}</div>`;
+}
+
+function renderAwardPrizes() {
+  if (!db) return;
+  const season = parseInt(document.getElementById('awardSeason')?.value) || getCurrentSeason();
+  renderAwardHalf(season);
+  renderAwardChamp(season);
+}
+function loadAwardPrizesTab() {
+  if (!db) return;
+  initSkinsTab();            // fills the season/date lists the CTP block shares with the Skins/CTPs tab
+  loadCtpsTab();
+  const sel = document.getElementById('awardSeason');
+  if (sel) {
+    const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+    const keep = sel.value;
+    sel.innerHTML = seasons.map(x => `<option value="${x}">${x}</option>`).join('');
+    sel.value = keep && seasons.map(String).includes(String(keep)) ? keep : String(getCurrentSeason());
+  }
+  renderAwardPrizes();
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
