@@ -43,5 +43,5 @@ assert(/clearInterval\(window\._heartbeatTimer\)/.test(src), 'stops at logout');
 assert(/'\/heartbeat', '\/whos-on'/.test(src), 'known server routes');
 assert(/!currentUser\?\.name \|\| \(document\.hidden && !login\)/.test(src), 'no check-in when nobody is logged in or the tab is hidden (except at login)');
 assert(/HEARTBEAT_MS = 60000/.test(src));
-assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261006.4');
+assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && ((v) => v[0] > '20261006' || (v[0] === '20261006' && +v[1] >= 4))(src.match(/const APP_VERSION = '([^']+)';/)[1].split('.')));
 console.log('ok');

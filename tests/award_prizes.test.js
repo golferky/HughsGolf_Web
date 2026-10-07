@@ -120,6 +120,6 @@ let rd = J(c.halfSeasonAwardReadiness(2026, 2)); assert.strictEqual(rd.ready, fa
   assert(/openAwardPrizes\(\)/.test(src.slice(src.indexOf('HALF-SEASON STANDINGS PAYOUTS'), src.indexOf('HALF-SEASON STANDINGS PAYOUTS') + 2500)), 'Prize Money links to the Award Prizes section');
   assert(/_emailToastShownDates\.add\(date\)/.test(extract('awardMarkPaid')) && /_afterMarkPaidCallback = \(\) => renderAwardPrizes\(\)/.test(extract('awardMarkPaid')), 'paying a season award does not offer a league-night email');
   assert(/allRanked: ranked/.test(src));
-  assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.2');
+  assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && ((v) => v[0] > '20261007' || (v[0] === '20261007' && +v[1] >= 2))(src.match(/const APP_VERSION = '([^']+)';/)[1].split('.')));
   console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });

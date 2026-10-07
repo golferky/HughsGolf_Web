@@ -9,7 +9,7 @@ function extract(name) {
 const J = x => JSON.parse(JSON.stringify(x));
 const c = vm.createContext({ Math, parseFloat, String, Object, Array, JSON, Number });
 vm.runInContext("const bsR2 = x => Math.round((parseFloat(x) || 0) * 100) / 100; const bsSum = (a, f) => bsR2((a || []).reduce((t, r) => t + (parseFloat(f ? f(r) : r.amount) || 0), 0));", c);
-['bsByDate', 'bsHoleText'].forEach(n => { const m = src.match(new RegExp('const ' + n + ' = [\\s\\S]*?;\\n')); assert(m, n); vm.runInContext(m[0], c); });
+['bsByDate', 'bsPayersByName', 'bsHoleText'].forEach(n => { const m = src.match(new RegExp('const ' + n + ' = [\\s\\S]*?;\\n')); assert(m, n); vm.runInContext(m[0], c); });
 ['bsMoney', 'bsRunningLedger', 'bsDuesSheet', 'bsPoolSheet', 'bsKittySheet', 'bsEoyLedger', 'bsKittyLedgers', 'bsClassifyPayment', 'bsCompleteness', 'bsRenderRows', 'bsDateText', 'bsRenderLedger'].forEach(n => vm.runInContext(extract(n), c));
 assert.strictEqual(c.bsMoney(1234.5), '$1,234.50'); assert.strictEqual(c.bsMoney(-20), '($20.00)'); assert.strictEqual(c.bsMoney(0.005 + 0.1), '$0.11'); assert.strictEqual(c.bsMoney(null), '$0.00');
 
@@ -152,6 +152,15 @@ assert.strictEqual(comp.reduce((t, x) => t + x.count, 0), rows.length, 'every ro
   assert(/SELECT Player as player,[^`]*'League Dues'/.test(extract('bsGatherDues')), 'gatherer returns the lowercase player key the sheet reads');
   assert(/function bsToggleDetail/.test(src) && /PayMethod/.test(extract('bsGatherDues')), 'toggle + method wired');
 }
+// ── click an entries row on the EOY pool / kitty ledgers to see who paid ──
+{
+  const eoy = c.bsEoyLedger({ entries: [{ date: '20260407', player: 'Zed', amount: 20, method: 'Cash' }, { date: '20260407', player: 'Amy', amount: 20 }], refunds: [], skinWinners: [], ctpWinners: [], remainders: [] });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(eoy.ledger[0].payers.map(p => p.player))), ['Amy', 'Zed']);
+  assert(/bsExpandRow/.test(c.bsRenderLedger(eoy.ledger, [])));
+  const k = c.bsKittyLedgers({ skin: { entries: [{ date: '20260407', player: 'Bo', amount: 5 }] }, ctp: { entries: [{ date: '20260407', player: 'Cy', amount: 5 }] } });
+  assert.strictEqual(k.skin.ledger[0].payers[0].player, 'Bo'); assert.strictEqual(k.ctp.ledger[0].payers[0].player, 'Cy');
+  assert(/Player as player, COALESCE\(PayMethod/.test(extract('bsGatherPoolLedger')) && /PayMethod/.test(extract('bsGatherKittyLedger')), 'gatherers return player and method');
+}
 // ── wiring ──
 assert(/id="adminBtnBalance"[^>]*>📒 Balance Sheet</.test(src) && /id="adminBalance"/.test(src) && /id="balanceBody"/.test(src) && /id="balanceSeason"/.test(src));
 assert(/ADMIN_SECTIONS = \[[^\]]*'balance'/.test(src) && /if \(section==='balance'\)\s+loadBalanceSheet\(\);/.test(src));
@@ -173,5 +182,5 @@ const loader = extract('loadBalanceSheet') + extract('bsGatherDues') + extract('
 assert(/bsEoyLedger\(bsGatherPoolLedger\(season\)\)/.test(src) && /bsKittyLedgers\(bsGatherKittyLedger\(season\)\)/.test(src), 'the EOY pool and the kitties are shown as pool ledgers');
 assert(!/serverRun|INSERT|UPDATE |DELETE/.test(loader.replace(/UPDATE/g, '')), 'the Balance Sheet only reads');
 assert(/LeagueExpenses/.test(extract('bsGatherDues')), 'expenses come from the Expenses screen table');
-assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.9');
+assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && ((v) => v[0] > '20261007' || (v[0] === '20261007' && +v[1] >= 9))(src.match(/const APP_VERSION = '([^']+)';/)[1].split('.')));
 console.log('ok');
