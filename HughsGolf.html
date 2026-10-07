@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.8';
+const APP_VERSION = '20261007.9';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -23337,7 +23337,7 @@ function bsRenderRows(rows) {
 
 function bsGatherDues(season) {
   const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`;
-  const dues = query(`SELECT Player, CAST(Earned AS REAL) as amount, Date as date, COALESCE(PayMethod,'') as method FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ? AND Date < ?`, [S0, S1]);
+  const dues = query(`SELECT Player as player, CAST(Earned AS REAL) as amount, Date as date, COALESCE(PayMethod,'') as method FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ? AND Date < ?`, [S0, S1]);
   let expenses = [];
   try { expenses = query(`SELECT Date, Category, Description, Amount FROM LeagueExpenses WHERE League="Hugh's" AND Season=?`, [season]).map(r => ({ date: r.Date, category: r.Category, description: r.Description, amount: r.Amount })); } catch (e) {}
   const defs = [['half1', '1st half winners', 'Reg Season Champ-1st half'], ['half2', '2nd half winners', 'Reg Season Champ-2nd half'], ['champ', 'League Championship winners', 'League Championship']];
