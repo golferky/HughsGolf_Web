@@ -2703,7 +2703,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.2';
+const APP_VERSION = '20261007.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -19346,6 +19346,14 @@ function saveLeagueSettings() {
     if (GLOBAL_KEYS.has(col)) globalCols[col] = newValues[col];
     else seasonCols[normalCol] = newValues[col];
   });
+  // Save only settings this database actually has a column for. One missing column used to make the WHOLE update fail ("no such
+  // column: Carryover"), so a save after the season ended (when every field unlocks) silently saved nothing. Anything skipped is reported.
+  const skippedSettings = [];
+  const keepExisting = (cols, table) => {
+    const have = new Set(query(`PRAGMA table_info(${table})`).map(r => r.name));
+    Object.keys(cols).forEach(c => { if (have.size && !have.has(c)) { skippedSettings.push(labels[c] || labels[c === 'EOYSkins' ? 'EOY Skins' : c] || c); delete cols[c]; } });
+  };
+  keepExisting(seasonCols, 'SeasonSettings');
   if (Object.keys(seasonCols).length) {
     const setCols2 = Object.keys(seasonCols).map(c => `${c}=?`).join(',');
     const setVals2 = [...Object.values(seasonCols), season];
@@ -19365,6 +19373,7 @@ function saveLeagueSettings() {
 
   saveDBToServer();
   loadLeagueSettings();
+  if (skippedSettings.length) alert(`Saved, except these settings, which this database has no place to store: ${skippedSettings.join(', ')}.`);
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
