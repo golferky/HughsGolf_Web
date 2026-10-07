@@ -1423,6 +1423,8 @@
           <span>📒 Balance Sheet</span>
           <div style="display:flex;gap:10px;align-items:center">
             <label style="font-size:12px;font-weight:600">Season <select id="balanceSeason" onchange="loadBalanceSheet()" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border)"></select></label>
+            <button onclick="bsSetAllPanels(true)" style="padding:5px 12px;background:#f5f0e8;color:var(--green);border:1px solid var(--border);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Expand all</button>
+            <button onclick="bsSetAllPanels(false)" style="padding:5px 12px;background:#f5f0e8;color:var(--green);border:1px solid var(--border);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Collapse all</button>
             <button onclick="loadBalanceSheet()" style="padding:5px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
           </div>
         </div>
@@ -2718,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.6';
+const APP_VERSION = '20261007.7';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -23398,6 +23400,23 @@ function bsGatherKitty(season) {
            ctp: { in: tot('CTP', 'Payment'), winners: bsSum(cw, r => r.e), winnersPaid: bsSum(cw.filter(r => r.dp), r => r.e), transfersOut: tot('CTP', 'Pool Transfer'), kittyPayouts: tot('CTP', 'Kitty Payout'), carryoverHeld: held } };
 }
 
+// Each grid on the Balance Sheet is its own collapsible panel; open/closed is remembered per panel on this device.
+function bsPanelState() { try { return JSON.parse(localStorage.getItem('bsPanels') || '{}') || {}; } catch (e) { return {}; } }
+function bsPanelToggled(el) {
+  try { const st = bsPanelState(); st[el.getAttribute('data-bs')] = el.open ? 1 : 0; localStorage.setItem('bsPanels', JSON.stringify(st)); } catch (e) {}
+}
+function bsSetAllPanels(open) {
+  document.querySelectorAll('#balanceBody details.bsPanel').forEach(el => { el.open = !!open; bsPanelToggled(el); });
+}
+// key: stable id; title; summary: short text kept visible when closed; html: the grid; dflt: open the first time it is seen.
+function bsPanel(key, title, summary, html, dflt) {
+  const st = bsPanelState();
+  const open = st[key] === undefined ? !!dflt : !!st[key];
+  return `<details class="bsPanel" data-bs="${key}"${open ? ' open' : ''} ontoggle="bsPanelToggled(this)" style="border:1px solid var(--border);border-radius:8px;margin:8px 0;background:#fff">` +
+    `<summary style="cursor:pointer;padding:8px 12px;font-weight:600;font-size:13px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><span>${title}</span><span style="font-weight:600;color:#555;font-family:'DM Mono',monospace;font-size:12px">${summary || ''}</span></summary>` +
+    `<div style="padding:4px 12px 12px">${html}</div></details>`;
+}
+
 function loadBalanceSheet() {
   if (!db) return;
   const sel = document.getElementById('balanceSeason'); if (!sel) return;
@@ -23409,29 +23428,32 @@ function loadBalanceSheet() {
   const season = parseInt(sel.value) || getCurrentSeason();
   const box = document.getElementById('balanceBody'); if (!box) return;
   const sec = (title, sub, html) => `<div style="margin-bottom:22px"><div style="font-weight:700;font-size:15px;color:var(--green)">${title}</div><div style="font-size:12px;color:#777;margin-bottom:6px">${sub}</div>${html}</div>`;
+  const scroll = h => `<div style="max-height:380px;overflow:auto;margin-bottom:8px">${h}</div>`;
+  const cards = items => `<div style="display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 12px">${items.map(([l, v, col]) => `<div style="background:#f5f0e8;border-radius:8px;padding:8px 16px;text-align:center"><div style="font-size:18px;font-weight:700;color:${col};font-family:'DM Mono',monospace">${bsMoney(v)}</div><div style="font-size:11px;color:#666">${l}</div></div>`).join('')}</div>`;
   let html = '';
   try {
     const dues = bsDuesSheet(bsGatherDues(season));
     html += sec('📥 League Dues pool', 'Dues collected go into one pool. Expenses come out of it, and when you award a prize the money moves from the pool to the winner. Marking a winner paid does not move the pool again.',
-      `<div style="display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 12px">${[['Pool now', dues.poolBalance, '#1b5e20'], ['Dues collected', dues.moneyIn, '#2e7d32'], ['Expenses', -dues.expenseTotal, '#c62828'], ['Moved to winners', -dues.awardedTotal, '#c62828'], ['Still owed to winners', dues.owed, '#e65100']]
-        .map(([l, v, col]) => `<div style="background:#f5f0e8;border-radius:8px;padding:8px 16px;text-align:center"><div style="font-size:18px;font-weight:700;color:${col};font-family:'DM Mono',monospace">${bsMoney(v)}</div><div style="font-size:11px;color:#666">${l}</div></div>`).join('')}</div>` +
-      bsRenderLedger(dues.ledger, dues.estimates) + `<div style="margin-top:12px">${bsRenderRows(dues.rows)}</div>`);
-    const scroll = h => `<div style="max-height:380px;overflow:auto;margin-bottom:8px">${h}</div>`;
-    const cards = items => `<div style="display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 12px">${items.map(([l, v, col]) => `<div style="background:#f5f0e8;border-radius:8px;padding:8px 16px;text-align:center"><div style="font-size:18px;font-weight:700;color:${col};font-family:'DM Mono',monospace">${bsMoney(v)}</div><div style="font-size:11px;color:#666">${l}</div></div>`).join('')}</div>`;
+      cards([['Pool now', dues.poolBalance, '#1b5e20'], ['Dues collected', dues.moneyIn, '#2e7d32'], ['Expenses', -dues.expenseTotal, '#c62828'], ['Moved to winners', -dues.awardedTotal, '#c62828'], ['Still owed to winners', dues.owed, '#e65100']]) +
+      bsPanel('dues-ledger', 'Dues pool ledger', `Pool ${bsMoney(dues.poolBalance)}`, scroll(bsRenderLedger(dues.ledger, dues.estimates)), true) +
+      bsPanel('dues-totals', 'Dues totals and checks', `Owed ${bsMoney(dues.owed)}`, bsRenderRows(dues.rows), false));
     const eoy = bsEoyLedger(bsGatherPoolLedger(season));
     html += sec('🏆 EOY Skins and post-season CTP pool', 'The $10 per player per week entry ($7 Skins + $3 CTP) goes into one pool. Refunds, Skin winners and CTP winners move from the pool to a person, and each week\'s remainder moves to the Skins kitty.',
       cards([['Pool now', eoy.poolBalance, '#1b5e20'], ['Entries in', eoy.in, '#2e7d32'], ['Moved to winners', -eoy.winners, '#c62828'], ['Refunded', -eoy.refunds, '#c62828'], ['Still owed to people', eoy.owed, '#e65100']]) +
-      scroll(bsRenderLedger(eoy.ledger, [])) + `<div style="margin-top:8px">${bsRenderRows(bsPoolSheet(bsGatherPool(season)).rows)}</div>`);
+      bsPanel('eoy-ledger', 'EOY pool ledger', `Pool ${bsMoney(eoy.poolBalance)}`, scroll(bsRenderLedger(eoy.ledger, [])), true) +
+      bsPanel('eoy-totals', 'EOY pool totals and checks', `Owed ${bsMoney(eoy.owed)}`, bsRenderRows(bsPoolSheet(bsGatherPool(season)).rows), false));
     const kl = bsKittyLedgers(bsGatherKittyLedger(season));
     html += sec('🎯 Regular-season Skins and CTP kitties', 'Each night\'s Skin and CTP entries go into a kitty; winners and Pay-from-Kitty payouts move from the kitty to a person.',
-      `<div style="font-weight:700;margin:6px 0">Skins kitty</div>` + cards([['Kitty now', kl.skin.balance, '#1b5e20'], ['Still owed to winners', kl.skin.owed, '#e65100']]) + scroll(bsRenderLedger(kl.skin.ledger, [])) +
-      `<div style="font-weight:700;margin:12px 0 6px">CTP kitty</div>` + cards([['Left in the CTP kitty', kl.ctp.balance, '#1b5e20'], ['Still owed to winners', kl.ctp.owed, '#e65100']]) + scroll(bsRenderLedger(kl.ctp.ledger, [])) +
-      `<div style="margin-top:8px">${bsRenderRows(bsKittySheet(bsGatherKitty(season)).rows)}</div>`);
+      bsPanel('kitty-skin', 'Skins kitty ledger', `Kitty ${bsMoney(kl.skin.balance)}`, cards([['Kitty now', kl.skin.balance, '#1b5e20'], ['Still owed to winners', kl.skin.owed, '#e65100']]) + scroll(bsRenderLedger(kl.skin.ledger, [])), true) +
+      bsPanel('kitty-ctp', 'CTP kitty ledger', `Kitty ${bsMoney(kl.ctp.balance)}`, cards([['Left in the CTP kitty', kl.ctp.balance, '#1b5e20'], ['Still owed to winners', kl.ctp.owed, '#e65100']]) + scroll(bsRenderLedger(kl.ctp.ledger, [])), true) +
+      bsPanel('kitty-totals', 'Kitty totals and checks', '', bsRenderRows(bsKittySheet(bsGatherKitty(season)).rows), false));
     const all = query(`SELECT "Desc" as d, Detail as t, Player as p, CAST(Earned AS REAL) as e FROM Payments WHERE League="Hugh's" AND Date >= ? AND Date < ?`, [`${season}0101`, `${season + 1}0101`]);
     const comp = bsCompleteness(all);
+    const unlisted = comp.filter(c => !c.on).length;
     html += sec('🔎 Every payment row this season', 'Each recorded payment row by type and the sheet above that shows it. A type with no sheet is flagged so nothing recorded is left off.',
+      bsPanel('all-rows', 'Payment rows by type', unlisted ? `⚠ ${unlisted} not on a sheet` : `${comp.length} types, all shown`,
       `<table style="border-collapse:collapse;width:100%;max-width:820px;font-size:12px"><thead><tr><th style="text-align:left;padding:4px 6px;background:var(--green);color:var(--gold)">Type</th><th style="text-align:right;padding:4px 6px;background:var(--green);color:var(--gold)">Rows</th><th style="text-align:right;padding:4px 6px;background:var(--green);color:var(--gold)">Total</th><th style="text-align:left;padding:4px 6px;background:var(--green);color:var(--gold)">Shown on</th></tr></thead><tbody>${
-      comp.map(c => `<tr><td style="padding:3px 6px;border-bottom:1px solid #eee">${escapeHtml(c.type)}</td><td style="padding:3px 6px;text-align:right;border-bottom:1px solid #eee">${c.count}</td><td style="padding:3px 6px;text-align:right;font-family:'DM Mono',monospace;border-bottom:1px solid #eee">${bsMoney(c.total)}</td><td style="padding:3px 6px;border-bottom:1px solid #eee;${c.on ? '' : 'color:#c62828;font-weight:600'}">${c.on ? escapeHtml(c.on) : '⚠ not on a sheet'}</td></tr>`).join('') || '<tr><td colspan="4" style="padding:6px;color:#999">No payment rows this season.</td></tr>'}</tbody></table>`);
+      comp.map(c => `<tr><td style="padding:3px 6px;border-bottom:1px solid #eee">${escapeHtml(c.type)}</td><td style="padding:3px 6px;text-align:right;border-bottom:1px solid #eee">${c.count}</td><td style="padding:3px 6px;text-align:right;font-family:'DM Mono',monospace;border-bottom:1px solid #eee">${bsMoney(c.total)}</td><td style="padding:3px 6px;border-bottom:1px solid #eee;${c.on ? '' : 'color:#c62828;font-weight:600'}">${c.on ? escapeHtml(c.on) : '⚠ not on a sheet'}</td></tr>`).join('') || '<tr><td colspan="4" style="padding:6px;color:#999">No payment rows this season.</td></tr>'}</tbody></table>`, unlisted > 0));
   } catch (err) { html = `<div style="color:#c62828;font-size:12px">Could not build the balance sheet: ${String(err.message || err).replace(/[<>&]/g, '')}</div>`; }
   box.innerHTML = html;
 }
