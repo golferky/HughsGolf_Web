@@ -9,7 +9,7 @@ function extract(name) {
 const J = x => JSON.parse(JSON.stringify(x));
 const c = vm.createContext({ Math, parseFloat, String, Object, Array, JSON, Number });
 vm.runInContext("const bsR2 = x => Math.round((parseFloat(x) || 0) * 100) / 100; const bsSum = (a, f) => bsR2((a || []).reduce((t, r) => t + (parseFloat(f ? f(r) : r.amount) || 0), 0));", c);
-['bsMoney', 'bsDuesSheet', 'bsPoolSheet', 'bsKittySheet', 'bsClassifyPayment', 'bsCompleteness', 'bsRenderRows'].forEach(n => vm.runInContext(extract(n), c));
+['bsMoney', 'bsDuesSheet', 'bsPoolSheet', 'bsKittySheet', 'bsClassifyPayment', 'bsCompleteness', 'bsRenderRows', 'bsDateText', 'bsRenderLedger'].forEach(n => vm.runInContext(extract(n), c));
 assert.strictEqual(c.bsMoney(1234.5), '$1,234.50'); assert.strictEqual(c.bsMoney(-20), '($20.00)'); assert.strictEqual(c.bsMoney(0.005 + 0.1), '$0.11'); assert.strictEqual(c.bsMoney(null), '$0.00');
 
 // ── (1) League Dues ──
@@ -38,6 +38,27 @@ assert(/\(\$605\.50\)/.test(html) && /\$1,080\.00/.test(html), 'money out shows 
 assert(!/<script/.test(c.bsRenderRows([{ kind: 'in', label: '<script>x</script>', amount: 1 }])), 'labels are escaped');
 // nothing at all: all zeros, no crash
 const empty = J(c.bsDuesSheet({})); assert.strictEqual(empty.moneyIn, 0); assert.strictEqual(empty.afterAwards, 0);
+
+// ── the pool as a running ledger: dues in, expenses out, awards move from the pool to a person ──
+const lp = J(c.bsDuesSheet({
+  dues: [{ player: 'A', amount: 45, date: 20260407 }, { player: 'B', amount: 45, date: 20260407 }, { player: 'C', amount: 45, date: 20260414 }],
+  expenses: [{ date: 20260501, category: 'Food', description: 'Pizza', amount: 60 }],
+  awards: [{ key: 'champ', label: 'League Championship winners', date: '20261231', rows: [{ player: 'Brad Pierce', place: '1st', amount: 100, paid: false, date: '20261231' }, { player: 'Tom Jennings', place: '2nd', amount: 50, paid: true, date: '20261231' }] }],
+  estimates: [{ key: 'half1', label: '1st half winners', total: 310 }] }));
+assert.deepStrictEqual(lp.ledger.map(r => [r.date, r.kind, r.amount, r.balance]), [['20260407', 'in', 90, 90], ['20260414', 'in', 45, 135], ['20260501', 'expense', -60, 75], ['20261231', 'award', -100, -25], ['20261231', 'award', -50, -75]],
+  'dues grouped by day; each movement shows the pool balance after it');
+assert.strictEqual(lp.ledger[0].label, 'Dues collected (2 payments)'); assert.strictEqual(lp.ledger[2].label, 'Expense: Food - Pizza');
+assert.strictEqual(lp.ledger[3].label, 'Pool \u2192 Brad Pierce'); assert.strictEqual(lp.ledger[3].detail, 'League Championship winners, 1st');
+assert.strictEqual(lp.ledger[3].paid, false); assert.strictEqual(lp.ledger[4].paid, true);
+assert.strictEqual(lp.poolBalance, -75, 'pool = dues - expenses - everything awarded'); assert.strictEqual(lp.poolBalance, lp.afterAwards);
+assert.strictEqual(lp.cashOnHand, 75 - 50, 'paying a winner is separate from awarding: cash only drops by what was handed over');
+assert(!lp.ledger.some(r => /half/.test(r.label)), 'estimates are not taken from the pool until the award is made');
+const lh = c.bsRenderLedger(lp.ledger, lp.estimates);
+assert(/Pool \u2192 Brad Pierce/.test(lh) && /owed/.test(lh) && /\u2713 paid/.test(lh) && /\(\$100\.00\)/.test(lh) && /04\/07\/2026/.test(lh), 'awards read "Pool -> person" with paid / owed');
+assert(/1st half winners \(not awarded yet, not taken from the pool\)/.test(lh) && /\(\$310\.00\)/.test(lh), 'estimates are shown below the ledger, clearly not yet taken');
+assert(/Nothing recorded yet/.test(c.bsRenderLedger([], [])));
+assert.strictEqual(J(c.bsDuesSheet({})).poolBalance, 0);
+assert.strictEqual(c.bsDateText('20261231'), '12/31/2026');
 
 // ── (2) EOY Skins and post-season CTP ──
 const week = (n, over) => Object.assign({ week: n, date: n === 1 ? '09/29/2026' : '10/06/2026', nine: n === 1 ? 'Back' : 'Front', potPlayers: 19, fieldPlayers: 20, weekEntry: 10, skinAmt: 7, ctpAmt: 3,
@@ -88,9 +109,9 @@ assert.strictEqual(comp.reduce((t, x) => t + x.count, 0), rows.length, 'every ro
 // ── wiring ──
 assert(/id="adminBtnBalance"[^>]*>📒 Balance Sheet</.test(src) && /id="adminBalance"/.test(src) && /id="balanceBody"/.test(src) && /id="balanceSeason"/.test(src));
 assert(/ADMIN_SECTIONS = \[[^\]]*'balance'/.test(src) && /if \(section==='balance'\)\s+loadBalanceSheet\(\);/.test(src));
-assert(/bsDuesSheet\(bsGatherDues\(season\)\)/.test(src) && /bsPoolSheet\(bsGatherPool\(season\)\)/.test(src) && /bsKittySheet\(bsGatherKitty\(season\)\)/.test(src) && /bsCompleteness\(all\)/.test(src));
+assert(/bsDuesSheet\(bsGatherDues\(season\)\)/.test(src) && /Marking a winner paid does not move the pool again/.test(src) && /bsRenderLedger\(dues\.ledger, dues\.estimates\)/.test(src) && /bsPoolSheet\(bsGatherPool\(season\)\)/.test(src) && /bsKittySheet\(bsGatherKitty\(season\)\)/.test(src) && /bsCompleteness\(all\)/.test(src));
 const loader = extract('loadBalanceSheet') + extract('bsGatherDues') + extract('bsGatherPool') + extract('bsGatherKitty');
 assert(!/serverRun|INSERT|UPDATE |DELETE/.test(loader.replace(/UPDATE/g, '')), 'the Balance Sheet only reads');
 assert(/LeagueExpenses/.test(extract('bsGatherDues')), 'expenses come from the Expenses screen table');
-assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.4');
+assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.5');
 console.log('ok');
