@@ -43,7 +43,7 @@ const checks = {};
 const el = id => ({ get checked() { return !!checks[id]; }, disabled: false, style: {}, textContent: '', value: '', innerHTML: '' });
 let chosenWeek = '';
 let promptAnswer = null;
-const ctx = vm.createContext({
+const ctx = vm.createContext({ psSkinAutoAll() {},
   query, parseInt, parseFloat, String, Set, Map, Number, Math, Object, Array, JSON, db: true,
   currentUser: { role: 'admin' }, alert: m => alerts.push(m), confirm: () => true,
   prompt: () => promptAnswer,

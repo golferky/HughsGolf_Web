@@ -64,7 +64,7 @@ function query(sql, params = []) {
 const els = {};
 const el = id => els[id] || (els[id] = { innerHTML: '', value: '', style: {}, textContent: '', appendChild(c) { this.innerHTML += c.innerHTML; } });
 const seq = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-const ctx = vm.createContext({
+const ctx = vm.createContext({ psSkinAutoAll() {},
   window: {}, document: { getElementById: el, createElement: () => ({ innerHTML: '', style: {} }) },
   query, parseInt, parseFloat, String, Set, Map, Number, Math, Object, Array, JSON, db: true,
   PS_SKIN_REM_DETAIL: 'PS Skin Remainder', PS_EOY_REM_DETAIL: 'Skins Kitty Remainder',

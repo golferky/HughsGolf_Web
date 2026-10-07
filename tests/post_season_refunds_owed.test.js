@@ -57,7 +57,7 @@ function serverRun(sql, params = []) {
   else if (/^UPDATE Payments SET DatePaid=\? WHERE rowid=\?/.test(sql)) { const r = refundRows.find(x => x.ID === params[1] && !x.DatePaid); if (r) r.DatePaid = params[0]; }
 }
 const confirms = [];
-const ctx = vm.createContext({
+const ctx = vm.createContext({ psSkinAutoAll() {},
   query, serverRun, parseInt, parseFloat, String, Set, Map, Number, Math, Object, Array, JSON, Date, db: true,
   get currentUser() { return { role }; }, alert: m => alerts.push(String(m)), confirm: m => { confirms.push(String(m)); return true; },
   SERVER_RUN_QUEUE: Promise.resolve(), saveDBToServer: async () => { runs.push({ sql: 'SAVE' }); }, renderPostSeasonBreakdown() {}, loadPrizeMoney() {}, calcEoySkins() {},

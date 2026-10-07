@@ -150,9 +150,9 @@ assert(/>3<\/div><div class="lbl">Players In/.test(r.stats), 'week 2: Play01 + 2
 assert(/\$21<\/div><div class="lbl">Skin Pot/.test(r.stats) && /\$9<\/div><div class="lbl">CTP Pot/.test(r.stats));
 assert(r.panel.includes('Entries paid: <b>3</b> × $10 = <b>$30</b>'));
 assert(!/Pending refunds/.test(r.panel), 'week 2 has no no-shows');
-assert(/PREVIEW - not calculated/.test(r.panel) && /Nothing has been written/.test(r.panel));
+assert(/PREVIEW - not calculated/.test(r.panel) && /calculates itself as soon as every paid player has all 9 holes scored/.test(r.panel));
 assert(/1 outright skin × \$21 \(whole dollars\) = \$21/.test(r.panel) && /remainder \$0/.test(r.panel), r.panel);
-assert(r.winners.includes('Quinn A') && r.winners.includes('PREVIEW - not calculated'));
+assert(r.winners.includes('Quinn A') && r.winners.includes('PREVIEW - calculates automatically'));
 assert(!r.winners.includes('Play01') && !r.parts.includes('Play02'), 'week 1 data never appears in week 2');
 noShows.forEach(n => assert(!r.parts.includes(n) && !r.panel.includes(n)));
 

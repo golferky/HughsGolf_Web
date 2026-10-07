@@ -1,4 +1,7 @@
 // Regression test: psSkinCommit is the ONLY writer of post-season Skin winner payouts and PS Skin Remainder rows.
+// Post-season Skins are now calculated automatically, but only through psSkinAutoCommit -> psSkinCommit (gated by
+// psSkinAutoEligible, tested in post_season_skins_auto.test.js). Here psSkinAutoAll is stubbed to prove that every score /
+// import / refund path itself writes nothing and only ASKS for the automatic check.
 //
 // Starting from a Payments ledger that holds PAID and UNPAID post-season winner rows (and, in a second run, already
 // recorded remainder rows), every automatic / silent calculation path is called and the ledger must come out
@@ -101,7 +104,7 @@ const ctx = vm.createContext({
   loadSkins() {}, loadPrizeMoney() {}, loadCourse() {}, renderPostSeasonBreakdown() {}, reRenderEntry() {}, applyCellClasses() {},
   isPostSeasonEntryMode: () => true, ccRosterEligible: () => true, calcMatchesForDate: async () => {}, warnIfUnpaidScorers: () => true,
   calcSkinWinnersForDate: () => { throw new Error('the regular-season calculator must never run for a post-season date'); },
-  entryState: {}, _lastFocusedSlotKey: null, entryInitialized: true,
+  entryState: {}, _lastFocusedSlotKey: null, entryInitialized: true, psSkinAutoAll() {},
   courseData: { front: { hcps: seq, pars: fours }, back: { hcps: seq, pars: fours }, all18: {} },
 });
 ['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeek1Nine', 'parsePostSeasonDates', 'getPostSeasonWeekForDate', 'getPostSeasonWeekEntry',
@@ -163,7 +166,7 @@ let withRemainderNow = false;
     await run('_runScoreRecalc(20261006)');    assertUntouched('_runScoreRecalc wk2' + tag, before);
     els.entryDate = { value: '20260929' };
     await run('manualRecalcSkins()');          assertUntouched('manualRecalcSkins' + tag, before);
-    assert(/officer Calculate \/ Restate/.test(alerts[alerts.length - 1] || ''), 'the button explains where to record payouts');
+    assert(/Calculate \/ Restate/.test(alerts[alerts.length - 1] || ''), 'the button explains where to record payouts');
 
     // ---- a refund changes the pot, but writes ONLY its own Refund row: winner rows stay (paid and unpaid), no remainder
     const storedBefore = JSON.stringify(stored), remBefore = JSON.stringify(rem);

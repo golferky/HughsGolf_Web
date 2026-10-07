@@ -14,7 +14,7 @@ function run({ ps = true, week = 1, week1Nine = 'Back', card = 'Back', scores = 
   const entryState = { A1: { active: 'Alice Player', regular: 'Alice Player', sub: null, team: 1, grade: 'A', holes, phdcp: 6 } };
   const date = ps ? (week === 1 ? '20260929' : '20261006') : '20260922';
   const els = { entry9: { value: 'Front' }, entryDate: { value: date }, gallusModal: { style: {} } };
-  const ctx = vm.createContext({
+  const ctx = vm.createContext({ psSkinAutoAll() {},
     _gallusData: { players: [{ name: 'Alice Player', gallusName: 'Alice Player', scores: partial ? scores.map((v, i) => i === 8 ? null : v) : scores }], frontBack: card },
     entryState, courseData: { front: { pars: par, hcps: hc }, back: { pars: par, hcps: hc }, all18: { pars: [...par, ...par], hcps: [...hc, ...hc] } },
     document: { getElementById: id => els[id] || { style: {}, value: '' } }, window: { _importAllBatch: batch ? [] : undefined }, console,

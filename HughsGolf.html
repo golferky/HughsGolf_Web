@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.12';
+const APP_VERSION = '20261007.13';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -8600,7 +8600,7 @@ function loadSkins() {
 
   const swDiv = document.getElementById('skinWinners');
   if (skinPreview && skinPreview.winners.length) {
-    swDiv.innerHTML = `<div style="font-size:12px;color:#b8860b;margin-bottom:6px;font-weight:600">PREVIEW - not calculated</div>` + skinPreview.winners.map(w => `
+    swDiv.innerHTML = `<div style="font-size:12px;color:#b8860b;margin-bottom:6px;font-weight:600">PREVIEW - calculates automatically when every paid player has all 9 holes scored</div>` + skinPreview.winners.map(w => `
       <div class="skin-winner">
         <span class="skin-hole">#${w.hole}</span>
         <span class="skin-player">${w.player}</span>
@@ -17400,6 +17400,7 @@ async function doGallusConfirm() {
   // Recalculate matches + skins once for all players (post-season has no matches; its prize figures are refreshed instead)
   if (isPS) {
     calcEoySkins(parseInt(String(date).substring(0, 4)), true);
+    psSkinAutoAll(parseInt(String(date).substring(0, 4)));
   } else {
     await calcMatchesForDate(date);
     await saveSkinWinnersForDate(date);
@@ -20520,7 +20521,7 @@ function psWeekPanelHtml(season, psInfo, preview) {
     status = `<b style="color:#c62828">RECORDED REMAINDER IS OUT OF DATE</b> - the pot or winners changed since it was recorded. It counts as $0 until an officer recalculates.`;
     if (isOfficer && P) action = btn('Calculate Week ' + week, 'calculate', '#2e7d32');
   } else {
-    status = `<b style="color:#b8860b">PREVIEW - not calculated.</b> Nothing has been written.` + (preview
+    status = `<b style="color:#b8860b">PREVIEW - not calculated yet.</b> This week calculates itself as soon as every paid player has all 9 holes scored (and the date has arrived).` + (preview
       ? `<br>${preview.winners.length} outright skin${preview.winners.length === 1 ? '' : 's'}` + (preview.winners.length ? ` × ${m(preview.payout.each)} (whole dollars) = ${m(preview.payout.paid)}` : '') + `; <b>remainder ${m(preview.payout.remainder)} → Skins kitty</b>` +
         (preview.winners.length ? '' : ' (no outright skins: the whole Skins pot)')
       : '');
@@ -20593,14 +20594,66 @@ function psSkinCommitPlan(season, week, mode) {
   return { errors, st, mode, winners, skins, payout, fingerprint: psSkinFingerprint(st.potPlayers.length, skins, payout) };
 }
 
-// Officer-confirmed Calculate / Restate: the ONLY place the Skins remainder is written. Never called on load or view.
+// Post-season Skins are calculated automatically (no approval step) once the week can be decided safely:
+//  - the week's date is today or earlier (never a future week),
+//  - every paid-and-scored player has all nine holes (a half-entered night is left as a preview),
+//  - nothing is already calculated, and no winner row has been paid (paid rows are never changed),
+//  - stored amounts are whole dollars (the legacy-cents "Restate" case stays an officer action).
+// Each score save re-checks, so a late correction re-calculates the (unpaid) week by itself.
+const _psAutoBusy = {};
+function psSkinAutoEligible(season, week, todayInt) {
+  const st = psWeekSkinState(season, week);
+  if (!st) return { ok: false, why: 'no post season' };
+  if (parseInt(st.date) > todayInt) return { ok: false, why: 'future week' };
+  if (!['preview', 'needs-record', 'stale', 'calculated'].includes(st.status)) return { ok: false, why: st.status };
+  if (st.paidRows.length) return { ok: false, why: 'paid rows' };
+  if (!st.potPlayers.length) return { ok: false, why: 'no scored players' };
+  if (st.status === 'calculated') {
+    // Already recorded: only redo it when a late score correction changed WHO wins (the recorded fingerprint only sees counts).
+    if (!courseData) loadCourse(getSeasonSettings(season)?.Course || 'Boone Links');
+    if (!courseData) return { ok: false, why: 'calculated' };
+    const key = (p, h) => `${p}|${String(h).replace('#', '')}`;
+    const want = psComputeWeekWinners(season, week).winners.map(w => key(w.player, w.hole)).sort().join();
+    const have = st.stored.map(r => key(r.Player, r.Detail)).sort().join();
+    if (want === have) return { ok: false, why: 'calculated' };
+  }
+  const rows = psWeekScorerRows(st.date, new Set(st.potPlayers));
+  const incomplete = rows.filter(r => ['1','2','3','4','5','6','7','8','9'].some(h => r[h] == null || r[h] === ''));
+  if (incomplete.length || rows.length < st.potPlayers.length) return { ok: false, why: 'incomplete scores' };
+  return { ok: true, st };
+}
+async function psSkinAutoCommit(season, week) {
+  if (!db) return false;
+  season = parseInt(season); week = parseInt(week);
+  const k = `${season}-${week}`;
+  if (_psAutoBusy[k]) { _psAutoBusy[k] = 2; return false; }          // a run is in flight: run once more when it finishes
+  _psAutoBusy[k] = 1;
+  let did = false;
+  try {
+    do {
+      _psAutoBusy[k] = 1;
+      if (!psSkinAutoEligible(season, week, psTodayInt()).ok) break;
+      await psSkinCommit(season, week, 'calculate', { auto: true });
+      did = true;
+      try { logIt('Post-season Skins auto-calculated', `season=${season} week=${week} by=${currentUser?.name || 'unknown'}`, 'INFO', 'psSkinAutoCommit'); } catch (e) {}
+    } while (_psAutoBusy[k] === 2);
+  } finally { delete _psAutoBusy[k]; }
+  return did;
+}
+
+// Fire-and-forget: re-check both post-season weeks after scores, a Gallus import or a refund changed. Never throws.
+function psSkinAutoAll(season) {
+  [1, 2].forEach(w => { try { psSkinAutoCommit(season, w).catch(e => console.warn('psSkinAutoCommit failed', e)); } catch (e) { console.warn('psSkinAutoCommit failed', e); } });
+}
+
+// Officer-confirmed Calculate / Restate (and the automatic Calculate above, which calls it): the ONLY place the Skins remainder is written.
 async function psSkinCommit(season, week, mode, opts) {
   opts = opts || {};
   if (!db) return;
-  if (!(currentUser?.role === 'admin' || currentUser?.role === 'developer')) { alert('Only officers can do this.'); return; }
+  if (!(currentUser?.role === 'admin' || currentUser?.role === 'developer')) { if (!opts.auto) alert('Only officers can do this.'); return; }
   season = parseInt(season); week = parseInt(week);
   const plan = psSkinCommitPlan(season, week, mode);
-  if (plan.errors.length) { alert('Not done:\n\n' + plan.errors.join('\n')); return; }
+  if (plan.errors.length) { if (!opts.auto) alert('Not done:\n\n' + plan.errors.join('\n')); return; }
   if (mode === 'clear') {
     const { st } = plan;
     if (!opts.confirmed && !confirm(`Clear Week ${week} Skins (${fmtDate(String(st.date))})?\n\nRemoves ${st.stored.length} unpaid stored skin winner row(s) and the recorded remainder. Nothing is added.`)) return;
@@ -20624,7 +20677,7 @@ async function psSkinCommit(season, week, mode, opts) {
   if (mode === 'restate') st.stored.forEach(r => lines.push(`  ${r.Player} ${r.Detail}: $${r.Earned.toFixed(2)} -> $${payout.each.toFixed(2)}`));
   else if (plan.winners.length) plan.winners.forEach(w => lines.push(`  Hole ${w.hole}: ${w.player} -> $${payout.each.toFixed(2)}`));
   lines.push('', 'The remainder is recorded once for this week; running this again replaces it, it never adds to it.');
-  if (!confirm(lines.join('\n'))) return;
+  if (!opts.auto && !confirm(lines.join('\n'))) return;
   const now = new Date().toLocaleString();
   if (mode === 'restate') {
     st.stored.forEach(r => serverRun(`UPDATE Payments SET Earned=? WHERE rowid=?`, [payout.each, r.ID]));
@@ -20798,6 +20851,7 @@ async function issuePostSeasonRefunds(season, weeks, players, opts) {
   const psDates = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
   calcEoySkins(season, true);                                     // read-only marker refresh
   await saveDBToServer();
+  psSkinAutoAll(season);                                          // the pot changed: an unpaid, fully scored week re-calculates itself
   renderPostSeasonBreakdown(courseData.all18);
   try { loadPrizeMoney(); } catch (e) {}
 }
@@ -23694,10 +23748,11 @@ function loadAwardPrizesTab() {
 function saveSkinWinnersForDate(date) {
   const psContext = getPostSeasonContextForDate(date);
   if (psContext) {
-    // Post season: NEVER writes. Winner payouts and the Skins remainder are recorded only by an officer's confirmed
-    // Calculate / Restate (psSkinCommit). This just refreshes the read-only "needs Calculate / Restate" marker.
+    // Post season: this function itself never writes. It refreshes the read-only marker, then asks psSkinAutoCommit to
+    // calculate the week if (and only if) it can be decided safely (see psSkinAutoEligible). psSkinCommit does the writing.
     calcEoySkins(psContext.season, true);
-    return { ok: false, count: 0, total: 0, message: 'Post-season skins are recorded only by an officer Calculate / Restate.' };
+    psSkinAutoAll(psContext.season);
+    return { ok: false, count: 0, total: 0, message: 'Post-season skins are calculated automatically once the week is fully scored (an officer can also use Calculate / Restate on the Skins tab).' };
   }
 
   const result = calcSkinWinnersForDate(date);
@@ -24556,6 +24611,7 @@ async function savePlayerScoreNow(key, gross, net) {
         dismissEoyPaymentPrompt(); // clear any stale prompt from a prior player
       }
       calcEoySkins(season, true);
+      psSkinAutoAll(season);
       await SERVER_RUN_QUEUE;
       loadScores();
     } else {
