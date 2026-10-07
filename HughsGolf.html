@@ -2718,7 +2718,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.5';
+const APP_VERSION = '20261007.6';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -23113,6 +23113,15 @@ function bsMoney(v) {
 }
 const bsSum = (a, f) => bsR2((a || []).reduce((t, r) => t + (parseFloat(f ? f(r) : r.amount) || 0), 0));
 
+// Events (each with date, order, amount: + into the pool / - out) sorted oldest first with the pool balance after each one.
+function bsRunningLedger(events) {
+  const ev = (events || []).slice().sort((a, b) => (String(a.date) < String(b.date) ? -1 : String(a.date) > String(b.date) ? 1 : (a.order || 0) - (b.order || 0)));
+  let run = 0;
+  return ev.map(e => { run = bsR2(run + e.amount); return Object.assign({}, e, { balance: run }); });
+}
+const bsByDate = (rows, f) => { const g = {}; (rows || []).forEach(r => { const k = String(r.date || ''); (g[k] = g[k] || { date: k, n: 0, amount: 0 }); g[k].n++; g[k].amount += parseFloat(f ? f(r) : r.amount) || 0; }); return Object.values(g); };
+const bsHoleText = detail => { const m = String(detail || '').match(/#(\d+)/); return m ? `hole ${m[1]}` : String(detail || ''); };
+
 // (1) League Dues: money in (dues) vs money out (expenses and the prizes awarded from dues).
 function bsDuesSheet(d) {
   const dues = d.dues || [], expenses = d.expenses || [];
@@ -23134,10 +23143,8 @@ function bsDuesSheet(d) {
   Object.values(byDate).forEach(g => events.push({ order: 0, date: g.date, kind: 'in', label: `Dues collected (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount) }));
   expenses.forEach(e => events.push({ order: 1, date: String(e.date || ''), kind: 'expense', label: `Expense: ${e.category || 'Other'}${e.description ? ' - ' + e.description : ''}`, amount: -bsR2(e.amount) }));
   groups.forEach(g => g.rows.forEach(r => events.push({ order: 2, date: String(r.date || g.date || ''), kind: 'award', label: `Pool \u2192 ${r.player}`, detail: `${g.label}${r.place ? ', ' + r.place : ''}`, amount: -bsR2(r.amount), paid: !!r.paid })));
-  events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.order - b.order));
-  let run = 0;
-  const ledger = events.map(ev => { run = bsR2(run + ev.amount); return Object.assign({}, ev, { balance: run }); });
-  const poolBalance = run;
+  const ledger = bsRunningLedger(events);
+  const poolBalance = ledger.length ? ledger[ledger.length - 1].balance : 0;
   const afterExpenses = bsR2(moneyIn - expenseTotal);
   const cashOnHand = bsR2(afterExpenses - paidOut);
   const afterAwards = bsR2(afterExpenses - awardedTotal);
@@ -23205,6 +23212,37 @@ function bsPoolSheet(d) {
   return { paymentsIn, transfersIn, refundsIssued, refundsPaid, refundsOwed, netIn, weeks, accounted, difference, rows };
 }
 
+// EOY Skins and post-season CTP as ONE pool: entries and transfers in; refunds and every Skin / CTP winner moving from the pool to
+// a person; and each week's recorded remainder moving to the Skins kitty. Balance = what is left in the pool.
+function bsEoyLedger(d) {
+  const ev = [];
+  bsByDate(d.entries).forEach(g => ev.push({ order: 0, date: g.date, kind: 'in', label: `EOY Skins entries (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount) }));
+  (d.transfersIn || []).forEach(t => ev.push({ order: 0, date: String(t.date || ''), kind: 'in', label: 'Moved in from another pool (Pool Transfer)', amount: bsR2(t.amount) }));
+  (d.refunds || []).forEach(r => ev.push({ order: 1, date: String(r.date || ''), kind: 'refund', label: `Pool \u2192 ${r.player}`, detail: 'Refund of an entry', amount: -bsR2(Math.abs(r.amount)), paid: !!r.paid }));
+  (d.skinWinners || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'award', label: `Pool \u2192 ${w.player}`, detail: `Week ${w.week} Skin, ${bsHoleText(w.hole)}`, amount: -bsR2(w.amount), paid: !!w.paid }));
+  (d.ctpWinners || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'award', label: `Pool \u2192 ${w.player}`, detail: `Week ${w.week} CTP, ${bsHoleText(w.hole)}`, amount: -bsR2(w.amount), paid: !!w.paid }));
+  (d.remainders || []).forEach(r => ev.push({ order: 3, date: String(r.date || ''), kind: 'move', label: 'Pool \u2192 Skins kitty (remainder)', detail: `Week ${r.week}`, amount: -bsR2(r.amount) }));
+  const ledger = bsRunningLedger(ev);
+  const to = k => bsSum(ledger.filter(e => e.kind === k), e => -e.amount);
+  const winners = ledger.filter(e => e.kind === 'award' || e.kind === 'refund');
+  return { ledger, poolBalance: ledger.length ? ledger[ledger.length - 1].balance : 0, in: bsSum(ledger.filter(e => e.kind === 'in'), e => e.amount),
+    refunds: to('refund'), winners: to('award'), remainder: to('move'), owed: bsSum(winners.filter(e => !e.paid), e => -e.amount) };
+}
+// Regular-season Skins kitty and CTP kitty, each as a pool: entries in, winners and payouts moving to people, transfers out.
+function bsKittyLedgers(d) {
+  const one = (x, label) => {
+    const ev = [];
+    bsByDate(x.entries).forEach(g => ev.push({ order: 0, date: g.date, kind: 'in', label: `${label} entries (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount) }));
+    (x.remainders || []).forEach(r => ev.push({ order: 0, date: String(r.date || ''), kind: 'in', label: 'Post-season Skins remainder moved in', amount: bsR2(r.amount) }));
+    (x.winners || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'award', label: `Pool \u2192 ${w.player}`, detail: `${label}, ${bsHoleText(w.hole)}`, amount: -bsR2(w.amount), paid: !!w.paid }));
+    (x.payouts || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'payout', label: `Pool \u2192 ${w.player}`, detail: 'Pay from Kitty', amount: -bsR2(w.amount), paid: true }));
+    (x.transfers || []).forEach(t => ev.push({ order: 3, date: String(t.date || ''), kind: 'move', label: 'Pool \u2192 another pool (Pool Transfer)', amount: -bsR2(t.amount) }));
+    const ledger = bsRunningLedger(ev);
+    return { ledger, balance: ledger.length ? ledger[ledger.length - 1].balance : 0, owed: bsSum(ledger.filter(e => e.kind === 'award' && !e.paid), e => -e.amount) };
+  };
+  return { skin: one(d.skin || {}, 'Skin'), ctp: one(d.ctp || {}, 'CTP') };
+}
+
 // (3) Regular-season Skins and CTP kitties, with the figure the Prize Money tab shows next to it.
 function bsKittySheet(d) {
   const s = d.skin || {}, c = d.ctp || {};
@@ -23265,7 +23303,8 @@ function bsRenderLedger(ledger, estimates) {
   const th = t => `<th style="text-align:${t === 'Pool' || t === 'Balance' ? 'right' : 'left'};padding:4px 8px;background:var(--green);color:var(--gold);font-size:12px">${t}</th>`;
   const td = (t, st = '') => `<td style="padding:3px 8px;border-bottom:1px solid #eee;font-size:12px;${st}">${t}</td>`;
   const body = (ledger || []).map(r => {
-    const who = r.kind === 'award' ? `<strong>${e(r.label)}</strong> <span style="color:#888">${e(r.detail || '')}</span> ${r.paid ? '<span style="color:#2e7d32">\u2713 paid</span>' : '<span style="color:#e65100">owed</span>'}` : e(r.label);
+    const person = r.kind === 'award' || r.kind === 'refund' || r.kind === 'payout';
+    const who = person ? `<strong>${e(r.label)}</strong> <span style="color:#888">${e(r.detail || '')}</span> ${r.paid ? '<span style="color:#2e7d32">\u2713 paid</span>' : '<span style="color:#e65100">owed</span>'}` : (r.detail ? `${e(r.label)} <span style="color:#888">${e(r.detail)}</span>` : e(r.label));
     return `<tr>${td(e(bsDateText(r.date)))}${td(who)}${td(bsMoney(r.amount), `text-align:right;font-family:'DM Mono',monospace;color:${r.amount < 0 ? '#c62828' : '#2e7d32'}`)}${td(bsMoney(r.balance), "text-align:right;font-family:'DM Mono',monospace;font-weight:600")}</tr>`;
   }).join('');
   const pending = (estimates || []).filter(x => x.total > 0).map(x => `<tr style="font-style:italic;color:#e65100">${td('')}${td(e(x.label) + ' (not awarded yet, not taken from the pool)')}${td(bsMoney(-x.total), "text-align:right;font-family:'DM Mono',monospace")}${td('')}</tr>`).join('');
@@ -23321,6 +23360,29 @@ function bsGatherPool(season) {
   return { entries: { paymentsIn: pay.t || 0, paymentCount: pay.n || 0, transfersIn: tr.t || 0 },
     refunds: { issued: bsSum(rf, r => Math.abs(r.e)), paid: bsSum(rf.filter(r => r.dp), r => Math.abs(r.e)) }, weeks, unassignedPayments: unassigned };
 }
+function bsGatherPoolLedger(season) {
+  const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`;
+  const lp = getSeasonSettings(season), ps = lp?.PostSeasonDt ? parsePostSeasonDates(lp.PostSeasonDt) : null;
+  const weekOf = d => (ps && parseInt(d) === ps.week2) ? 2 : 1;
+  const entries = query(`SELECT Date as date, CAST(Earned AS REAL) as amount FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ? AND Date < ?`, [S0, S1]);
+  const transfersIn = query(`SELECT Date as date, CAST(Earned AS REAL) as amount FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Pool Transfer' AND Date >= ? AND Date < ?`, [S0, S1]);
+  const refunds = query(`SELECT Date as date, Player as player, CAST(Earned AS REAL) as amount, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ? AND Date < ?`, [S0, S1]).map(r => ({ date: r.date, player: r.player, amount: r.amount, paid: !!r.dp }));
+  const win = desc => !ps ? [] : query(`SELECT Date as date, Player as player, Detail as hole, CAST(Earned AS REAL) as amount, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"=? AND Detail LIKE '#%' AND Player!='Kitty' AND CAST(Date AS INTEGER) IN (?,?)`, [desc, ps.week1, ps.week2])
+    .map(r => ({ date: r.date, week: weekOf(r.date), player: r.player, hole: r.hole, amount: r.amount, paid: !!r.dp }));
+  const remainders = [];
+  if (ps) [1, 2].forEach(w => { const st = psWeekSkinState(season, w); if (st && st.recorded) remainders.push({ date: st.date, week: w, amount: st.payout.remainder }); });
+  return { entries, transfersIn, refunds, skinWinners: win('Skin'), ctpWinners: win('CTP'), remainders };
+}
+function bsGatherKittyLedger(season) {
+  const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`, ex = psKittyExclude(season);
+  const q = (desc, detail, like, extra) => query(`SELECT Date as date, Player as player, Detail as hole, CAST(Earned AS REAL) as amount, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"='${desc}' AND Detail ${like ? 'LIKE' : '='} ? ${like ? "AND Player != 'Kitty'" : ''} AND Date >= ? AND Date < ?${extra || ''}`, [detail, S0, S1]);
+  const winners = r => r.map(x => ({ date: x.date, player: x.player, hole: x.hole, amount: x.amount, paid: !!x.dp }));
+  const remainders = [];
+  const ps = getSeasonSettings(season)?.PostSeasonDt ? true : false;
+  if (ps) [1, 2].forEach(w => { const st = psWeekSkinState(season, w); if (st && st.recorded) remainders.push({ date: st.date, amount: st.payout.remainder }); });
+  return { skin: { entries: q('Skin', 'Payment', false, ex), winners: winners(q('Skin', '#%', true, ex)), transfers: q('Skin', 'Pool Transfer', false), payouts: q('Skin', 'Kitty Payout', false), remainders },
+           ctp: { entries: q('CTP', 'Payment', false), winners: winners(q('CTP', '#%', true)), transfers: q('CTP', 'Pool Transfer', false), payouts: q('CTP', 'Kitty Payout', false) } };
+}
 function bsGatherKitty(season) {
   const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`, ex = psKittyExclude(season);
   const n = (sql, args) => parseFloat((query(sql, args)[0] || {}).t || 0);
@@ -23354,8 +23416,17 @@ function loadBalanceSheet() {
       `<div style="display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 12px">${[['Pool now', dues.poolBalance, '#1b5e20'], ['Dues collected', dues.moneyIn, '#2e7d32'], ['Expenses', -dues.expenseTotal, '#c62828'], ['Moved to winners', -dues.awardedTotal, '#c62828'], ['Still owed to winners', dues.owed, '#e65100']]
         .map(([l, v, col]) => `<div style="background:#f5f0e8;border-radius:8px;padding:8px 16px;text-align:center"><div style="font-size:18px;font-weight:700;color:${col};font-family:'DM Mono',monospace">${bsMoney(v)}</div><div style="font-size:11px;color:#666">${l}</div></div>`).join('')}</div>` +
       bsRenderLedger(dues.ledger, dues.estimates) + `<div style="margin-top:12px">${bsRenderRows(dues.rows)}</div>`);
-    html += sec('🏆 EOY Skins and post-season CTP', 'The $10 per player per week entry ($7 Skins + $3 CTP), what each week\'s pots did, and refunds.', bsRenderRows(bsPoolSheet(bsGatherPool(season)).rows));
-    html += sec('🎯 Regular-season Skins and CTP', 'Weekly Skins and CTP entries, winners, and what is left in the kitties.', bsRenderRows(bsKittySheet(bsGatherKitty(season)).rows));
+    const scroll = h => `<div style="max-height:380px;overflow:auto;margin-bottom:8px">${h}</div>`;
+    const cards = items => `<div style="display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 12px">${items.map(([l, v, col]) => `<div style="background:#f5f0e8;border-radius:8px;padding:8px 16px;text-align:center"><div style="font-size:18px;font-weight:700;color:${col};font-family:'DM Mono',monospace">${bsMoney(v)}</div><div style="font-size:11px;color:#666">${l}</div></div>`).join('')}</div>`;
+    const eoy = bsEoyLedger(bsGatherPoolLedger(season));
+    html += sec('🏆 EOY Skins and post-season CTP pool', 'The $10 per player per week entry ($7 Skins + $3 CTP) goes into one pool. Refunds, Skin winners and CTP winners move from the pool to a person, and each week\'s remainder moves to the Skins kitty.',
+      cards([['Pool now', eoy.poolBalance, '#1b5e20'], ['Entries in', eoy.in, '#2e7d32'], ['Moved to winners', -eoy.winners, '#c62828'], ['Refunded', -eoy.refunds, '#c62828'], ['Still owed to people', eoy.owed, '#e65100']]) +
+      scroll(bsRenderLedger(eoy.ledger, [])) + `<div style="margin-top:8px">${bsRenderRows(bsPoolSheet(bsGatherPool(season)).rows)}</div>`);
+    const kl = bsKittyLedgers(bsGatherKittyLedger(season));
+    html += sec('🎯 Regular-season Skins and CTP kitties', 'Each night\'s Skin and CTP entries go into a kitty; winners and Pay-from-Kitty payouts move from the kitty to a person.',
+      `<div style="font-weight:700;margin:6px 0">Skins kitty</div>` + cards([['Kitty now', kl.skin.balance, '#1b5e20'], ['Still owed to winners', kl.skin.owed, '#e65100']]) + scroll(bsRenderLedger(kl.skin.ledger, [])) +
+      `<div style="font-weight:700;margin:12px 0 6px">CTP kitty</div>` + cards([['Left in the CTP kitty', kl.ctp.balance, '#1b5e20'], ['Still owed to winners', kl.ctp.owed, '#e65100']]) + scroll(bsRenderLedger(kl.ctp.ledger, [])) +
+      `<div style="margin-top:8px">${bsRenderRows(bsKittySheet(bsGatherKitty(season)).rows)}</div>`);
     const all = query(`SELECT "Desc" as d, Detail as t, Player as p, CAST(Earned AS REAL) as e FROM Payments WHERE League="Hugh's" AND Date >= ? AND Date < ?`, [`${season}0101`, `${season + 1}0101`]);
     const comp = bsCompleteness(all);
     html += sec('🔎 Every payment row this season', 'Each recorded payment row by type and the sheet above that shows it. A type with no sheet is flagged so nothing recorded is left off.',

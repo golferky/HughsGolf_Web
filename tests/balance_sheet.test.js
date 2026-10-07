@@ -9,7 +9,8 @@ function extract(name) {
 const J = x => JSON.parse(JSON.stringify(x));
 const c = vm.createContext({ Math, parseFloat, String, Object, Array, JSON, Number });
 vm.runInContext("const bsR2 = x => Math.round((parseFloat(x) || 0) * 100) / 100; const bsSum = (a, f) => bsR2((a || []).reduce((t, r) => t + (parseFloat(f ? f(r) : r.amount) || 0), 0));", c);
-['bsMoney', 'bsDuesSheet', 'bsPoolSheet', 'bsKittySheet', 'bsClassifyPayment', 'bsCompleteness', 'bsRenderRows', 'bsDateText', 'bsRenderLedger'].forEach(n => vm.runInContext(extract(n), c));
+['bsByDate', 'bsHoleText'].forEach(n => { const m = src.match(new RegExp('const ' + n + ' = [\\s\\S]*?;\\n')); assert(m, n); vm.runInContext(m[0], c); });
+['bsMoney', 'bsRunningLedger', 'bsDuesSheet', 'bsPoolSheet', 'bsKittySheet', 'bsEoyLedger', 'bsKittyLedgers', 'bsClassifyPayment', 'bsCompleteness', 'bsRenderRows', 'bsDateText', 'bsRenderLedger'].forEach(n => vm.runInContext(extract(n), c));
 assert.strictEqual(c.bsMoney(1234.5), '$1,234.50'); assert.strictEqual(c.bsMoney(-20), '($20.00)'); assert.strictEqual(c.bsMoney(0.005 + 0.1), '$0.11'); assert.strictEqual(c.bsMoney(null), '$0.00');
 
 // ── (1) League Dues ──
@@ -59,6 +60,38 @@ assert(/1st half winners \(not awarded yet, not taken from the pool\)/.test(lh) 
 assert(/Nothing recorded yet/.test(c.bsRenderLedger([], [])));
 assert.strictEqual(J(c.bsDuesSheet({})).poolBalance, 0);
 assert.strictEqual(c.bsDateText('20261231'), '12/31/2026');
+
+// ── EOY Skins and post-season CTP as one pool: entries in; refunds and winners move from the pool to a person ──
+const eoy = J(c.bsEoyLedger({
+  entries: [...Array(10).fill(0).map(() => ({ date: 20260922, amount: 20 })), ...Array(10).fill(0).map(() => ({ date: 20260929, amount: 20 }))],
+  refunds: [{ date: 20261006, player: 'Zed Late', amount: -10, paid: false }],
+  skinWinners: [{ date: 20260929, week: 1, player: 'Ann', hole: '#11', amount: 44, paid: true }, { date: 20260929, week: 1, player: 'Bob', hole: '#14', amount: 44, paid: false }],
+  ctpWinners: [{ date: 20260929, week: 1, player: 'Cy', hole: '#10', amount: 28, paid: true }, { date: 20260929, week: 1, player: 'Di', hole: '#12', amount: 28, paid: true }],
+  remainders: [{ date: 20260929, week: 1, amount: 45 }] }));
+assert.deepStrictEqual(eoy.ledger.map(r => [r.date, r.kind, r.amount]), [['20260922', 'in', 200], ['20260929', 'in', 200], ['20260929', 'award', -44], ['20260929', 'award', -44], ['20260929', 'award', -28], ['20260929', 'award', -28], ['20260929', 'move', -45], ['20261006', 'refund', -10]]);
+assert.strictEqual(eoy.in, 400); assert.strictEqual(eoy.winners, 144); assert.strictEqual(eoy.refunds, 10); assert.strictEqual(eoy.remainder, 45);
+assert.strictEqual(eoy.poolBalance, 201, '400 in, minus winners, the refund, and the remainder moved to the Skins kitty');
+assert.strictEqual(eoy.ledger[7].balance, 201); assert.strictEqual(eoy.ledger[1].balance, 400);
+assert.strictEqual(eoy.owed, 54, 'Bob\'s skin (44) and Zed\'s refund (10) are awarded but not paid');
+assert.strictEqual(eoy.ledger[2].label, 'Pool \u2192 Ann'); assert.strictEqual(eoy.ledger[2].detail, 'Week 1 Skin, hole 11'); assert.strictEqual(eoy.ledger[4].detail, 'Week 1 CTP, hole 10');
+assert.strictEqual(eoy.ledger[6].label, 'Pool \u2192 Skins kitty (remainder)'); assert.strictEqual(eoy.ledger[7].detail, 'Refund of an entry');
+const eh = c.bsRenderLedger(eoy.ledger, []);
+assert(/Pool \u2192 Zed Late/.test(eh) && /Refund of an entry/.test(eh) && /Pool \u2192 Skins kitty \(remainder\)/.test(eh) && /owed/.test(eh));
+assert(!/Zed Late<\/strong> <span[^>]*>Refund of an entry<\/span> <span style="color:#2e7d32">/.test(eh), 'an unpaid refund is shown as owed');
+const eoyEmpty = J(c.bsEoyLedger({})); assert.strictEqual(eoyEmpty.poolBalance, 0); assert.strictEqual(eoyEmpty.ledger.length, 0);
+const eoyTr = J(c.bsEoyLedger({ transfersIn: [{ date: 20261010, amount: 25 }] })); assert.strictEqual(eoyTr.poolBalance, 25); assert.strictEqual(eoyTr.ledger[0].label, 'Moved in from another pool (Pool Transfer)');
+
+// ── regular-season Skins and CTP kitties, each a pool ──
+const kl = J(c.bsKittyLedgers({
+  skin: { entries: [{ date: 20260407, amount: 2 }, { date: 20260407, amount: 2 }, { date: 20260414, amount: 2 }], winners: [{ date: 20260407, player: 'Ann', hole: '#4', amount: 3, paid: true }],
+    payouts: [{ date: 20260501, player: 'Bob', amount: 1 }], transfers: [{ date: 20260601, amount: 0.5 }], remainders: [{ date: 20260929, amount: 45 }] },
+  ctp: { entries: [{ date: 20260407, amount: 1 }, { date: 20260407, amount: 1 }], winners: [{ date: 20260407, player: 'Cy', hole: '#12', amount: 2, paid: false }], payouts: [], transfers: [] } }));
+assert.deepStrictEqual(kl.skin.ledger.map(r => [r.date, r.kind, r.amount, r.balance]), [['20260407', 'in', 4, 4], ['20260407', 'award', -3, 1], ['20260414', 'in', 2, 3], ['20260501', 'payout', -1, 2], ['20260601', 'move', -0.5, 1.5], ['20260929', 'in', 45, 46.5]]);
+assert.strictEqual(kl.skin.balance, 46.5); assert.strictEqual(kl.skin.owed, 0);
+assert.strictEqual(kl.skin.ledger[3].paid, true, 'a Pay-from-Kitty payout is already paid'); assert.strictEqual(kl.skin.ledger[3].detail, 'Pay from Kitty');
+assert.strictEqual(kl.ctp.balance, 0); assert.strictEqual(kl.ctp.owed, 2);
+assert.strictEqual(kl.ctp.ledger[1].detail, 'CTP, hole 12');
+assert.strictEqual(J(c.bsKittyLedgers({})).skin.balance, 0);
 
 // ── (2) EOY Skins and post-season CTP ──
 const week = (n, over) => Object.assign({ week: n, date: n === 1 ? '09/29/2026' : '10/06/2026', nine: n === 1 ? 'Back' : 'Front', potPlayers: 19, fieldPlayers: 20, weekEntry: 10, skinAmt: 7, ctpAmt: 3,
@@ -110,8 +143,9 @@ assert.strictEqual(comp.reduce((t, x) => t + x.count, 0), rows.length, 'every ro
 assert(/id="adminBtnBalance"[^>]*>📒 Balance Sheet</.test(src) && /id="adminBalance"/.test(src) && /id="balanceBody"/.test(src) && /id="balanceSeason"/.test(src));
 assert(/ADMIN_SECTIONS = \[[^\]]*'balance'/.test(src) && /if \(section==='balance'\)\s+loadBalanceSheet\(\);/.test(src));
 assert(/bsDuesSheet\(bsGatherDues\(season\)\)/.test(src) && /Marking a winner paid does not move the pool again/.test(src) && /bsRenderLedger\(dues\.ledger, dues\.estimates\)/.test(src) && /bsPoolSheet\(bsGatherPool\(season\)\)/.test(src) && /bsKittySheet\(bsGatherKitty\(season\)\)/.test(src) && /bsCompleteness\(all\)/.test(src));
-const loader = extract('loadBalanceSheet') + extract('bsGatherDues') + extract('bsGatherPool') + extract('bsGatherKitty');
+const loader = extract('loadBalanceSheet') + extract('bsGatherDues') + extract('bsGatherPool') + extract('bsGatherKitty') + extract('bsGatherPoolLedger') + extract('bsGatherKittyLedger');
+assert(/bsEoyLedger\(bsGatherPoolLedger\(season\)\)/.test(src) && /bsKittyLedgers\(bsGatherKittyLedger\(season\)\)/.test(src), 'the EOY pool and the kitties are shown as pool ledgers');
 assert(!/serverRun|INSERT|UPDATE |DELETE/.test(loader.replace(/UPDATE/g, '')), 'the Balance Sheet only reads');
 assert(/LeagueExpenses/.test(extract('bsGatherDues')), 'expenses come from the Expenses screen table');
-assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.5');
+assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.6');
 console.log('ok');
