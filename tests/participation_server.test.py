@@ -1,4 +1,5 @@
 """One central server-side participation check: /run-sql, full-database /save, restore, refresh, test-account owners, current season only."""
+import sys; sys.dont_write_bytecode = True
 import os, sqlite3, tempfile, importlib.util, shutil
 
 here = os.path.dirname(os.path.abspath(__file__))

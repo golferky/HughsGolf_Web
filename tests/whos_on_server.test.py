@@ -1,4 +1,5 @@
 """IP table + who's-on: heartbeat, login IP check, /whos-on, open-connection parsing."""
+import sys; sys.dont_write_bytecode = True
 import os, sqlite3, tempfile, importlib.util, datetime
 
 here = os.path.dirname(os.path.abspath(__file__))
