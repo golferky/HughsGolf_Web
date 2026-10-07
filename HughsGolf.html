@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.7';
+const APP_VERSION = '20261007.8';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -23140,9 +23140,9 @@ function bsDuesSheet(d) {
   // The dues POOL as a running ledger: dues in (+), expenses out (-), and each award moving from the pool to a person (-).
   // Paying the winner later does not move the pool again; it only marks the person's money as handed over.
   const byDate = {};
-  dues.forEach(r => { const k = String(r.date || ''); (byDate[k] = byDate[k] || { date: k, n: 0, amount: 0 }); byDate[k].n++; byDate[k].amount += parseFloat(r.amount) || 0; });
+  dues.forEach(r => { const k = String(r.date || ''); (byDate[k] = byDate[k] || { date: k, n: 0, amount: 0, payers: [] }); byDate[k].n++; byDate[k].amount += parseFloat(r.amount) || 0; byDate[k].payers.push({ player: r.player, amount: bsR2(r.amount), method: r.method || '' }); });
   const events = [];
-  Object.values(byDate).forEach(g => events.push({ order: 0, date: g.date, kind: 'in', label: `Dues collected (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount) }));
+  Object.values(byDate).forEach(g => events.push({ order: 0, date: g.date, kind: 'in', label: `Dues collected (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount), payers: g.payers.slice().sort((a, b) => String(a.player).localeCompare(String(b.player))) }));
   expenses.forEach(e => events.push({ order: 1, date: String(e.date || ''), kind: 'expense', label: `Expense: ${e.category || 'Other'}${e.description ? ' - ' + e.description : ''}`, amount: -bsR2(e.amount) }));
   groups.forEach(g => g.rows.forEach(r => events.push({ order: 2, date: String(r.date || g.date || ''), kind: 'award', label: `Pool \u2192 ${r.player}`, detail: `${g.label}${r.place ? ', ' + r.place : ''}`, amount: -bsR2(r.amount), paid: !!r.paid })));
   const ledger = bsRunningLedger(events);
@@ -23300,6 +23300,11 @@ function bsCompleteness(rows) {
 
 function bsDateText(d) { const t = String(d || ''); return /^\d{8}$/.test(t) ? `${t.slice(4, 6)}/${t.slice(6, 8)}/${t.slice(0, 4)}` : t; }
 // The pool ledger: one line per movement with the pool balance after it; awards read "Pool -> person".
+function bsToggleDetail(tr) {
+  const d = tr && tr.nextElementSibling; if (!d || !/bsDetailRow/.test(d.className)) return;
+  const open = d.style.display === 'none'; d.style.display = open ? '' : 'none';
+  const a = tr.querySelector('.bsArrow'); if (a) a.textContent = open ? '\u25BC' : '\u25B6';
+}
 function bsRenderLedger(ledger, estimates) {
   const e = v => String(v ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
   const th = t => `<th style="text-align:${t === 'Pool' || t === 'Balance' ? 'right' : 'left'};padding:4px 8px;background:var(--green);color:var(--gold);font-size:12px">${t}</th>`;
@@ -23307,7 +23312,11 @@ function bsRenderLedger(ledger, estimates) {
   const body = (ledger || []).map(r => {
     const person = r.kind === 'award' || r.kind === 'refund' || r.kind === 'payout';
     const who = person ? `<strong>${e(r.label)}</strong> <span style="color:#888">${e(r.detail || '')}</span> ${r.paid ? '<span style="color:#2e7d32">\u2713 paid</span>' : '<span style="color:#e65100">owed</span>'}` : (r.detail ? `${e(r.label)} <span style="color:#888">${e(r.detail)}</span>` : e(r.label));
-    return `<tr>${td(e(bsDateText(r.date)))}${td(who)}${td(bsMoney(r.amount), `text-align:right;font-family:'DM Mono',monospace;color:${r.amount < 0 ? '#c62828' : '#2e7d32'}`)}${td(bsMoney(r.balance), "text-align:right;font-family:'DM Mono',monospace;font-weight:600")}</tr>`;
+    const has = (r.payers || []).length > 0;
+    const main = `<tr${has ? ` class="bsExpandRow" onclick="bsToggleDetail(this)" style="cursor:pointer" title="Click to show who paid"` : ''}>${td(e(bsDateText(r.date)))}${td((has ? '<span class="bsArrow" style="color:#888">\u25B6</span> ' : '') + who)}${td(bsMoney(r.amount), `text-align:right;font-family:'DM Mono',monospace;color:${r.amount < 0 ? '#c62828' : '#2e7d32'}`)}${td(bsMoney(r.balance), "text-align:right;font-family:'DM Mono',monospace;font-weight:600")}</tr>`;
+    if (!has) return main;
+    const list = r.payers.map(x => `<tr><td style="padding:2px 6px">${e(x.player)}</td><td style="padding:2px 6px;color:#888">${e(x.method)}</td><td style="padding:2px 6px;text-align:right;font-family:'DM Mono',monospace">${bsMoney(x.amount)}</td></tr>`).join('');
+    return main + `<tr class="bsDetailRow" style="display:none;background:#faf7f0"><td></td><td colspan="3" style="padding:4px 8px 8px;font-size:12px"><table style="border-collapse:collapse;min-width:260px"><tbody>${list}</tbody></table></td></tr>`;
   }).join('');
   const pending = (estimates || []).filter(x => x.total > 0).map(x => `<tr style="font-style:italic;color:#e65100">${td('')}${td(e(x.label) + ' (not awarded yet, not taken from the pool)')}${td(bsMoney(-x.total), "text-align:right;font-family:'DM Mono',monospace")}${td('')}</tr>`).join('');
   return `<table style="border-collapse:collapse;width:100%;max-width:820px"><thead><tr>${th('Date')}${th('What')}${th('Pool')}${th('Balance')}</tr></thead><tbody>${body || '<tr><td colspan="4" style="padding:6px;color:#999">Nothing recorded yet.</td></tr>'}${pending}</tbody></table>`;
@@ -23328,7 +23337,7 @@ function bsRenderRows(rows) {
 
 function bsGatherDues(season) {
   const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`;
-  const dues = query(`SELECT Player, CAST(Earned AS REAL) as amount, Date as date FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ? AND Date < ?`, [S0, S1]);
+  const dues = query(`SELECT Player, CAST(Earned AS REAL) as amount, Date as date, COALESCE(PayMethod,'') as method FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ? AND Date < ?`, [S0, S1]);
   let expenses = [];
   try { expenses = query(`SELECT Date, Category, Description, Amount FROM LeagueExpenses WHERE League="Hugh's" AND Season=?`, [season]).map(r => ({ date: r.Date, category: r.Category, description: r.Description, amount: r.Amount })); } catch (e) {}
   const defs = [['half1', '1st half winners', 'Reg Season Champ-1st half'], ['half2', '2nd half winners', 'Reg Season Champ-2nd half'], ['champ', 'League Championship winners', 'League Championship']];
