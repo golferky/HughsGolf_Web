@@ -143,9 +143,22 @@ assert.strictEqual(comp.reduce((t, x) => t + x.count, 0), rows.length, 'every ro
 assert(/id="adminBtnBalance"[^>]*>📒 Balance Sheet</.test(src) && /id="adminBalance"/.test(src) && /id="balanceBody"/.test(src) && /id="balanceSeason"/.test(src));
 assert(/ADMIN_SECTIONS = \[[^\]]*'balance'/.test(src) && /if \(section==='balance'\)\s+loadBalanceSheet\(\);/.test(src));
 assert(/bsDuesSheet\(bsGatherDues\(season\)\)/.test(src) && /Marking a winner paid does not move the pool again/.test(src) && /bsRenderLedger\(dues\.ledger, dues\.estimates\)/.test(src) && /bsPoolSheet\(bsGatherPool\(season\)\)/.test(src) && /bsKittySheet\(bsGatherKitty\(season\)\)/.test(src) && /bsCompleteness\(all\)/.test(src));
+assert(/id="adminBalance"[\s\S]*bsSetAllPanels\(true\)[\s\S]*bsSetAllPanels\(false\)[\s\S]*id="balanceBody"/.test(src), 'expand all / collapse all buttons');
+for (const k of ['dues-ledger', 'dues-totals', 'eoy-ledger', 'eoy-totals', 'kitty-skin', 'kitty-ctp', 'kitty-totals', 'all-rows']) assert(src.includes(`bsPanel('${k}'`), 'panel ' + k);
+assert(/<details class="bsPanel"/.test(extract('bsPanel')) && /localStorage/.test(extract('bsPanelState')), 'panels are details elements and remember their state');
+{ // panel behaviour: open default, remembered state wins, storage failure tolerated
+  const store = {}; const ctx = { localStorage: { getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = v; } } };
+  vm.createContext(ctx); vm.runInContext(extract('bsPanelState') + extract('bsPanelToggled') + extract('bsPanel'), ctx);
+  assert(/<details[^>]* open /.test(ctx.bsPanel('a', 'T', 'S', 'B', true)) && !/<details[^>]* open /.test(ctx.bsPanel('b', 'T', 'S', 'B', false)));
+  ctx.bsPanelToggled({ getAttribute: () => 'b', open: true });
+  assert(/<details[^>]* open /.test(ctx.bsPanel('b', 'T', 'S', 'B', false)), 'remembered open state wins');
+  const bad = { localStorage: { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); } } };
+  vm.createContext(bad); vm.runInContext(extract('bsPanelState') + extract('bsPanelToggled') + extract('bsPanel'), bad);
+  assert(/<details/.test(bad.bsPanel('c', 'T', '', 'B', true)));
+}
 const loader = extract('loadBalanceSheet') + extract('bsGatherDues') + extract('bsGatherPool') + extract('bsGatherKitty') + extract('bsGatherPoolLedger') + extract('bsGatherKittyLedger');
 assert(/bsEoyLedger\(bsGatherPoolLedger\(season\)\)/.test(src) && /bsKittyLedgers\(bsGatherKittyLedger\(season\)\)/.test(src), 'the EOY pool and the kitties are shown as pool ledgers');
 assert(!/serverRun|INSERT|UPDATE |DELETE/.test(loader.replace(/UPDATE/g, '')), 'the Balance Sheet only reads');
 assert(/LeagueExpenses/.test(extract('bsGatherDues')), 'expenses come from the Expenses screen table');
-assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.6');
+assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.7');
 console.log('ok');
