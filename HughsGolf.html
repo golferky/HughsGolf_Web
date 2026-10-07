@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.13';
+const APP_VERSION = '20261007.14';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -19201,7 +19201,7 @@ const LS_FIELDS = {
   handicaps: [
     ['HdcpScores','Hdcp Scores', ['3','4','5','6','7','8','9','10']],
     ['HdcpFormat','Hdcp Format', ['Std','Full','Half']],
-    ['CarryLastYears','Carry Yrs', ['0','1','2','3']],
+    ['CarryLastYears','Carry Last Yrs', [['Y','Yes'],['N','No']]],   // all-or-nothing: carry the previous years' scores into handicaps, or not (no year limit)
     ['MaxHdcp','Max Hdcp', ['9','12','15','18','24','36']],
     ['Par3Max','Par 3 Max', ['3','4','5','6','7']],
     ['Par4Max','Par 4 Max', ['4','5','6','7','8','9']],
@@ -19220,6 +19220,11 @@ const LS_MID_SEASON_OK = new Set([
   'Email','EmailPassword','WebsitePassword', // email — doesn't affect scoring
 ]);
 
+// Carry Last Yrs is yes/no. Anything that means "none" is N (N, No, 0, blank); anything else (Y, 1, 2, 3) is Y.
+function lsCarryYesNo(v) {
+  const t = String(v ?? '').trim().toUpperCase();
+  return (t === '' || t === 'N' || t === 'NO' || t === '0' || t === 'FALSE') ? 'N' : 'Y';
+}
 function loadLeagueSettings() {
   const sel = document.getElementById('lsSeason');
   if (!sel.options.length) {
@@ -19236,6 +19241,7 @@ function loadLeagueSettings() {
   };
   const lp = { ...ss, ...gsettings, 'EOY Skins': ss.EOYSkins };
   if (!ss || !Object.keys(ss).length) return;
+  lp.CarryLastYears = lsCarryYesNo(lp.CarryLastYears);     // older rows hold a number (0-3) instead of Y/N
 
   window._lsOriginal = lp;
 
