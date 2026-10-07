@@ -191,5 +191,5 @@ const loader = extract('loadBalanceSheet') + extract('bsGatherDues') + extract('
 assert(/bsEoyLedger\(eoyData\)/.test(src) && /bsGatherPoolLedger\(season\)/.test(src) && /bsKittyLedgers\(bsGatherKittyLedger\(season\)\)/.test(src), 'the EOY pool and the kitties are shown as pool ledgers');
 assert(!/serverRun|INSERT|UPDATE |DELETE/.test(loader.replace(/UPDATE/g, '')), 'the Balance Sheet only reads');
 assert(/LeagueExpenses/.test(extract('bsGatherDues')), 'expenses come from the Expenses screen table');
-assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && ((v) => v[0] > '20261007' || (v[0] === '20261007' && +v[1] >= 11))(src.match(/const APP_VERSION = '([^']+)';/)[1].split('.')));
+assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && ((v) => v[0] > '20261007' || (v[0] === '20261007' && +v[1] >= 12))(src.match(/const APP_VERSION = '([^']+)';/)[1].split('.')));
 console.log('ok');

@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.11';
+const APP_VERSION = '20261007.12';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -24647,6 +24647,15 @@ async function _runScoreRecalc(date) {
   }
 }
 
+// Post-season rows hold both weeks side by side (the nine played first on the left). The nine being scored tonight is
+// cells 0-8 on Week 1 and cells 9-17 on Week 2. Returns the first cell of tonight's nine when `pos` is its last cell, else -1.
+function psNineRestartPos(pos, entryDate, week1, week2) {
+  const d = parseInt(entryDate);
+  if (d === parseInt(week1) && pos === 8) return 0;
+  if (d === parseInt(week2) && pos === 17) return 9;
+  return -1;
+}
+
 function onScoreKeydown(e) {
   const inp = e.target;
   const hi  = parseInt(inp.dataset.hi);
@@ -24688,6 +24697,29 @@ function onScoreKeydown(e) {
     // Advance to next cell in this row, or next player's hole 0
     const rowInputs = getScoreInputs(key);
     const rowIdx = rowInputs.indexOf(inp);
+    // Post season: tonight's nine is complete, so skip the other week's nine and start the next player on their first hole of tonight's nine
+    // (Week 1 on the Back: hole 18 done, next player's hole 10).
+    let restart = -1;
+    try {
+      if (isPostSeasonEntryMode()) {
+        const ctx = getActivePostSeasonScoreContext();
+        const cells = Array.from(document.querySelectorAll(`#entryGrid input.eg-input[data-slotkey="${CSS.escape(key)}"]`));
+        if (ctx) restart = psNineRestartPos(cells.indexOf(inp), document.getElementById('entryDate')?.value, ctx.week1, ctx.week2);
+      }
+    } catch (err) { restart = -1; }
+    if (restart >= 0) {
+      const allInputs = getScoreInputs();
+      const nextRowInp = allInputs.slice(allInputs.indexOf(inp) + 1).find(i => i.dataset.slotkey !== key);
+      if (nextRowInp) {
+        const nextCells = Array.from(document.querySelectorAll(`#entryGrid input.eg-input[data-slotkey="${CSS.escape(nextRowInp.dataset.slotkey)}"]`));
+        const target = nextCells[restart];
+        if (target && !target.disabled && !target.readOnly) {
+          if (nextRowInp.dataset.group !== inp.dataset.group) _lastFocusedSlotKey = nextRowInp.dataset.slotkey;
+          focusScoreInput(target);
+          return;
+        }
+      }
+    }
     if (rowInputs[rowIdx + 1]) {
       focusScoreInput(rowInputs[rowIdx + 1]);
     } else {
