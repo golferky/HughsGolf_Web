@@ -139,6 +139,18 @@ assert.strictEqual(byType['Mystery / Thing'].on, '', 'an unknown type has no she
 assert(comp.filter(x => x.on === '').length === 1, 'every known type is on a sheet');
 assert.strictEqual(comp.reduce((t, x) => t + x.count, 0), rows.length, 'every row is counted exactly once');
 
+// ── click a dues row to see who paid ──
+{
+  const sheet = c.bsDuesSheet({ dues: [{ player: 'Zed', amount: 45, date: '20260407', method: 'Cash' }, { player: 'Amy', amount: 45, date: '20260407', method: 'Venmo' }, { player: 'Bo', amount: 45, date: '20260414' }], expenses: [], awards: [], estimates: [] });
+  const first = sheet.ledger[0];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(first.payers.map(p => p.player))), ['Amy', 'Zed'], 'payers listed by name');
+  const html = c.bsRenderLedger(sheet.ledger, []);
+  assert.strictEqual((html.match(/bsExpandRow/g) || []).length, 2, 'each dues date is clickable');
+  assert(/bsDetailRow" style="display:none/.test(html) && html.includes('Amy') && html.includes('Venmo'), 'payer detail rows start hidden');
+  const awardHtml = c.bsRenderLedger([{ kind: 'award', date: '20261231', label: 'Pool \u2192 X', amount: -10, balance: 0, paid: false }], []);
+  assert(!/bsExpandRow/.test(awardHtml), 'rows without payers are not clickable');
+  assert(/function bsToggleDetail/.test(src) && /PayMethod/.test(extract('bsGatherDues')), 'toggle + method wired');
+}
 // ── wiring ──
 assert(/id="adminBtnBalance"[^>]*>📒 Balance Sheet</.test(src) && /id="adminBalance"/.test(src) && /id="balanceBody"/.test(src) && /id="balanceSeason"/.test(src));
 assert(/ADMIN_SECTIONS = \[[^\]]*'balance'/.test(src) && /if \(section==='balance'\)\s+loadBalanceSheet\(\);/.test(src));
@@ -160,5 +172,5 @@ const loader = extract('loadBalanceSheet') + extract('bsGatherDues') + extract('
 assert(/bsEoyLedger\(bsGatherPoolLedger\(season\)\)/.test(src) && /bsKittyLedgers\(bsGatherKittyLedger\(season\)\)/.test(src), 'the EOY pool and the kitties are shown as pool ledgers');
 assert(!/serverRun|INSERT|UPDATE |DELETE/.test(loader.replace(/UPDATE/g, '')), 'the Balance Sheet only reads');
 assert(/LeagueExpenses/.test(extract('bsGatherDues')), 'expenses come from the Expenses screen table');
-assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.7');
+assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.8');
 console.log('ok');
