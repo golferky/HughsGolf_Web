@@ -35,5 +35,5 @@ r = run({ seasonEnded: false, columns: ['League', 'Season', 'Cost', 'ChampPlaces
 assert(!/Cost=|Carryover/.test(season(r).sql) && /ChampPlaces=\?/.test(season(r).sql));
 // wiring
 assert(/keepExisting\(seasonCols, 'SeasonSettings'\)/.test(src) && /PRAGMA table_info\(\$\{table\}\)/.test(src));
-assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.3');
+assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && ((v) => v[0] > '20261007' || (v[0] === '20261007' && +v[1] >= 3))(src.match(/const APP_VERSION = '([^']+)';/)[1].split('.')));
 console.log('ok');

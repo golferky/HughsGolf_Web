@@ -60,7 +60,7 @@ assert(!/Officer='\$\{part/.test(src));
 // login stats: an explicitly marked test account is excluded
 assert(/COALESCE\(IsTest,'N'\)='Y' LIMIT 1/.test(src));
 // version bump (golden rule)
-assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261006.3');
+assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && ((v) => v[0] > '20261006' || (v[0] === '20261006' && +v[1] >= 3))(src.match(/const APP_VERSION = '([^']+)';/)[1].split('.')));
 // ── test accounts: owner must be a real admin/developer; excluded from counts and matching ──
 const c2 = vm.createContext({ db: {}, hasDbColumn: () => true,
   query: sql => /FROM Players WHERE .*IsTest/.test(sql) || /notTest|COALESCE\(IsTest/.test(sql) ? [

@@ -65,6 +65,6 @@ const inserts = r => r.calls.filter(c => /INSERT INTO Scores/.test(c.sql));
   assert(r.calls.some(c => c.sql === 'MATCHES') && r.calls.some(c => c.sql === 'SKINS') && !r.calls.some(c => c.sql === 'EOY'), 'league-night path unchanged');
   // wiring: the Skins tab date list now includes the post-season nights
   assert(/const skinKeys = getCtpDateKeys\(skinDates\.map\(r => r\.sDate\), season\);/.test(src) && /skSel\.innerHTML = skinKeys\.map\(/.test(src));
-  assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && src.match(/const APP_VERSION = '([^']+)';/)[1] >= '20261007.1');
+  assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && ((v) => v[0] > '20261007' || (v[0] === '20261007' && +v[1] >= 1))(src.match(/const APP_VERSION = '([^']+)';/)[1].split('.')));
   console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });

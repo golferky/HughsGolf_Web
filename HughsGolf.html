@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.9';
+const APP_VERSION = '20261007.10';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -23121,7 +23121,8 @@ function bsRunningLedger(events) {
   let run = 0;
   return ev.map(e => { run = bsR2(run + e.amount); return Object.assign({}, e, { balance: run }); });
 }
-const bsByDate = (rows, f) => { const g = {}; (rows || []).forEach(r => { const k = String(r.date || ''); (g[k] = g[k] || { date: k, n: 0, amount: 0 }); g[k].n++; g[k].amount += parseFloat(f ? f(r) : r.amount) || 0; }); return Object.values(g); };
+const bsByDate = (rows, f) => { const g = {}; (rows || []).forEach(r => { const k = String(r.date || ''); (g[k] = g[k] || { date: k, n: 0, amount: 0, payers: [] }); g[k].n++; g[k].amount += parseFloat(f ? f(r) : r.amount) || 0; if (r.player) g[k].payers.push({ player: r.player, amount: bsR2(f ? f(r) : r.amount), method: r.method || '' }); }); return Object.values(g); };
+const bsPayersByName = list => (list || []).slice().sort((a, b) => String(a.player).localeCompare(String(b.player)));
 const bsHoleText = detail => { const m = String(detail || '').match(/#(\d+)/); return m ? `hole ${m[1]}` : String(detail || ''); };
 
 // (1) League Dues: money in (dues) vs money out (expenses and the prizes awarded from dues).
@@ -23218,7 +23219,7 @@ function bsPoolSheet(d) {
 // a person; and each week's recorded remainder moving to the Skins kitty. Balance = what is left in the pool.
 function bsEoyLedger(d) {
   const ev = [];
-  bsByDate(d.entries).forEach(g => ev.push({ order: 0, date: g.date, kind: 'in', label: `EOY Skins entries (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount) }));
+  bsByDate(d.entries).forEach(g => ev.push({ order: 0, date: g.date, kind: 'in', label: `EOY Skins entries (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount), payers: bsPayersByName(g.payers) }));
   (d.transfersIn || []).forEach(t => ev.push({ order: 0, date: String(t.date || ''), kind: 'in', label: 'Moved in from another pool (Pool Transfer)', amount: bsR2(t.amount) }));
   (d.refunds || []).forEach(r => ev.push({ order: 1, date: String(r.date || ''), kind: 'refund', label: `Pool \u2192 ${r.player}`, detail: 'Refund of an entry', amount: -bsR2(Math.abs(r.amount)), paid: !!r.paid }));
   (d.skinWinners || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'award', label: `Pool \u2192 ${w.player}`, detail: `Week ${w.week} Skin, ${bsHoleText(w.hole)}`, amount: -bsR2(w.amount), paid: !!w.paid }));
@@ -23234,7 +23235,7 @@ function bsEoyLedger(d) {
 function bsKittyLedgers(d) {
   const one = (x, label) => {
     const ev = [];
-    bsByDate(x.entries).forEach(g => ev.push({ order: 0, date: g.date, kind: 'in', label: `${label} entries (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount) }));
+    bsByDate(x.entries).forEach(g => ev.push({ order: 0, date: g.date, kind: 'in', label: `${label} entries (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount), payers: bsPayersByName(g.payers) }));
     (x.remainders || []).forEach(r => ev.push({ order: 0, date: String(r.date || ''), kind: 'in', label: 'Post-season Skins remainder moved in', amount: bsR2(r.amount) }));
     (x.winners || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'award', label: `Pool \u2192 ${w.player}`, detail: `${label}, ${bsHoleText(w.hole)}`, amount: -bsR2(w.amount), paid: !!w.paid }));
     (x.payouts || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'payout', label: `Pool \u2192 ${w.player}`, detail: 'Pay from Kitty', amount: -bsR2(w.amount), paid: true }));
@@ -23375,7 +23376,7 @@ function bsGatherPoolLedger(season) {
   const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`;
   const lp = getSeasonSettings(season), ps = lp?.PostSeasonDt ? parsePostSeasonDates(lp.PostSeasonDt) : null;
   const weekOf = d => (ps && parseInt(d) === ps.week2) ? 2 : 1;
-  const entries = query(`SELECT Date as date, CAST(Earned AS REAL) as amount FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ? AND Date < ?`, [S0, S1]);
+  const entries = query(`SELECT Date as date, Player as player, COALESCE(PayMethod,'') as method, CAST(Earned AS REAL) as amount FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ? AND Date < ?`, [S0, S1]);
   const transfersIn = query(`SELECT Date as date, CAST(Earned AS REAL) as amount FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Pool Transfer' AND Date >= ? AND Date < ?`, [S0, S1]);
   const refunds = query(`SELECT Date as date, Player as player, CAST(Earned AS REAL) as amount, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ? AND Date < ?`, [S0, S1]).map(r => ({ date: r.date, player: r.player, amount: r.amount, paid: !!r.dp }));
   const win = desc => !ps ? [] : query(`SELECT Date as date, Player as player, Detail as hole, CAST(Earned AS REAL) as amount, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"=? AND Detail LIKE '#%' AND Player!='Kitty' AND CAST(Date AS INTEGER) IN (?,?)`, [desc, ps.week1, ps.week2])
@@ -23386,7 +23387,7 @@ function bsGatherPoolLedger(season) {
 }
 function bsGatherKittyLedger(season) {
   const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`, ex = psKittyExclude(season);
-  const q = (desc, detail, like, extra) => query(`SELECT Date as date, Player as player, Detail as hole, CAST(Earned AS REAL) as amount, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"='${desc}' AND Detail ${like ? 'LIKE' : '='} ? ${like ? "AND Player != 'Kitty'" : ''} AND Date >= ? AND Date < ?${extra || ''}`, [detail, S0, S1]);
+  const q = (desc, detail, like, extra) => query(`SELECT Date as date, Player as player, Detail as hole, COALESCE(PayMethod,'') as method, CAST(Earned AS REAL) as amount, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"='${desc}' AND Detail ${like ? 'LIKE' : '='} ? ${like ? "AND Player != 'Kitty'" : ''} AND Date >= ? AND Date < ?${extra || ''}`, [detail, S0, S1]);
   const winners = r => r.map(x => ({ date: x.date, player: x.player, hole: x.hole, amount: x.amount, paid: !!x.dp }));
   const remainders = [];
   const ps = getSeasonSettings(season)?.PostSeasonDt ? true : false;
