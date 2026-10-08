@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261008.2';
+const APP_VERSION = '20261008.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -10419,6 +10419,13 @@ function renderStatsHistory() {
   histBody.innerHTML = renderStatsScorecards(history);
 }
 
+// Seasons (newest first, as strings) in which this player has at least one scored round.
+function statsSeasonsWithScores(player) {
+  if (!player) return [];
+  return query(`SELECT DISTINCT SUBSTR(CAST(Date AS TEXT),1,4) AS y FROM Scores WHERE Player=? AND League="Hugh's" AND Gross > 0 ORDER BY y DESC`, [player])
+    .map(r => String(r.y)).filter(y => /^\d{4}$/.test(y));
+}
+
 function loadPlayerStats() {
   if (!db) return;
 
@@ -10437,18 +10444,15 @@ function loadPlayerStats() {
     }
   }
 
-  // Populate season dropdown once
+  // Season dropdown: only the seasons in which the selected player has scores (rebuilt for each player; the choice is kept when still valid)
   const seasonSel = document.getElementById('statsSeason');
-  if (seasonSel && seasonSel.options.length === 1) {
-    const years = query(`SELECT DISTINCT Year FROM Teams WHERE League="Hugh's" ORDER BY Year DESC`);
-    years.forEach(r => {
-      const o = document.createElement('option');
-      o.value = r.Year; o.textContent = r.Year;
-      seasonSel.appendChild(o);
-    });
-  }
-
   const player = playerSel?.value;
+  if (seasonSel) {
+    const keep = seasonSel.value;
+    const years = statsSeasonsWithScores(player);
+    seasonSel.innerHTML = '<option value="">All Seasons</option>' + years.map(y => `<option value="${y}">${y}</option>`).join('');
+    seasonSel.value = years.includes(keep) ? keep : '';
+  }
   const season = seasonSel?.value;
   if (!player) return;
 
