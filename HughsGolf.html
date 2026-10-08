@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261008.1';
+const APP_VERSION = '20261008.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -10480,6 +10480,18 @@ function loadPlayerStats() {
       box('Total Rounds', frontRounds + backRounds);
   }
 
+  // The selected player's rounds for the selected season. This must be set BEFORE the per-hole tables are drawn: the Avg Net
+  // row reads window._statsHistory, and it used to still hold the PREVIOUS player/season, so a year with no rounds showed
+  // averages from whatever was looked at before.
+  const allHistory = getPlayerScoreHistory(player)
+    .filter(r => !season || String(r.Date).slice(0,4) === String(season))
+    .slice(0, 500); // generous cap — avoids DOM overload on very large histories
+
+  // Also read by renderStatsHistory()
+  window._statsHistory = allHistory;
+  window._statsPlayer  = player;
+  window._psDateSet    = null; // reset so renderStatsHistory rebuilds it fresh
+
   // ── Per-hole averages helper ───────────────────────────────────────────────
   function renderHoleTable(fb, containerId) {
     const el = document.getElementById(containerId);
@@ -10564,14 +10576,6 @@ function loadPlayerStats() {
   renderHoleTable('Back',  'statsBackBody');
 
   // ── Score history — populate filter years then render ─────────────────────
-  const allHistory = getPlayerScoreHistory(player)
-    .filter(r => !season || String(r.Date).slice(0,4) === String(season))
-    .slice(0, 500); // generous cap — avoids DOM overload on very large histories
-
-  // Store on window for renderStatsHistory() to access
-  window._statsHistory = allHistory;
-  window._statsPlayer  = player;
-  window._psDateSet    = null; // reset so renderStatsHistory rebuilds it fresh
 
   renderStatsYearSummary(allHistory);
 
