@@ -170,6 +170,12 @@ assert.strictEqual(comp.reduce((t, x) => t + x.count, 0), rows.length, 'every ro
   const html = c.bsRenderLedger([], [{ label: 'Week 2 Skin winners (2 skins)', total: 88 }]);
   assert(html.includes('Week 2 Skin winners') && html.includes('not awarded yet'));
 }
+// ── post-season CTP is paid from the EOY pool, so it is left out of the regular-season CTP kitty ──
+{
+  const gk = extract('bsGatherKittyLedger'), gs = extract('bsGatherKitty');
+  assert(/ctp: \{ entries: q\('CTP', 'Payment', false, ex\), winners: winners\(q\('CTP', '#%', true, ex\)\)/.test(gk), 'ledger: CTP queries exclude the post-season dates');
+  assert(/cw = winners\('CTP', ex\)/.test(gs) && /desc === 'CTP' \? ex/.test(gs), 'totals: CTP excludes the post-season dates');
+}
 // ── wiring ──
 assert(/id="adminBtnBalance"[^>]*>📒 Balance Sheet</.test(src) && /id="adminBalance"/.test(src) && /id="balanceBody"/.test(src) && /id="balanceSeason"/.test(src));
 assert(/ADMIN_SECTIONS = \[[^\]]*'balance'/.test(src) && /if \(section==='balance'\)\s+loadBalanceSheet\(\);/.test(src));

@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261008.6';
+const APP_VERSION = '20261008.7';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -23585,16 +23585,17 @@ function bsGatherKittyLedger(season) {
   const ps = getSeasonSettings(season)?.PostSeasonDt ? true : false;
   if (ps) [1, 2].forEach(w => { const st = psWeekSkinState(season, w); if (st && st.recorded) remainders.push({ date: st.date, amount: st.payout.remainder }); });
   return { skin: { entries: q('Skin', 'Payment', false, ex), winners: winners(q('Skin', '#%', true, ex)), transfers: q('Skin', 'Pool Transfer', false), payouts: q('Skin', 'Kitty Payout', false), remainders },
-           ctp: { entries: q('CTP', 'Payment', false), winners: winners(q('CTP', '#%', true)), transfers: q('CTP', 'Pool Transfer', false), payouts: q('CTP', 'Kitty Payout', false) } };
+           // Post-season CTP is paid from the EOY pool (see that ledger), so the regular-season CTP kitty leaves those two dates out.
+           ctp: { entries: q('CTP', 'Payment', false, ex), winners: winners(q('CTP', '#%', true, ex)), transfers: q('CTP', 'Pool Transfer', false, ex), payouts: q('CTP', 'Kitty Payout', false, ex) } };
 }
 function bsGatherKitty(season) {
   const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`, ex = psKittyExclude(season);
   const n = (sql, args) => parseFloat((query(sql, args)[0] || {}).t || 0);
   const winners = (desc, extra) => query(`SELECT CAST(Earned AS REAL) as e, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"='${desc}' AND Detail LIKE '#%' AND Player != 'Kitty' AND Date >= ? AND Date < ?${extra}`, [S0, S1]);
-  const sw = winners('Skin', ex), cw = winners('CTP', '');
-  const tot = (desc, detail) => n(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='${desc}' AND Detail=? AND Date >= ? AND Date < ?${detail === 'Payment' && desc === 'Skin' ? ex : ''}`, [detail, S0, S1]);
+  const sw = winners('Skin', ex), cw = winners('CTP', ex);      // post-season CTP is paid from the EOY pool, not this kitty
+  const tot = (desc, detail) => n(`SELECT COALESCE(SUM(CAST(Earned AS REAL)),0) as t FROM Payments WHERE League="Hugh's" AND "Desc"='${desc}' AND Detail=? AND Date >= ? AND Date < ?${(detail === 'Payment' && desc === 'Skin') || desc === 'CTP' ? ex : ''}`, [detail, S0, S1]);
   // Carryover held per hole (same rule as the Prize Money tab): the latest carryover record per hole with no winner since
-  const rows = query(`SELECT Detail, Earned, Date as cDate FROM Payments WHERE League="Hugh's" AND "Desc"='CTP' AND Player='Kitty' AND Date >= ? AND Date < ? ORDER BY Date DESC`, [S0, S1]);
+  const rows = query(`SELECT Detail, Earned, Date as cDate FROM Payments WHERE League="Hugh's" AND "Desc"='CTP' AND Player='Kitty' AND Date >= ? AND Date < ?${ex} ORDER BY Date DESC`, [S0, S1]);
   const seen = {}; let held = 0;
   rows.forEach(r => { const m = r.Detail?.match(/Carryover(\d+)/); if (!m) return; const h = parseInt(m[1]); if (seen[h] !== undefined) return;
     seen[h] = true; if (!query(`SELECT 1 FROM Payments WHERE "Desc"='CTP' AND Detail='#${h}' AND Player!='Kitty' AND Date >= ? LIMIT 1`, [r.cDate]).length) held += parseFloat(r.Earned || 0); });
