@@ -54,6 +54,7 @@ const reset = () => { writes = []; carry = {}; players = 17; role = 'admin';
   reset(); rows[0].Earned = 25; await ctx.psCtpAutoAll(2026); assert.deepStrictEqual(writes, [], 'nothing to change: no save');
   assert(/psCtpAutoAll\(season\)\.catch/.test(extract('psSkinAutoAll')), 'runs from the same score / import / refund hook as the Skins');
   assert(/const holes = ctpHolesFor\(date, fb, season\);/.test(extract('loadCtps')) && /ctpCarryoverByHole\(date, season\)/.test(extract('loadCtps')), 'CTP panel uses the shared helpers');
+  assert(/psCtpAutoAll\(parseInt\(season\)\)/.test(extract('loadCtps')) && /if \(psInfo\)/.test(extract('loadCtps')), 'opening the CTP screen for a post-season week also refreshes stale amounts');
   assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]));
   console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });
