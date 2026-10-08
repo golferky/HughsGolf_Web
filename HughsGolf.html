@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261008.4';
+const APP_VERSION = '20261008.5';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -9354,6 +9354,8 @@ function loadCtps() {
 
   html += `</tbody></table></div>`;
   document.getElementById('ctpsContent').innerHTML = html;
+  // Post season: bring any stale unpaid CTP amount up to the current pot (officers only; it re-draws this screen if it changed anything)
+  if (psInfo) { try { psCtpAutoAll(parseInt(season)).catch(e => console.warn('psCtpAutoAll failed', e)); } catch (e) { console.warn('psCtpAutoAll failed', e); } }
 }
 
 // One day of changelog. Non-developers see the plain-English daily recap (if written) instead of
