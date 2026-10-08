@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261008.3';
+const APP_VERSION = '20261008.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -9219,19 +9219,8 @@ function getPostSeasonCtpInfo(date) {
   return { week: ctx.week, fb, payers, ctpAmt };
 }
 
-function loadCtps() {
-  if (!db) return;
-  const date    = toDateKey(document.getElementById('ctpsDate').value);
-  if (!date) return;
-  const league  = "Hugh's";
-  const season  = document.getElementById('ctpsSeason').value;
-
-  const psInfo = getPostSeasonCtpInfo(date);
-  const fb = psInfo ? psInfo.fb : getScheduledFrontBack(date, league);
-  const repairedCarryovers = reconcilePreviousCtpCarryovers(date, season, league);
-  if (repairedCarryovers) saveDBToServer();
-
-  // CTP holes = par 3 holes on the current 9
+// Par-3 holes (the CTP holes) on the nine being played, sorted. Falls back to holes found in existing winner / carryover rows.
+function ctpHolesFor(date, fb, season) {
   const courseRow = query(`SELECT * FROM Courses WHERE Name=(SELECT Course FROM SeasonSettings WHERE League="Hugh's" AND Season=${season})`)[0];
   const holeSet = new Set();
   if (courseRow) {
@@ -9249,6 +9238,39 @@ function loadCtps() {
       .forEach(r => { const m = r.Detail?.match(/#(\d+)/); if (m) holeSet.add(parseInt(m[1])); });
   }
 
+  return [...holeSet].sort((a,b)=>a-b);
+}
+// Carryover per hole from earlier dates of the season that nobody has won since (hole -> dollars).
+function ctpCarryoverByHole(date, season) {
+  const carryover = {};
+  query(`SELECT Detail, Earned, Date as cDate FROM Payments WHERE Desc='CTP' AND Player='Kitty' AND Date < ${date} AND Date >= ${season}0101 ORDER BY Date DESC`)
+    .forEach(r => {
+      const m = r.Detail?.match(/Carryover(\d+)/);
+      if (!m) return;
+      const hole = parseInt(m[1]);
+      if (carryover[hole]) return; // already have most recent
+      // Only suppress carryover if a winner was recorded AFTER this date (already paid out)
+      const winnerExists = query(`SELECT 1 FROM Payments WHERE Desc='CTP' AND Detail='#${hole}' AND Player!='Kitty' AND Date > ${r.cDate} AND Date < ${date} LIMIT 1`).length > 0;
+      if (!winnerExists) carryover[hole] = r.Earned;
+    });
+  return carryover;
+}
+
+function loadCtps() {
+  if (!db) return;
+  const date    = toDateKey(document.getElementById('ctpsDate').value);
+  if (!date) return;
+  const league  = "Hugh's";
+  const season  = document.getElementById('ctpsSeason').value;
+
+  const psInfo = getPostSeasonCtpInfo(date);
+  const fb = psInfo ? psInfo.fb : getScheduledFrontBack(date, league);
+  const repairedCarryovers = reconcilePreviousCtpCarryovers(date, season, league);
+  if (repairedCarryovers) saveDBToServer();
+
+  // CTP holes = par 3 holes on the current 9
+  const holes = ctpHolesFor(date, fb, season);
+
   // Get CTP payers for this date
   // Post-season: each week is independent. Every EOY Skins payer for THIS week put $3 into this
   // week's CTP pot (their $10 = $7 skins + $3 CTP); winners come from that same list. Normal
@@ -9263,21 +9285,9 @@ function loadCtps() {
   query(`SELECT Player, Detail, Earned FROM Payments WHERE Date=${date} AND Desc='CTP' AND Detail LIKE '#%' AND Player!='Kitty'`)
     .forEach(r => { const m = r.Detail?.match(/#(\d+)/); if (m) winners[parseInt(m[1])] = { player: r.Player, earned: r.Earned }; });
 
-  // Get carryover per hole from PREVIOUS week — current season only
-  // Only include if no winner was recorded for that hole between carryover date and current date
-  const carryover = {};
-  query(`SELECT Detail, Earned, Date as cDate FROM Payments WHERE Desc='CTP' AND Player='Kitty' AND Date < ${date} AND Date >= ${season}0101 ORDER BY Date DESC`)
-    .forEach(r => {
-      const m = r.Detail?.match(/Carryover(\d+)/);
-      if (!m) return;
-      const hole = parseInt(m[1]);
-      if (carryover[hole]) return; // already have most recent
-      // Only suppress carryover if a winner was recorded AFTER this date (already paid out)
-      const winnerExists = query(`SELECT 1 FROM Payments WHERE Desc='CTP' AND Detail='#${hole}' AND Player!='Kitty' AND Date > ${r.cDate} AND Date < ${date} LIMIT 1`).length > 0;
-      if (!winnerExists) carryover[hole] = r.Earned;
-    });
+  // Carryover per hole from PREVIOUS weeks (current season only)
+  const carryover = ctpCarryoverByHole(date, season);
 
-  const holes = [...holeSet].sort((a,b)=>a-b);
   if (!holes.length) {
     document.getElementById('ctpsContent').innerHTML = '<div class="empty">No CTP holes found for this date</div>';
     return;
@@ -20674,8 +20684,54 @@ async function psSkinAutoCommit(season, week) {
   return did;
 }
 
+// Post-season CTP prizes follow the week's pot. A winner's amount is stored when they are picked, so it went stale when more
+// scorecards came in afterwards (one winner at $21, the next at $25 for the same pot). This brings every UNPAID CTP row of a
+// week (winners and no-winner carryovers) to the current per-hole amount: floor(paid-and-scored players x CTP amount / par-3 holes)
+// plus any carryover. Paid rows are never changed; a future week is left alone. Returns the number of rows updated.
+function psCtpExpectedAmounts(season, week) {
+  const ctx = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
+  if (!ctx) return null;
+  const date = week === 1 ? ctx.week1 : ctx.week2;
+  const info = getPostSeasonCtpInfo(String(date));
+  if (!info || !info.payers.length) return null;
+  const holes = ctpHolesFor(date, info.fb, season);
+  if (!holes.length) return null;
+  const perHole = Math.floor((info.payers.length * info.ctpAmt) / holes.length);
+  const carry = ctpCarryoverByHole(date, season);
+  const expected = {};
+  holes.forEach(h => { expected[h] = perHole + (parseFloat(carry[h]) || 0); });
+  return { date, expected };
+}
+function psCtpAutoRefresh(season, week, todayInt) {
+  const plan = psCtpExpectedAmounts(season, week);
+  if (!plan || plan.date > todayInt) return 0;
+  const rows = query(`SELECT rowid AS ID, Player, Detail, CAST(Earned AS REAL) AS Earned, COALESCE(DatePaid,'') AS DatePaid FROM Payments WHERE League="Hugh's" AND "Desc"='CTP' AND CAST(Date AS INTEGER)=? AND (Detail LIKE '#%' AND Player!='Kitty' OR Player='Kitty' AND Detail LIKE 'Carryover%')`, [plan.date]);
+  let n = 0;
+  rows.forEach(r => {
+    const m = String(r.Detail).match(/(\d+)/); if (!m) return;
+    const want = plan.expected[parseInt(m[1])];
+    if (want === undefined || r.Player !== 'Kitty' && r.DatePaid) return;       // never change a paid winner
+    if (r.Player === 'Kitty' && Math.abs(r.Earned - want) < 0.005) return;
+    if (r.Player !== 'Kitty' && Math.abs(r.Earned - want) < 0.005) return;
+    serverRun(`UPDATE Payments SET Earned=? WHERE rowid=?`, [want, r.ID]); n++;
+  });
+  return n;
+}
+async function psCtpAutoAll(season) {
+  if (!db || !isOfficerRole()) return;
+  let n = 0;
+  [1, 2].forEach(w => { try { n += psCtpAutoRefresh(season, w, psTodayInt()); } catch (e) { console.warn('psCtpAutoRefresh failed', e); } });
+  if (!n) return;
+  await SERVER_RUN_QUEUE;
+  await saveDBToServer();
+  try { logIt('Post-season CTP amounts refreshed', `season=${season} rows=${n} by=${currentUser?.name || 'unknown'}`, 'INFO', 'psCtpAutoAll'); } catch (e) {}
+  try { loadCtps(); } catch (e) {}
+  try { loadPrizeMoney(); } catch (e) {}
+}
+
 // Fire-and-forget: re-check both post-season weeks after scores, a Gallus import or a refund changed. Never throws.
 function psSkinAutoAll(season) {
+  try { psCtpAutoAll(season).catch(e => console.warn('psCtpAutoAll failed', e)); } catch (e) { console.warn('psCtpAutoAll failed', e); }
   [1, 2].forEach(w => { try { psSkinAutoCommit(season, w).catch(e => console.warn('psSkinAutoCommit failed', e)); } catch (e) { console.warn('psSkinAutoCommit failed', e); } });
 }
 

@@ -63,7 +63,7 @@ const ctx = vm.createContext({
 });
 ['psMdyToInt', 'psAddDaysMdy', 'getSeasonSettings', 'getPostSeasonWeek1Nine', 'getPostSeasonWeekForDate',
  'parsePostSeasonDates', 'getPostSeasonWeekEntry', 'eoyWeeksFromComment', 'computeEoyGrossByWeek', 'getEoyRefundsByPlayer', 'getEoySkinPlayersForWeek',
- 'psWeekScorerRows', 'getPostSeasonWeekPotPlayers', 'getPostSeasonContextForDate', 'getPostSeasonCtpInfo', 'loadCtps']
+ 'psWeekScorerRows', 'getPostSeasonWeekPotPlayers', 'getPostSeasonContextForDate', 'getPostSeasonCtpInfo', 'ctpHolesFor', 'ctpCarryoverByHole', 'loadCtps']
   .forEach(n => vm.runInContext(extract(n), ctx));
 
 function load(date) {
