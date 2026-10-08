@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261008.5';
+const APP_VERSION = '20261008.6';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -9282,8 +9282,8 @@ function loadCtps() {
 
   // Get current winners
   const winners = {};
-  query(`SELECT Player, Detail, Earned FROM Payments WHERE Date=${date} AND Desc='CTP' AND Detail LIKE '#%' AND Player!='Kitty'`)
-    .forEach(r => { const m = r.Detail?.match(/#(\d+)/); if (m) winners[parseInt(m[1])] = { player: r.Player, earned: r.Earned }; });
+  query(`SELECT Player, Detail, Earned, COALESCE(DatePaid,'') AS DatePaid FROM Payments WHERE Date=${date} AND Desc='CTP' AND Detail LIKE '#%' AND Player!='Kitty'`)
+    .forEach(r => { const m = r.Detail?.match(/#(\d+)/); if (m) winners[parseInt(m[1])] = { player: r.Player, earned: r.Earned, datePaid: r.DatePaid, detail: r.Detail }; });
 
   // Carryover per hole from PREVIOUS weeks (current season only)
   const carryover = ctpCarryoverByHole(date, season);
@@ -9312,6 +9312,7 @@ function loadCtps() {
         <th style="background:var(--green);color:var(--gold);padding:10px 14px;text-align:right">Pot</th>
         <th style="background:var(--green);color:var(--gold);padding:10px 14px;text-align:right">Carryover</th>
         <th style="background:var(--green);color:var(--gold);padding:10px 14px;text-align:right">Total</th>
+        <th style="background:var(--green);color:var(--gold);padding:10px 14px;text-align:center">Payment</th>
         <th style="background:var(--green);color:var(--gold);padding:10px 14px;text-align:center">Action</th>
       </tr></thead>
       <tbody>`;
@@ -9342,10 +9343,16 @@ function loadCtps() {
       <td style="padding:10px 14px;text-align:right;font-family:'DM Mono',monospace">$${potPerHole.toFixed(2)}</td>
       <td style="padding:10px 14px;text-align:right;font-family:'DM Mono',monospace;color:${carry>0?'var(--gold)':''}">${carry>0?'$'+carry.toFixed(2):'—'}</td>
       <td style="padding:10px 14px;text-align:right;font-family:'DM Mono',monospace;font-weight:700">$${total.toFixed(2)}</td>
+      <td style="padding:10px 14px;text-align:center;font-size:12px">${(() => {
+        if (!hasPot) return '';
+        const pay = JSON.stringify({ player: winner.player, date: String(date), desc: 'CTP', detail: winner.detail, amount: earnedTotal }).replace(/"/g, '&quot;');
+        if (winner.datePaid) return `<span style="color:#2e7d32">✓ paid ${winner.datePaid}</span>` + (canEdit ? ` <button data-pay="${pay}" data-after="ctp" onclick="prizeUnpay(this)" style="margin-left:4px;padding:2px 8px;border:1px solid #c62828;border-radius:4px;background:#fff;color:#c62828;cursor:pointer;font-size:11px;font-weight:600">Undo</button>` : '');
+        return canEdit ? `<button data-pay="${pay}" data-after="ctp" onclick="prizePay(this)" style="padding:3px 10px;border:1px solid #2e7d32;border-radius:4px;background:#e8f5e9;color:#2e7d32;cursor:pointer;font-size:11px;font-weight:600">Mark paid</button>` : '<span style="color:#e65100">owed</span>';
+      })()}</td>
       <td style="padding:10px 14px;text-align:center">
         ${canEdit
           ? hasPot
-            ? `<button onclick="ctpReset(${hole},'${date}')" style="padding:4px 12px;border:1px solid #ddd;border-radius:4px;background:white;cursor:pointer;font-size:12px">Reset</button>`
+            ? winner.datePaid ? '' : `<button onclick="ctpReset(${hole},'${date}')" style="padding:4px 12px;border:1px solid #ddd;border-radius:4px;background:white;cursor:pointer;font-size:12px">Reset</button>`
             : `<button onclick="ctpNoWinner(${hole},'${date}',${total},'${fb}')" style="padding:4px 12px;border:1px solid #ffa726;border-radius:4px;background:#fff3e0;cursor:pointer;font-size:12px;color:#e65100">No Winner</button>`
           : ''}
       </td>
@@ -23278,7 +23285,7 @@ function bsDuesSheet(d) {
   expenses.forEach(e => { const c = e.category || 'Other'; byCat[c] = bsR2((byCat[c] || 0) + (parseFloat(e.amount) || 0)); });
   const groups = (d.awards || []).map(g => {
     const total = bsSum(g.rows), paid = bsSum(g.rows.filter(r => r.paid));
-    return { key: g.key, label: g.label, date: g.date, rows: g.rows, total, paid, owed: bsR2(total - paid) };
+    return { key: g.key, label: g.label, desc: g.desc, date: g.date, rows: g.rows, total, paid, owed: bsR2(total - paid) };
   });
   const estimates = (d.estimates || []).filter(e => e.total > 0);
   const awardedTotal = bsSum(groups, g => g.total), paidOut = bsSum(groups, g => g.paid), owed = bsSum(groups, g => g.owed);
@@ -23290,7 +23297,7 @@ function bsDuesSheet(d) {
   const events = [];
   Object.values(byDate).forEach(g => events.push({ order: 0, date: g.date, kind: 'in', label: `Dues collected (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount), payers: g.payers.slice().sort((a, b) => String(a.player).localeCompare(String(b.player))) }));
   expenses.forEach(e => events.push({ order: 1, date: String(e.date || ''), kind: 'expense', label: `Expense: ${e.category || 'Other'}${e.description ? ' - ' + e.description : ''}`, amount: -bsR2(e.amount) }));
-  groups.forEach(g => g.rows.forEach(r => events.push({ order: 2, date: String(r.date || g.date || ''), kind: 'award', label: `Pool \u2192 ${r.player}`, detail: `${g.label}${r.place ? ', ' + r.place : ''}`, amount: -bsR2(r.amount), paid: !!r.paid })));
+  groups.forEach(g => g.rows.forEach(r => events.push({ order: 2, date: String(r.date || g.date || ''), kind: 'award', label: `Pool \u2192 ${r.player}`, detail: `${g.label}${r.place ? ', ' + r.place : ''}`, amount: -bsR2(r.amount), paid: !!r.paid, pay: { player: r.player, date: String(r.date || g.date || ''), desc: g.desc, detail: r.detail, amount: bsR2(r.amount) } })));
   const ledger = bsRunningLedger(events);
   const poolBalance = ledger.length ? ledger[ledger.length - 1].balance : 0;
   const afterExpenses = bsR2(moneyIn - expenseTotal);
@@ -23366,9 +23373,9 @@ function bsEoyLedger(d) {
   const ev = [];
   bsByDate(d.entries).forEach(g => ev.push({ order: 0, date: g.date, kind: 'in', label: `EOY Skins entries (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount), payers: bsPayersByName(g.payers) }));
   (d.transfersIn || []).forEach(t => ev.push({ order: 0, date: String(t.date || ''), kind: 'in', label: 'Moved in from another pool (Pool Transfer)', amount: bsR2(t.amount) }));
-  (d.refunds || []).forEach(r => ev.push({ order: 1, date: String(r.date || ''), kind: 'refund', label: `Pool \u2192 ${r.player}`, detail: 'Refund of an entry', amount: -bsR2(Math.abs(r.amount)), paid: !!r.paid }));
-  (d.skinWinners || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'award', label: `Pool \u2192 ${w.player}`, detail: `Week ${w.week} Skin, ${bsHoleText(w.hole)}`, amount: -bsR2(w.amount), paid: !!w.paid }));
-  (d.ctpWinners || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'award', label: `Pool \u2192 ${w.player}`, detail: `Week ${w.week} CTP, ${bsHoleText(w.hole)}`, amount: -bsR2(w.amount), paid: !!w.paid }));
+  (d.refunds || []).forEach(r => ev.push({ order: 1, date: String(r.date || ''), kind: 'refund', label: `Pool \u2192 ${r.player}`, detail: 'Refund of an entry', amount: -bsR2(Math.abs(r.amount)), paid: !!r.paid, pay: { refundId: r.id, season: d.season, player: r.player, date: String(r.date || ''), desc: 'EOY Skins', detail: 'Refund', amount: bsR2(Math.abs(r.amount)) } }));
+  (d.skinWinners || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'award', label: `Pool \u2192 ${w.player}`, detail: `Week ${w.week} Skin, ${bsHoleText(w.hole)}`, amount: -bsR2(w.amount), paid: !!w.paid, pay: { player: w.player, date: String(w.date || ''), desc: 'Skin', detail: w.hole, amount: bsR2(w.amount) } }));
+  (d.ctpWinners || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'award', label: `Pool \u2192 ${w.player}`, detail: `Week ${w.week} CTP, ${bsHoleText(w.hole)}`, amount: -bsR2(w.amount), paid: !!w.paid, pay: { player: w.player, date: String(w.date || ''), desc: 'CTP', detail: w.hole, amount: bsR2(w.amount) } }));
   (d.remainders || []).forEach(r => ev.push({ order: 3, date: String(r.date || ''), kind: 'move', label: 'Pool \u2192 Skins kitty (remainder)', detail: `Week ${r.week}`, amount: -bsR2(r.amount) }));
   const ledger = bsRunningLedger(ev);
   const to = k => bsSum(ledger.filter(e => e.kind === k), e => -e.amount);
@@ -23382,7 +23389,7 @@ function bsKittyLedgers(d) {
     const ev = [];
     bsByDate(x.entries).forEach(g => ev.push({ order: 0, date: g.date, kind: 'in', label: `${label} entries (${g.n} payment${g.n === 1 ? '' : 's'})`, amount: bsR2(g.amount), payers: bsPayersByName(g.payers) }));
     (x.remainders || []).forEach(r => ev.push({ order: 0, date: String(r.date || ''), kind: 'in', label: 'Post-season Skins remainder moved in', amount: bsR2(r.amount) }));
-    (x.winners || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'award', label: `Pool \u2192 ${w.player}`, detail: `${label}, ${bsHoleText(w.hole)}`, amount: -bsR2(w.amount), paid: !!w.paid }));
+    (x.winners || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'award', label: `Pool \u2192 ${w.player}`, detail: `${label}, ${bsHoleText(w.hole)}`, amount: -bsR2(w.amount), paid: !!w.paid, pay: { player: w.player, date: String(w.date || ''), desc: label, detail: w.hole, amount: bsR2(w.amount) } }));
     (x.payouts || []).forEach(w => ev.push({ order: 2, date: String(w.date || ''), kind: 'payout', label: `Pool \u2192 ${w.player}`, detail: 'Pay from Kitty', amount: -bsR2(w.amount), paid: true }));
     (x.transfers || []).forEach(t => ev.push({ order: 3, date: String(t.date || ''), kind: 'move', label: 'Pool \u2192 another pool (Pool Transfer)', amount: -bsR2(t.amount) }));
     const ledger = bsRunningLedger(ev);
@@ -23446,6 +23453,28 @@ function bsCompleteness(rows) {
 
 function bsDateText(d) { const t = String(d || ''); return /^\d{8}$/.test(t) ? `${t.slice(4, 6)}/${t.slice(6, 8)}/${t.slice(0, 4)}` : t; }
 // The pool ledger: one line per movement with the pool balance after it; awards read "Pool -> person".
+// One-click "Mark paid" / "Undo" for a prize row shown on the Balance Sheet or the CTP screen. The row carries what it needs in
+// data-pay (JSON); data-after says which screen to redraw. Uses the same dialogs as the Prize Money tab.
+function prizeRefresh(after) {
+  try { if (after === 'balance') loadBalanceSheet(); else if (after === 'ctp') loadCtps(); else if (after === 'award') renderAwardPrizes(); } catch (e) {}
+}
+async function prizePay(el) {
+  let p; try { p = JSON.parse(el.getAttribute('data-pay')); } catch (e) { return; }
+  const after = el.getAttribute('data-after');
+  if (p.refundId) { await markEoyRefundPaid(p.refundId, p.season); prizeRefresh(after); return; }
+  if (/^(Reg Season Champ|League Championship)/.test(p.desc)) { if (!window._emailToastShownDates) window._emailToastShownDates = new Set(); window._emailToastShownDates.add(p.date); }
+  window._afterMarkPaidCallback = () => prizeRefresh(after);
+  // Skin / CTP rows keep a numeric Date (as the Prize Money tab passes it); the season awards keep their text date.
+  const isAward = /^(Reg Season Champ|League Championship)/.test(p.desc);
+  doMarkPaid(p.player, !isAward && /^\d+$/.test(p.date) ? parseInt(p.date) : p.date, p.desc, p.detail, parseFloat(p.amount) || 0);
+}
+async function prizeUnpay(el) {
+  let p; try { p = JSON.parse(el.getAttribute('data-pay')); } catch (e) { return; }
+  const after = el.getAttribute('data-after');
+  window._afterMarkPaidCallback = () => prizeRefresh(after);
+  await undoMarkPaid(p.player, p.date, p.desc, p.detail, parseFloat(p.amount) || 0);
+}
+
 function bsToggleDetail(tr) {
   const d = tr && tr.nextElementSibling; if (!d || !/bsDetailRow/.test(d.className)) return;
   const open = d.style.display === 'none'; d.style.display = open ? '' : 'none';
@@ -23457,7 +23486,12 @@ function bsRenderLedger(ledger, estimates) {
   const td = (t, st = '') => `<td style="padding:3px 8px;border-bottom:1px solid #eee;font-size:12px;${st}">${t}</td>`;
   const body = (ledger || []).map(r => {
     const person = r.kind === 'award' || r.kind === 'refund' || r.kind === 'payout';
-    const who = person ? `<strong>${e(r.label)}</strong> <span style="color:#888">${e(r.detail || '')}</span> ${r.paid ? '<span style="color:#2e7d32">\u2713 paid</span>' : '<span style="color:#e65100">owed</span>'}` : (r.detail ? `${e(r.label)} <span style="color:#888">${e(r.detail)}</span>` : e(r.label));
+    const officer = typeof isOfficerRole === 'function' && isOfficerRole();
+    const payAttr = r.pay ? ` data-pay="${e(JSON.stringify(r.pay)).replace(/"/g, '&quot;')}" data-after="balance"` : '';
+    const payBtn = !(r.pay && officer) ? '' : r.paid
+      ? ` <button${payAttr} onclick="event.stopPropagation();prizeUnpay(this)" title="Mark as not paid" style="margin-left:6px;padding:1px 8px;border:1px solid #c62828;border-radius:4px;background:#fff;color:#c62828;cursor:pointer;font-size:11px;font-weight:600">Undo</button>`
+      : ` <button${payAttr} onclick="event.stopPropagation();prizePay(this)" style="margin-left:6px;padding:1px 8px;border:1px solid #2e7d32;border-radius:4px;background:#e8f5e9;color:#2e7d32;cursor:pointer;font-size:11px;font-weight:600">Mark paid</button>`;
+    const who = person ? `<strong>${e(r.label)}</strong> <span style="color:#888">${e(r.detail || '')}</span> ${r.paid ? '<span style="color:#2e7d32">\u2713 paid</span>' : '<span style="color:#e65100">owed</span>'}${payBtn}` : (r.detail ? `${e(r.label)} <span style="color:#888">${e(r.detail)}</span>` : e(r.label));
     const has = (r.payers || []).length > 0;
     const main = `<tr${has ? ` class="bsExpandRow" onclick="bsToggleDetail(this)" style="cursor:pointer" title="Click to show who paid"` : ''}>${td(e(bsDateText(r.date)))}${td((has ? '<span class="bsArrow" style="color:#888">\u25B6</span> ' : '') + who)}${td(bsMoney(r.amount), `text-align:right;font-family:'DM Mono',monospace;color:${r.amount < 0 ? '#c62828' : '#2e7d32'}`)}${td(bsMoney(r.balance), "text-align:right;font-family:'DM Mono',monospace;font-weight:600")}</tr>`;
     if (!has) return main;
@@ -23487,7 +23521,7 @@ function bsGatherDues(season) {
   let expenses = [];
   try { expenses = query(`SELECT Date, Category, Description, Amount FROM LeagueExpenses WHERE League="Hugh's" AND Season=?`, [season]).map(r => ({ date: r.Date, category: r.Category, description: r.Description, amount: r.Amount })); } catch (e) {}
   const defs = [['half1', '1st half winners', 'Reg Season Champ-1st half'], ['half2', '2nd half winners', 'Reg Season Champ-2nd half'], ['champ', 'League Championship winners', 'League Championship']];
-  const awards = defs.map(([key, label, desc]) => ({ key, label, date: `${season}1231`, rows: awardRecordedRows(season, desc).map(r => ({ player: r.Player, place: String(r.Comment || r.Detail).split('-')[0], amount: parseFloat(r.Earned || 0), paid: awardIsPaid(r), date: `${season}1231` })) }));
+  const awards = defs.map(([key, label, desc]) => ({ key, label, desc, date: `${season}1231`, rows: awardRecordedRows(season, desc).map(r => ({ player: r.Player, detail: r.Detail, place: String(r.Comment || r.Detail).split('-')[0], amount: parseFloat(r.Earned || 0), paid: awardIsPaid(r), date: `${season}1231` })) }));
   const estimates = [];
   try {
     [1, 2].forEach(h => { if (!awards[h - 1].rows.length) { const p = halfSeasonAwardPlan(season, h); if (p.ok) estimates.push({ key: 'half' + h, label: `${h === 1 ? '1st' : '2nd'} half winners`, total: bsSum(p.rows, r => r.prize) }); } });
@@ -23523,7 +23557,7 @@ function bsGatherPoolLedger(season) {
   const weekOf = d => (ps && parseInt(d) === ps.week2) ? 2 : 1;
   const entries = query(`SELECT Date as date, Player as player, COALESCE(PayMethod,'') as method, CAST(Earned AS REAL) as amount FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Payment' AND Date >= ? AND Date < ?`, [S0, S1]);
   const transfersIn = query(`SELECT Date as date, CAST(Earned AS REAL) as amount FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Pool Transfer' AND Date >= ? AND Date < ?`, [S0, S1]);
-  const refunds = query(`SELECT Date as date, Player as player, CAST(Earned AS REAL) as amount, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ? AND Date < ?`, [S0, S1]).map(r => ({ date: r.date, player: r.player, amount: r.amount, paid: !!r.dp }));
+  const refunds = query(`SELECT rowid as id, Date as date, Player as player, CAST(Earned AS REAL) as amount, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"='EOY Skins' AND Detail='Refund' AND Date >= ? AND Date < ?`, [S0, S1]).map(r => ({ id: r.id, date: r.date, player: r.player, amount: r.amount, paid: !!r.dp }));
   const win = desc => !ps ? [] : query(`SELECT Date as date, Player as player, Detail as hole, CAST(Earned AS REAL) as amount, COALESCE(DatePaid,'') as dp FROM Payments WHERE League="Hugh's" AND "Desc"=? AND Detail LIKE '#%' AND Player!='Kitty' AND CAST(Date AS INTEGER) IN (?,?)`, [desc, ps.week1, ps.week2])
     .map(r => ({ date: r.date, week: weekOf(r.date), player: r.player, hole: r.hole, amount: r.amount, paid: !!r.dp }));
   const remainders = [];
@@ -23541,7 +23575,7 @@ function bsGatherPoolLedger(season) {
       if (pay.paid > 0) pending.push({ label: `Week ${w} Skin winners (${won.length} skin${won.length === 1 ? '' : 's'}, ${st.potPlayers.length} players; calculate on the score entry screen)`, total: pay.paid });
     } catch (e) {}
   });
-  return { entries, transfersIn, refunds, skinWinners: win('Skin'), ctpWinners: win('CTP'), remainders, pending };
+  return { season, entries, transfersIn, refunds, skinWinners: win('Skin'), ctpWinners: win('CTP'), remainders, pending };
 }
 function bsGatherKittyLedger(season) {
   const S0 = `${season}0101`, S1 = `${parseInt(season) + 1}0101`, ex = psKittyExclude(season);
