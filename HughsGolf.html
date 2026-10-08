@@ -2720,7 +2720,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261007.14';
+const APP_VERSION = '20261008.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -5016,7 +5016,8 @@ function loadPrizeMoney(options = {}) {
       const safeDetail = r.Detail.replace(/'/g, "\\'");
       const isOfficerOrDev = currentUser?.role === 'admin' || currentUser?.role === 'developer';
       datePaidCell = isOfficerOrDev
-        ? `${datePaid} <button onclick="doMarkPaid('${safePlayer}',${r.Date},'${r.Desc}','${safeDetail}',${earned})" style="margin-left:8px;padding:3px 10px;background:#1565c0;color:white;border:none;border-radius:4px;cursor:pointer;font-size:10px;font-weight:600">Update</button>`
+        ? `${datePaid} <button onclick="doMarkPaid('${safePlayer}',${r.Date},'${r.Desc}','${safeDetail}',${earned})" style="margin-left:8px;padding:3px 10px;background:#1565c0;color:white;border:none;border-radius:4px;cursor:pointer;font-size:10px;font-weight:600">Update</button>` +
+          ` <button onclick="undoMarkPaid('${safePlayer}',${r.Date},'${r.Desc}','${safeDetail}',${earned})" title="Mark this payout as not paid" style="margin-left:4px;padding:3px 10px;background:#fff;color:#c62828;border:1px solid #c62828;border-radius:4px;cursor:pointer;font-size:10px;font-weight:600">Undo paid</button>`
         : datePaid;
       sentBadge = r.Comment?.includes('[notified:')
           ? `<span style="color:#2e7d32;font-weight:600">✓ Sent via ${r.Comment.match(/\[notified:([^\]]*)\]/)?.[1]?.replace('+',' + ') || ''}</span>`
@@ -12518,6 +12519,24 @@ async function confirmMarkPaid() {
 
   // Offer to email results any time a winner is paid
   showEmailResultsToast(date);
+}
+
+// Officer-only: put a paid winner back to unpaid (a mis-click, or the money was not actually handed over).
+// Clears the paid date only; the amount, winner and any "[notified:...]" note stay. Logged. Nothing else is touched.
+async function undoMarkPaid(player, date, desc, detail, amount) {
+  if (!requireOfficer()) return;
+  const row = query(`SELECT DatePaid FROM Payments WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc"=? AND Detail=?`, [player, date, desc, detail])[0];
+  if (!row || !String(row.DatePaid || '').trim()) { alert('That payout is not marked paid.'); return; }
+  if (!confirm(`Mark this payout as NOT paid?\n\n${player} - ${desc} ${detail} - $${parseFloat(amount).toFixed(2)}\nPaid: ${row.DatePaid}\n\nThe winner and amount stay; only the paid date is cleared.`)) return;
+  await serverRun(`UPDATE Payments SET DatePaid='' WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER) AND "Desc"=? AND Detail=?`, [player, date, desc, detail]);
+  const logTime = new Date().toISOString().replace('T',' ').substring(0,19);
+  await serverRun(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+    [logTime, 'INFO', 'undoMarkPaid', 'HughsGolf', `Undid paid: ${desc} ${detail} for ${player}`, `amount=$${parseFloat(amount).toFixed(2)} was=${row.DatePaid} by=${currentUser?.name || 'unknown'}`, logTime]);
+  await SERVER_RUN_QUEUE;
+  await saveDBToServer();
+  const keepPrizeMoneyDate = document.getElementById('prizemoneyDate')?.value || '';
+  try { loadPrizeMoney({ keepDate: keepPrizeMoneyDate, reopenHeld: true }); } catch (e) {}
+  if (typeof window._afterMarkPaidCallback === 'function') { const cb = window._afterMarkPaidCallback; window._afterMarkPaidCallback = null; cb(); }
 }
 
 function showEmailResultsToast(date) {
@@ -23668,8 +23687,13 @@ async function awardChampionshipWinners(season) {
 function awardPayButton(r, desc, season) {
   const amt = parseFloat(r.Earned || 0);
   return awardIsPaid(r)
-    ? `<span style="color:#2e7d32;font-size:12px">✓ paid ${escapeHtml(String(r.DatePaid))}</span>`
+    ? `<span style="color:#2e7d32;font-size:12px">✓ paid ${escapeHtml(String(r.DatePaid))}</span>` +
+      (isOfficerRole() ? ` <button onclick="awardUndoPaid('${String(r.Player).replace(/'/g, "\\'")}','${season}1231','${desc.replace(/'/g, "\\'")}','${String(r.Detail).replace(/'/g, "\\'")}',${amt})" title="Mark this prize as not paid" style="margin-left:6px;padding:2px 8px;border:1px solid #c62828;border-radius:4px;background:#fff;color:#c62828;cursor:pointer;font-size:11px;font-weight:600">Undo paid</button>` : '')
     : `<button onclick="awardMarkPaid('${String(r.Player).replace(/'/g, "\\'")}','${season}1231','${desc.replace(/'/g, "\\'")}','${String(r.Detail).replace(/'/g, "\\'")}',${amt})" style="padding:3px 10px;border:1px solid #2e7d32;border-radius:4px;background:#e8f5e9;color:#2e7d32;cursor:pointer;font-size:11px;font-weight:600">Mark paid</button>`;
+}
+function awardUndoPaid(player, date, desc, detail, amount) {
+  window._afterMarkPaidCallback = () => renderAwardPrizes();
+  undoMarkPaid(player, date, desc, detail, amount);
 }
 function awardMarkPaid(player, date, desc, detail, amount) {
   if (!window._emailToastShownDates) window._emailToastShownDates = new Set();
