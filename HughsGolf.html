@@ -77,24 +77,21 @@
     font-family: 'DM Mono', monospace;
   }
 
-  /* TABS: real tabs (rounded top, own background, emoji) on a dark bar, like Home Control */
+  /* TABS: top-level groups (dark bar) with a sub-tab bar under the active group; both are real tabs, like Home Control */
+  .tabwrap { position: sticky; top: 60px; z-index: 99; box-shadow: 0 2px 4px rgba(0,0,0,0.15); }
   .tabs {
     background: var(--green);
     display: flex;
     gap: 4px;
     overflow-x: auto;
     padding: 8px 24px 0;
-    position: sticky;
-    top: 60px;
-    z-index: 99;
     border-bottom: 3px solid var(--gold);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
     scrollbar-width: none;
   }
   .tabs::-webkit-scrollbar { display: none; }
 
-  .tab {
-    padding: 10px 16px;
+  .gtab {
+    padding: 10px 18px;
     color: #cfdccf;
     background: rgba(255,255,255,0.09);
     cursor: pointer;
@@ -106,15 +103,42 @@
     transition: background 0.15s, color 0.15s;
     letter-spacing: 0.5px;
     text-transform: uppercase;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    line-height: 1;
+    position: relative;
+  }
+  .gtab:hover { color: #fff; background: rgba(255,255,255,0.18); }
+  .gtab.active { color: var(--green); background: #fff; border-bottom-color: var(--gold); font-weight: 800; }
+  #leagueTabDot { width: 8px; height: 8px; border-radius: 50%; background: #c62828; margin-left: 2px; }
+
+  .subtabs { background: #fff; padding: 0 24px; border-bottom: 1px solid var(--border); }
+  .subtabs.single { display: none; }
+  .subtab-group { display: flex; gap: 4px; overflow-x: auto; padding: 6px 0 0; scrollbar-width: none; }
+  .subtab-group::-webkit-scrollbar { display: none; }
+  .tab {
+    padding: 8px 14px;
+    color: var(--green);
+    background: #e8e0d0;
+    cursor: pointer;
+    font-weight: 700;
+    border-radius: 8px 8px 0 0;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -1px;
+    white-space: nowrap;
+    transition: background 0.15s;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
     font-size: 11px;
     display: inline-flex;
     align-items: center;
     gap: 5px;
     line-height: 1;
   }
-
-  .tab:hover { color: #fff; background: rgba(255,255,255,0.18); }
-  .tab.active { color: var(--green); background: #fff; border-bottom-color: var(--gold); font-weight: 800; }
+  .tab:hover { background: #ddd3bb; }
+  .tab.active { color: #fff; background: var(--green); border-bottom-color: var(--gold); }
 
   /* MAIN CONTENT */
   .content { padding: 24px; max-width: 1200px; margin: 0 auto; }
@@ -668,23 +692,45 @@
 </div>
 
 <div id="viewAsPlayerBanner" style="display:none;background:#0d47a1;color:white;text-align:center;padding:8px 12px;font-size:13px;font-weight:600">👁 Viewing as a player — admin tools are hidden. <button onclick="setViewAsPlayer(false)" style="margin-left:10px;padding:3px 12px;border:1px solid white;border-radius:5px;background:transparent;color:white;font-weight:700;cursor:pointer">Back to Admin Mode</button></div>
-<div class="tabs">
-  <div class="tab active" data-tab="home">🏠 Home</div>
-  <div class="tab" data-tab="board" id="boardTabBtn">📋 Board</div>
-  <div class="tab" data-tab="admin">⚙️ Admin</div>
-  <div class="tab" data-tab="help">❓ Help</div>
-  <div class="tab" data-tab="whatsnew">🆕 Changelog</div>
-  <div class="tab" data-tab="standings">🏆 Standings</div>
-  <div class="tab" data-tab="matches">⚔️ Matches</div>
-  <div class="tab" data-tab="scorecard" id="scorecardTabBtn">📝 Scores</div>
-  <div class="tab" data-tab="handicaps">📈 Handicaps</div>
-  <div class="tab" data-tab="payments">💵 Payments</div>
-  <div class="tab" data-tab="prizemoney">💰 PrizeMoney</div>
-  <div class="tab" data-tab="skins">🎯 Skins/CTPs</div>
-  <div class="tab" data-tab="stableford">⛳ Stableford</div>
-  <div class="tab" data-tab="noshows">✅ Attendance</div>
-  <div class="tab" data-tab="schedule">📅 Schedule</div>
-  <div class="tab" data-tab="stats">📊 Stats</div>
+<div class="tabwrap">
+  <div class="tabs" id="mainTabs">
+    <div class="gtab active" data-group="home">🏠 Home</div>
+    <div class="gtab" data-group="play">⛳ Play</div>
+    <div class="gtab" data-group="standings">🏆 Standings</div>
+    <div class="gtab" data-group="money">💰 Money</div>
+    <div class="gtab" data-group="league">📅 League<span id="leagueTabDot" style="display:none"></span></div>
+    <div class="gtab" data-group="admin">⚙️ Admin</div>
+  </div>
+  <div class="subtabs" id="subTabs">
+    <div class="subtab-group" data-group="home">
+      <div class="tab active" data-tab="home">🏠 Home</div>
+      <div class="tab" data-tab="stats">📊 Stats</div>
+    </div>
+    <div class="subtab-group" data-group="play" style="display:none">
+      <div class="tab" data-tab="scorecard" id="scorecardTabBtn">📝 Scores</div>
+      <div class="tab" data-tab="matches">⚔️ Matches</div>
+      <div class="tab" data-tab="stableford">⛳ Stableford</div>
+      <div class="tab" data-tab="skins">🎯 Skins/CTPs</div>
+      <div class="tab" data-tab="handicaps">📈 Handicaps</div>
+    </div>
+    <div class="subtab-group" data-group="standings" style="display:none">
+      <div class="tab" data-tab="standings">🏆 Standings</div>
+    </div>
+    <div class="subtab-group" data-group="money" style="display:none">
+      <div class="tab" data-tab="payments">💵 Payments</div>
+      <div class="tab" data-tab="prizemoney">💰 PrizeMoney</div>
+    </div>
+    <div class="subtab-group" data-group="league" style="display:none">
+      <div class="tab" data-tab="schedule">📅 Schedule</div>
+      <div class="tab" data-tab="noshows">✅ Attendance</div>
+      <div class="tab" data-tab="board" id="boardTabBtn">📋 Board</div>
+      <div class="tab" data-tab="whatsnew">🆕 Changelog</div>
+      <div class="tab" data-tab="help">❓ Help</div>
+    </div>
+    <div class="subtab-group" data-group="admin" style="display:none">
+      <div class="tab" data-tab="admin">⚙️ Admin</div>
+    </div>
+  </div>
 </div>
 
 <div class="content">
@@ -2727,7 +2773,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.1';
+const APP_VERSION = '20261009.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3542,6 +3588,7 @@ function switchTab(tabName) {
   document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
   document.querySelector(`.tab[data-tab="${targetTab}"]`)?.classList.add('active');
   document.getElementById('tab-' + targetTab)?.classList.add('active');
+  syncTabGroups();
   pvTrack(targetTab);
   if (db) {
     if (targetTab === 'scorecard' && DB_UPDATE_PENDING) refreshScoresForExternalDbUpdate();
@@ -3554,6 +3601,37 @@ document.querySelectorAll('.tab').forEach(t => {
     switchTab(t.dataset.tab);
   });
 });
+
+// ── Tab groups: the top bar holds groups, the bar under it holds the active group's tabs ──
+// The .tab elements (and their data-tab keys, sections, usage tracking and role checks) are unchanged; groups only decide which
+// of them is on screen. Clicking a group opens the tab last used in it (or its first available tab).
+function tabGroupOf(tabName) { return document.querySelector(`.tab[data-tab="${tabName}"]`)?.closest('.subtab-group')?.dataset.group || ''; }
+function tabGroupMembers(group) { return Array.from(document.querySelectorAll(`.subtab-group[data-group="${group}"] .tab`)).filter(t => canAccessTab(t.dataset.tab)); }
+function syncTabGroups() {
+  const activeTab = document.querySelector('.tab.active')?.dataset.tab || 'home';
+  const activeGroup = tabGroupOf(activeTab) || 'home';
+  document.querySelectorAll('.gtab').forEach(g => {
+    const members = tabGroupMembers(g.dataset.group);
+    g.style.display = members.length ? '' : 'none';
+    g.classList.toggle('active', g.dataset.group === activeGroup);
+  });
+  document.querySelectorAll('.subtab-group').forEach(sg => { sg.style.display = sg.dataset.group === activeGroup ? 'flex' : 'none'; });
+  document.querySelectorAll('.subtab-group .tab').forEach(t => { t.style.display = canAccessTab(t.dataset.tab) ? '' : 'none'; });
+  const bar = document.getElementById('subTabs');
+  if (bar) bar.classList.toggle('single', tabGroupMembers(activeGroup).length <= 1);
+  const dot = document.getElementById('leagueTabDot');
+  if (dot) dot.style.display = document.getElementById('boardTabBadge') ? '' : 'none';
+  try { localStorage.setItem('lastTab:' + activeGroup, activeTab); } catch (e) {}
+}
+function openTabGroup(group) {
+  const members = tabGroupMembers(group);
+  if (!members.length) return;
+  let want = '';
+  try { want = localStorage.getItem('lastTab:' + group) || ''; } catch (e) {}
+  const pick = members.find(t => t.dataset.tab === want) || members[0];
+  switchTab(pick.dataset.tab);
+}
+document.querySelectorAll('.gtab').forEach(g => g.addEventListener('click', () => openTabGroup(g.dataset.group)));
 
 // ── Page-view tracking ───────────────────────────────────────────────────────
 window._pageViewBuffer = [];
@@ -5770,6 +5848,7 @@ function markBoardSeen() {
   // Clear badge
   const badge = document.getElementById('boardTabBadge');
   if (badge) badge.remove();
+  try { syncTabGroups(); } catch (e) {}
 }
 
 function checkBoardUnread(posts) {
@@ -5782,6 +5861,7 @@ function checkBoardUnread(posts) {
   // Remove old badge if present
   const old = document.getElementById('boardTabBadge');
   if (old) old.remove();
+  try { syncTabGroups(); } catch (e) {}
   const boardOpen = document.querySelector('.tab[data-tab="board"]')?.classList.contains('active');
   if (unread.length > 0 && !boardOpen) {
     const badge = document.createElement('span');
@@ -5789,6 +5869,7 @@ function checkBoardUnread(posts) {
     badge.textContent = unread.length > 9 ? '9+' : unread.length;
     badge.style.cssText = 'display:inline-block;background:#c62828;color:white;border-radius:50%;font-size:10px;font-weight:700;min-width:16px;height:16px;line-height:16px;text-align:center;margin-left:5px;vertical-align:middle';
     btn.appendChild(badge);
+    try { syncTabGroups(); } catch (e) {}
     // Show notification toast if not already shown this session
     if (!window._boardNotifShown) {
       window._boardNotifShown = true;
@@ -8057,6 +8138,7 @@ function jumpToStableford(season, date) {
   document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
   document.querySelector('[data-tab="stableford"]')?.classList.add('active');
   document.getElementById('tab-stableford')?.classList.add('active');
+  syncTabGroups();
 
   // Pre-set season/date before the tab's load function runs
   loadStablefordTab(); // populates season dropdown + default date
@@ -18317,6 +18399,7 @@ function applyRoleAccess() {
       tab.style.display = '';
     }
   });
+  syncTabGroups();
 
   // Hide SQL button for non-developers
   const sqlBtn = document.getElementById('adminGroupSql');
