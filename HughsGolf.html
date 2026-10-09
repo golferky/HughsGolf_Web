@@ -696,6 +696,7 @@
   <div class="tabs" id="mainTabs">
     <div class="gtab active" data-group="home">🏠 Home</div>
     <div class="gtab" data-group="play">⛳ Play</div>
+    <div class="gtab" data-group="postseason">🏁 Post Season</div>
     <div class="gtab" data-group="money">💰 Money</div>
     <div class="gtab" data-group="league">📅 League<span id="leagueTabDot" style="display:none"></span></div>
     <div class="gtab" data-group="admin">⚙️ Admin</div>
@@ -712,6 +713,12 @@
       <div class="tab" data-tab="skins">🎯 Skins/CTPs</div>
       <div class="tab" data-tab="handicaps">📈 Handicaps</div>
       <div class="tab" data-tab="stableford">⛳ Stableford</div>
+    </div>
+    <div class="subtab-group" data-group="postseason" style="display:none">
+      <div class="tab" data-tab="ps_scores">🧾 Scores</div>
+      <div class="tab" data-tab="ps_standings">🏅 Standings</div>
+      <div class="tab" data-tab="ps_skins">🎲 Skins &amp; CTPs</div>
+      <div class="tab" data-tab="ps_earned">🎁 Earned</div>
     </div>
     <div class="subtab-group" data-group="money" style="display:none">
       <div class="tab" data-tab="payments">💵 Payments</div>
@@ -1389,6 +1396,10 @@
   <!-- SQL -->
   <!-- ADMIN -->
   <div class="section" id="tab-scorecard"></div>
+  <div class="section" id="tab-ps_scores"></div>
+  <div class="section" id="tab-ps_standings"></div>
+  <div class="section" id="tab-ps_skins"></div>
+  <div class="section" id="tab-ps_earned"></div>
 
   <div class="section" id="tab-admin">
     <div class="admin-nav">
@@ -2770,7 +2781,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.3';
+const APP_VERSION = '20261009.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -5723,6 +5734,10 @@ function refreshTab(tab) {
   if (tab === 'scorecard') { if (!courseData) initEntry(); else reRenderEntry(); }
   if (tab === 'scores' || tab === 'entry') switchTab('scorecard');
   if (tab === 'stats') loadPlayerStats();
+  if (tab === 'ps_scores') loadPsScores();
+  if (tab === 'ps_standings') loadPsStandings();
+  if (tab === 'ps_skins') loadPsSkins();
+  if (tab === 'ps_earned') loadPsEarned();
   setTimeout(highlightCurrentPlayer, 50);
 }
 
@@ -22758,6 +22773,173 @@ function psCtpWinnersHtml(week, nineName, wins) {
       <span style="font-family:'DM Mono',monospace;font-weight:700;color:#6a1b9a">$${parseFloat(w.Earned || 0).toFixed(2)}</span>
     </div>`;
   return head + wins.map(row).join('');
+}
+
+// ── Post Season tab (read-only): Scores, Standings, Skins & CTPs, Earned ─────────────────────────────────────────────
+// Everything here is read from the database and shared with the rest of the app through the same calculation helpers
+// (psLeaderboardRanks, psCcPrizeSchedule, psWeekSkinState, psComputeWeekWinners, ...). Nothing on these screens writes.
+// Scores are still ENTERED on Play > Scores; the Scores sub-tab here shows what has been entered.
+function psTabSeasons() {
+  return query(`SELECT Season FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL AND PostSeasonDt != '' ORDER BY Season DESC`).map(r => parseInt(r.Season));
+}
+function psTabSeason() {
+  const seasons = psTabSeasons();
+  const want = parseInt(window._psTabSeason);
+  return seasons.includes(want) ? want : (seasons[0] || getCurrentSeason());
+}
+function psTabSetSeason(v) {
+  window._psTabSeason = parseInt(v);
+  const t = document.querySelector('.tab.active')?.dataset.tab;
+  if (t) refreshTab(t);
+}
+function psTabMoney(v) { return '$' + (Math.round((parseFloat(v) || 0) * 100) / 100).toFixed(2); }
+function psTabHeader(title, season, note) {
+  const seasons = psTabSeasons();
+  const sel = seasons.length > 1 ? `<select onchange="psTabSetSeason(this.value)" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px">${seasons.map(y => `<option value="${y}"${y === season ? ' selected' : ''}>${y}</option>`).join('')}</select>` : `<span style="font-size:12px;color:#777">${season}</span>`;
+  return `<div class="card"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><span>🏁 Post Season — ${title}</span>${sel}</div>` +
+    (note ? `<div style="padding:8px 16px;font-size:12px;color:#777;border-bottom:1px solid #eee">${note}</div>` : '') + `<div style="padding:12px 16px">`;
+}
+const PS_TAB_END = '</div></div>';
+
+// Gather everything the four screens need for one season.
+function psTabGather(season) {
+  const lp = getSeasonSettings(season);
+  const ps = lp?.PostSeasonDt ? parsePostSeasonDates(lp.PostSeasonDt) : null;
+  if (!ps) return { season, lp, ps: null };
+  const w1Fb = getPostSeasonWeek1Nine(season);
+  const scores = query(`SELECT Player, CAST(Date AS INTEGER) AS D, CAST(Gross AS REAL) AS Gross, CAST(COALESCE(Net,0) AS REAL) AS Net FROM Scores WHERE League="Hugh's" AND CAST(Date AS INTEGER) IN (?,?) AND COALESCE(CAST(Gross AS REAL),0) > 0`, [ps.week1, ps.week2]);
+  const pay = query(`SELECT Player, "Desc" AS d, Detail AS t, CAST(Earned AS REAL) AS e, COALESCE(DatePaid,'') AS dp, CAST(Date AS INTEGER) AS D FROM Payments WHERE League="Hugh's" AND Player != 'Kitty' AND (
+      ("Desc" IN ('Skin','CTP') AND Detail LIKE '#%' AND CAST(Date AS INTEGER) IN (?,?)) OR
+      ("Desc" = 'League Championship' AND Date >= ? AND Date < ?) OR
+      ("Desc" = 'EOY Skins' AND Detail = 'Refund' AND Date >= ? AND Date < ?))`, [ps.week1, ps.week2, `${season}0101`, `${season + 1}0101`, `${season}0101`, `${season + 1}0101`]);
+  const dues = parseFloat(query(`SELECT COALESCE(SUM(Earned),0) AS t FROM Payments WHERE League="Hugh's" AND "Desc"='League Dues' AND Detail='Payment' AND Date >= ? AND Date < ?`, [`${season}0101`, `${season + 1}0101`])[0]?.t || 0);
+  return { season, lp, ps, w1Fb, w2Fb: w1Fb === 'Back' ? 'Front' : 'Back', scores, pay, dues };
+}
+
+// Leaderboard: the League Championship is 18-hole net over both weeks; roster players only (subs are shown but do not place).
+function psBoardBuild(scores, ps, isRoster, todayInt) {
+  const by = {};
+  (scores || []).forEach(r => {
+    const p = (by[r.Player] = by[r.Player] || { name: r.Player, w: {} });
+    const wk = r.D === ps.week1 ? 1 : 2;
+    const o = (p.w[wk] = p.w[wk] || { gross: 0, net: 0 });
+    o.gross += r.Gross; o.net += r.Net;
+  });
+  const closed = { 1: (scores || []).some(r => r.D === ps.week2) || todayInt > ps.week1, 2: todayInt > ps.week2 };
+  const rows = Object.values(by).map(p => {
+    const runGross = (p.w[1]?.gross || 0) + (p.w[2]?.gross || 0), runNet = (p.w[1]?.net || 0) + (p.w[2]?.net || 0);
+    const row = { name: p.name, w1: p.w[1] || null, w2: p.w[2] || null, frontComplete: !!p.w[1], backComplete: !!p.w[2], runGross, runNet, roster: !!isRoster(p.name) };
+    row.ccMissed = psCcMissedWeek({ 1: !!p.w[1], 2: !!p.w[2] }, closed);
+    return row;
+  }).sort((a, b) => ((b.frontComplete ? 1 : 0) + (b.backComplete ? 1 : 0)) - ((a.frontComplete ? 1 : 0) + (a.backComplete ? 1 : 0)) || a.runNet - b.runNet || a.name.localeCompare(b.name));
+  const ranks = psLeaderboardRanks(rows, p => p.roster && !p.ccMissed);
+  return { rows, ranks, back: psLeaderboardShotsBack(rows, ranks), closed };
+}
+
+// Earned: what each player has earned in post-season, with what is paid and what is still owed. Everyone can see everyone.
+function psEarnedBuild(pay) {
+  const by = {};
+  (pay || []).forEach(r => {
+    const o = (by[r.Player] = by[r.Player] || { name: r.Player, skins: 0, ctp: 0, champ: 0, refund: 0, paid: 0, owed: 0 });
+    const isRefund = r.d === 'EOY Skins';
+    const amt = isRefund ? Math.abs(r.e) : r.e;
+    if (r.d === 'Skin') o.skins += amt; else if (r.d === 'CTP') o.ctp += amt; else if (r.d === 'League Championship') o.champ += amt; else if (isRefund) o.refund += amt;
+    if (r.dp) o.paid += amt; else o.owed += amt;
+  });
+  const r2 = x => Math.round(x * 100) / 100;
+  return Object.values(by).map(o => ({ ...o, skins: r2(o.skins), ctp: r2(o.ctp), champ: r2(o.champ), refund: r2(o.refund), paid: r2(o.paid), owed: r2(o.owed), total: r2(o.skins + o.ctp + o.champ + o.refund) }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+}
+
+const psTabTh = (t, al) => `<th style="background:var(--green);color:var(--gold);padding:6px 10px;font-size:12px;text-align:${al || 'left'}">${t}</th>`;
+const psTabTd = (t, st) => `<td style="padding:5px 10px;font-size:13px;border-bottom:1px solid #eee;${st || ''}">${t}</td>`;
+const psTabNum = "text-align:right;font-family:'DM Mono',monospace";
+const psTabNoPs = '<div class="empty">No post-season dates are set up for this season.</div>';
+
+function loadPsScores() {
+  const el = document.getElementById('tab-ps_scores'); if (!el) return;
+  const season = psTabSeason(), d = psTabGather(season);
+  const head = psTabHeader('Scores', season, 'Week 1 and Week 2 are separate nines; each is scored against the full handicap. Scores are entered on Play ▸ Scores.');
+  if (!d.ps) { el.innerHTML = head + psTabNoPs + PS_TAB_END; return; }
+  const board = psBoardBuild(d.scores, d.ps, () => true, 99999999);
+  const rows = board.rows.slice().sort((a, b) => a.name.localeCompare(b.name));
+  const wkLabel = w => `Week ${w} · ${w === 1 ? d.w1Fb : d.w2Fb} 9 · ${fmtDate(String(w === 1 ? d.ps.week1 : d.ps.week2))}`;
+  const cell = w => w ? [psTabTd(Math.round(w.gross), psTabNum), psTabTd(Math.round(w.net), psTabNum + ';font-weight:700;color:var(--green)')] : [psTabTd('—', 'text-align:right;color:#bbb'), psTabTd('—', 'text-align:right;color:#bbb')];
+  const body = rows.map(r => `<tr>${psTabTd(`<strong>${escapeHtml(r.name)}</strong>`)}${cell(r.w1).join('')}${cell(r.w2).join('')}${psTabTd(r.frontComplete && r.backComplete ? Math.round(r.runNet) : '—', psTabNum + ';font-weight:700')}</tr>`).join('');
+  el.innerHTML = head + (rows.length ?
+    `<div class="table-wrap"><table style="border-collapse:collapse;width:100%"><thead><tr>${psTabTh('Player')}<th colspan="2" style="background:var(--green);color:var(--gold);padding:6px 10px;font-size:12px;text-align:center">${wkLabel(1)}</th><th colspan="2" style="background:var(--green);color:var(--gold);padding:6px 10px;font-size:12px;text-align:center">${wkLabel(2)}</th>${psTabTh('Total net', 'right')}</tr>
+    <tr>${psTabTh('')}${psTabTh('Gross', 'right')}${psTabTh('Net', 'right')}${psTabTh('Gross', 'right')}${psTabTh('Net', 'right')}${psTabTh('')}</tr></thead><tbody>${body}</tbody></table></div>` :
+    '<div class="empty">No post-season scores yet.</div>') + PS_TAB_END;
+}
+
+function loadPsStandings() {
+  const el = document.getElementById('tab-ps_standings'); if (!el) return;
+  const season = psTabSeason(), d = psTabGather(season);
+  const head = psTabHeader('Standings', season, 'League Championship: 18-hole net over both weeks. Roster players place; players with a missed week, and subs, are shown but do not place. Ties split the prizes of the places they cover.');
+  if (!d.ps) { el.innerHTML = head + psTabNoPs + PS_TAB_END; return; }
+  const td = new Date(), todayInt = td.getFullYear() * 10000 + (td.getMonth() + 1) * 100 + td.getDate();
+  const board = psBoardBuild(d.scores, d.ps, p => ccRosterEligible(p, season), todayInt);
+  const pot = psLeaderboardCcPotential(board.rows, board.ranks, psCcPrizeSchedule(d.lp, d.dues));
+  const awarded = {};
+  d.pay.filter(r => r.d === 'League Championship').forEach(r => { awarded[r.Player] = (awarded[r.Player] || 0) + r.e; });
+  const hasAwards = Object.keys(awarded).length > 0;
+  const body = board.rows.map((p, i) => {
+    const pos = board.ranks[i], tied = pos !== null && board.ranks.some((r, j) => j !== i && r === pos);
+    const medal = pos === null ? '—' : (pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : '') + (tied ? `T${pos}` : (pos > 3 ? `${pos}.` : ''));
+    const back = board.back[i] === null ? '' : board.back[i] === 0 ? '<span style="color:#2e7d2e">Leader</span>' : `<span style="color:#c62828">-${Math.round(board.back[i])}</span>`;
+    const note = !p.roster ? ' <span style="color:#1565c0;font-size:11px">sub</span>' : p.ccMissed ? ` <span style="color:#c62828;font-size:11px">missed week ${p.ccMissed}</span>` : '';
+    const prize = awarded[p.name] !== undefined ? `<strong>${psTabMoney(awarded[p.name])}</strong> <span style="color:#2e7d32;font-size:11px">awarded</span>` : (!hasAwards && pot[i] !== null ? `<span style="color:#777" title="Projected at the current standings">${psTabMoney(pot[i])}</span>` : '');
+    const wk = w => w ? Math.round(w.net) : '—';
+    return `<tr style="${pos === 1 ? 'background:#fff8e1' : ''}">${psTabTd(medal, 'text-align:center;font-weight:700')}${psTabTd(`<strong>${escapeHtml(p.name)}</strong>${note}`)}${psTabTd(wk(p.w1), psTabNum)}${psTabTd(wk(p.w2), psTabNum)}${psTabTd(p.frontComplete || p.backComplete ? Math.round(p.runNet) : '—', psTabNum + ';font-weight:700;color:var(--green)')}${psTabTd(back, 'text-align:right')}${psTabTd(prize, 'text-align:right')}</tr>`;
+  }).join('');
+  el.innerHTML = head + (board.rows.length ?
+    `<div class="table-wrap"><table style="border-collapse:collapse;width:100%"><thead><tr>${psTabTh('Place', 'center')}${psTabTh('Player')}${psTabTh('Wk 1 net', 'right')}${psTabTh('Wk 2 net', 'right')}${psTabTh('Total net', 'right')}${psTabTh('Back', 'right')}${psTabTh(hasAwards ? 'Prize' : 'Projected', 'right')}</tr></thead><tbody>${body}</tbody></table></div>` :
+    '<div class="empty">No post-season scores yet.</div>') + PS_TAB_END;
+}
+
+function loadPsSkins() {
+  const el = document.getElementById('tab-ps_skins'); if (!el) return;
+  const season = psTabSeason(), d = psTabGather(season);
+  const head = psTabHeader('Skins & CTPs', season, 'Each week is its own contest: $10 = Skins + CTP per player who is paid and has scored that week. Whole dollars only; any leftover goes to the Skins kitty.');
+  if (!d.ps) { el.innerHTML = head + psTabNoPs + PS_TAB_END; return; }
+  const winRows = (rows, color) => rows.length ? rows.map(r => `<div style="display:grid;grid-template-columns:48px 1fr auto auto;gap:8px;align-items:center;padding:4px 10px;border-radius:4px;font-size:13px;margin-bottom:2px;background:${color}"><span style="font-weight:700">Hole ${String(r.t).replace('#', '')}</span><span style="font-weight:600">${escapeHtml(r.Player)}</span><span style="${psTabNum};font-weight:700">${psTabMoney(r.e)}</span><span style="font-size:11px;color:${r.dp ? '#2e7d32' : '#e65100'}">${r.dp ? '✓ paid' : 'owed'}</span></div>`).join('') : '<div style="color:#aaa;font-size:13px">None yet</div>';
+  const weeks = [1, 2].map(w => {
+    const st = psWeekSkinState(season, w); if (!st) return '';
+    const date = w === 1 ? d.ps.week1 : d.ps.week2, fb = w === 1 ? d.w1Fb : d.w2Fb;
+    const P = st.potPlayers.length;
+    const skins = d.pay.filter(r => r.d === 'Skin' && r.D === date).sort((a, b) => parseInt(String(a.t).replace('#', '')) - parseInt(String(b.t).replace('#', '')));
+    const ctps = d.pay.filter(r => r.d === 'CTP' && r.D === date).sort((a, b) => parseInt(String(a.t).replace('#', '')) - parseInt(String(b.t).replace('#', '')));
+    let skinHtml, status;
+    if (st.status === 'preview' || !skins.length) {
+      let prev = null;
+      try { if (P) { if (!courseData) loadCourse(d.lp.Course || 'Boone Links'); if (courseData) { const won = psComputeWeekWinners(season, w).winners; prev = { won, pay: psWeekSkinPayout(P, won.length, st.skinAmt) }; } } } catch (e) {}
+      skinHtml = prev && prev.won.length ? prev.won.map(x => `<div style="display:grid;grid-template-columns:48px 1fr auto;gap:8px;padding:4px 10px;font-size:13px;margin-bottom:2px;background:#fffde7;font-style:italic"><span style="font-weight:700">Hole ${x.hole}</span><span>${escapeHtml(x.player)}</span><span style="${psTabNum}">${psTabMoney(prev.pay.each)}</span></div>`).join('') : '<div style="color:#aaa;font-size:13px">None yet</div>';
+      status = P ? '<span style="color:#b8860b">preview — calculates itself once every paid player has all 9 holes</span>' : '<span style="color:#aaa">no scores yet</span>';
+    } else {
+      skinHtml = winRows(skins, '#f9fbe7');
+      status = st.recorded ? `<span style="color:#2e7d32">calculated · remainder ${psTabMoney(st.payout.remainder)} → Skins kitty</span>` : '<span style="color:#e65100">stored, remainder not recorded</span>';
+    }
+    return `<div style="margin-bottom:22px"><div style="font-weight:700;font-size:15px;color:var(--green)">Week ${w} · ${fb} 9 · ${fmtDate(String(date))}</div>
+      <div style="font-size:12px;color:#777;margin-bottom:8px">${P} paid-and-scored player${P === 1 ? '' : 's'} · Skins pot ${psTabMoney(P * st.skinAmt)} · CTP pot ${psTabMoney(P * st.ctpAmt)} · ${status}</div>
+      <div style="font-weight:700;font-size:12px;color:#555;margin:6px 0 4px;text-transform:uppercase">🎯 Skins</div>${skinHtml}
+      <div style="font-weight:700;font-size:12px;color:#555;margin:10px 0 4px;text-transform:uppercase">📍 Closest to the pin</div>${winRows(ctps, '#f3e5f5')}</div>`;
+  }).join('');
+  el.innerHTML = head + weeks + PS_TAB_END;
+}
+
+function loadPsEarned() {
+  const el = document.getElementById('tab-ps_earned'); if (!el) return;
+  const season = psTabSeason(), d = psTabGather(season);
+  const head = psTabHeader('Earned', season, 'What everyone has earned in post-season: Skins, closest-to-the-pin, the League Championship (once awarded) and refunds, with what is paid and what is still owed.');
+  if (!d.ps) { el.innerHTML = head + psTabNoPs + PS_TAB_END; return; }
+  const rows = psEarnedBuild(d.pay);
+  const sum = k => Math.round(rows.reduce((t, r) => t + r[k], 0) * 100) / 100;
+  const z = v => v ? psTabMoney(v) : '<span style="color:#ccc">—</span>';
+  const body = rows.map(r => `<tr>${psTabTd(`<strong>${escapeHtml(r.name)}</strong>`)}${psTabTd(z(r.skins), psTabNum)}${psTabTd(z(r.ctp), psTabNum)}${psTabTd(z(r.champ), psTabNum)}${psTabTd(z(r.refund), psTabNum)}${psTabTd(psTabMoney(r.total), psTabNum + ';font-weight:700;color:var(--green)')}${psTabTd(z(r.paid), psTabNum + ';color:#2e7d32')}${psTabTd(r.owed ? psTabMoney(r.owed) : '<span style="color:#ccc">—</span>', psTabNum + ';color:#e65100')}</tr>`).join('');
+  el.innerHTML = head + (rows.length ?
+    `<div class="table-wrap"><table style="border-collapse:collapse;width:100%"><thead><tr>${psTabTh('Player')}${psTabTh('Skins', 'right')}${psTabTh('CTP', 'right')}${psTabTh('Championship', 'right')}${psTabTh('Refund', 'right')}${psTabTh('Total', 'right')}${psTabTh('Paid', 'right')}${psTabTh('Owed', 'right')}</tr></thead><tbody>${body}
+    <tr style="font-weight:700;background:#f5f0e8">${psTabTd('Total')}${[sum('skins'), sum('ctp'), sum('champ'), sum('refund'), sum('total'), sum('paid'), sum('owed')].map(v => psTabTd(psTabMoney(v), psTabNum)).join('')}</tr></tbody></table></div>` :
+    '<div class="empty">Nothing earned yet.</div>') + PS_TAB_END;
 }
 
 function renderPostSeasonBreakdown(nine) {
