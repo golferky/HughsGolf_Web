@@ -2,10 +2,10 @@
 const fs = require('fs'), assert = require('assert');
 const src = fs.readFileSync(__dirname + '/../HughsGolf.html', 'utf8');
 const groups = [...src.matchAll(/<div class="gtab(?: active)?" data-group="([a-z]+)">([^<]*)/g)].map(m => ({ key: m[1], label: m[2] }));
-assert.deepStrictEqual(groups.map(g => g.key), ['home', 'play', 'money', 'league', 'admin']);
+assert.deepStrictEqual(groups.map(g => g.key), ['home', 'play', 'postseason', 'money', 'league', 'admin']);
 groups.forEach(g => assert(/^[^A-Za-z0-9\s]/.test(g.label), `group ${g.key} starts with an emoji: ${g.label}`));
-const tabs = [...src.matchAll(/<div class="tab(?: active)?" data-tab="([a-z]+)"[^>]*>([^<]*)<\/div>/g)].map(m => ({ key: m[1], label: m[2] }));
-assert(tabs.length === 16, 'all 16 tabs are still there: ' + tabs.length);
+const tabs = [...src.matchAll(/<div class="tab(?: active)?" data-tab="([a-z_]+)"[^>]*>([^<]*)<\/div>/g)].map(m => ({ key: m[1], label: m[2] }));
+assert(tabs.length === 20, 'all 20 tabs are still there: ' + tabs.length);
 tabs.forEach(t => assert(/^[^A-Za-z0-9\s]/.test(t.label), `tab ${t.key} starts with an emoji: ${t.label}`));
 assert.strictEqual(new Set(tabs.map(t => t.label.split(' ')[0])).size, tabs.length, 'each tab has its own emoji');
 const css = src.slice(src.indexOf('/* TABS'), src.indexOf('/* MAIN CONTENT */'));

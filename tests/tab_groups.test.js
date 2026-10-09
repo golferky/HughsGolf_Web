@@ -2,10 +2,10 @@
 const fs = require('fs'), assert = require('assert');
 const src = fs.readFileSync(__dirname + '/../HughsGolf.html', 'utf8');
 const layout = {};
-for (const m of src.matchAll(/<div class="subtab-group" data-group="([a-z]+)"[^>]*>([\s\S]*?)\n    <\/div>/g)) layout[m[1]] = [...m[2].matchAll(/data-tab="([a-z]+)"/g)].map(x => x[1]);
+for (const m of src.matchAll(/<div class="subtab-group" data-group="([a-z]+)"[^>]*>([\s\S]*?)\n    <\/div>/g)) layout[m[1]] = [...m[2].matchAll(/data-tab="([a-z_]+)"/g)].map(x => x[1]);
 assert.deepStrictEqual(layout, {
   home: ['home', 'stats'], play: ['scorecard', 'standings', 'matches', 'skins', 'handicaps', 'stableford'],
-  money: ['payments', 'prizemoney'], league: ['schedule', 'noshows', 'board', 'whatsnew', 'help'], admin: ['admin'] }, 'group layout');
+  postseason: ['ps_scores', 'ps_standings', 'ps_skins', 'ps_earned'], money: ['payments', 'prizemoney'], league: ['schedule', 'noshows', 'board', 'whatsnew', 'help'], admin: ['admin'] }, 'group layout');
 // every tab still has its section
 Object.values(layout).flat().forEach(k => assert(src.includes(`id="tab-${k}"`), 'section for ' + k));
 // the group logic hooks into the existing switch, the role check, the Board badge and jumpToStableford
