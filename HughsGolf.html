@@ -77,39 +77,44 @@
     font-family: 'DM Mono', monospace;
   }
 
-  /* TABS */
+  /* TABS: real tabs (rounded top, own background, emoji) on a dark bar, like Home Control */
   .tabs {
-    background: white;
+    background: var(--green);
     display: flex;
-    gap: 0;
+    gap: 4px;
     overflow-x: auto;
-    padding: 0 24px;
+    padding: 8px 24px 0;
     position: sticky;
     top: 60px;
     z-index: 99;
-    border-bottom: 2px solid #ddd;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-bottom: 3px solid var(--gold);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    scrollbar-width: none;
   }
+  .tabs::-webkit-scrollbar { display: none; }
 
   .tab {
-    padding: 12px 20px;
-    color: #333;
+    padding: 10px 16px;
+    color: #cfdccf;
+    background: rgba(255,255,255,0.09);
     cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
+    border-radius: 9px 9px 0 0;
     border-bottom: 3px solid transparent;
+    margin-bottom: -3px;
     white-space: nowrap;
-    transition: all 0.2s;
+    transition: background 0.15s, color 0.15s;
     letter-spacing: 0.5px;
     text-transform: uppercase;
     font-size: 11px;
     display: inline-flex;
     align-items: center;
+    gap: 5px;
     line-height: 1;
   }
 
-  .tab:hover { color: var(--green); }
-  .tab.active { color: var(--green); border-bottom-color: var(--green); font-weight: 700; }
+  .tab:hover { color: #fff; background: rgba(255,255,255,0.18); }
+  .tab.active { color: var(--green); background: #fff; border-bottom-color: var(--gold); font-weight: 800; }
 
   /* MAIN CONTENT */
   .content { padding: 24px; max-width: 1200px; margin: 0 auto; }
@@ -662,21 +667,21 @@
 
 <div id="viewAsPlayerBanner" style="display:none;background:#0d47a1;color:white;text-align:center;padding:8px 12px;font-size:13px;font-weight:600">👁 Viewing as a player — admin tools are hidden. <button onclick="setViewAsPlayer(false)" style="margin-left:10px;padding:3px 12px;border:1px solid white;border-radius:5px;background:transparent;color:white;font-weight:700;cursor:pointer">Back to Admin Mode</button></div>
 <div class="tabs">
-  <div class="tab active" data-tab="home">Home</div>
+  <div class="tab active" data-tab="home">🏠 Home</div>
   <div class="tab" data-tab="board" id="boardTabBtn">📋 Board</div>
-  <div class="tab" data-tab="admin">⚙ Admin</div>
+  <div class="tab" data-tab="admin">⚙️ Admin</div>
   <div class="tab" data-tab="help">❓ Help</div>
-  <div class="tab" data-tab="whatsnew">📋 Changelog</div>
-  <div class="tab" data-tab="standings">Standings</div>
-  <div class="tab" data-tab="matches">Matches</div>
+  <div class="tab" data-tab="whatsnew">🆕 Changelog</div>
+  <div class="tab" data-tab="standings">🏆 Standings</div>
+  <div class="tab" data-tab="matches">⚔️ Matches</div>
   <div class="tab" data-tab="scorecard" id="scorecardTabBtn">📝 Scores</div>
-  <div class="tab" data-tab="handicaps">Handicaps</div>
-  <div class="tab" data-tab="payments">Payments</div>
-  <div class="tab" data-tab="prizemoney">PrizeMoney</div>
-  <div class="tab" data-tab="skins">Skins/CTPs</div>
-  <div class="tab" data-tab="stableford">Stableford</div>
-  <div class="tab" data-tab="noshows">Attendance</div>
-  <div class="tab" data-tab="schedule">Schedule</div>
+  <div class="tab" data-tab="handicaps">📈 Handicaps</div>
+  <div class="tab" data-tab="payments">💵 Payments</div>
+  <div class="tab" data-tab="prizemoney">💰 PrizeMoney</div>
+  <div class="tab" data-tab="skins">🎯 Skins/CTPs</div>
+  <div class="tab" data-tab="stableford">⛳ Stableford</div>
+  <div class="tab" data-tab="noshows">✅ Attendance</div>
+  <div class="tab" data-tab="schedule">📅 Schedule</div>
   <div class="tab" data-tab="stats">📊 Stats</div>
 </div>
 
@@ -2720,7 +2725,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261008.7';
+const APP_VERSION = '20261008.8';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
