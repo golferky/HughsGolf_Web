@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.13';
+const APP_VERSION = '20261009.14';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -15882,7 +15882,7 @@ async function doGallusSubmit() {
     // The date can be changed after the fetch: import under the date that is showing now (it used to keep the date from the fetch).
     const _dateNow = gallusDateFromInput(document.getElementById('gallusSubmitDate')?.value);
     if (_dateNow) window._pendingGallusImport.today = _dateNow;
-    showGallusNameRemapModal(window._pendingGallusImport);
+    await gallusConfirmNames(window._pendingGallusImport);
     return;
   }
 
@@ -16122,6 +16122,30 @@ function renderGallusFetchCheck() {
     return ''; // no match
   }
 
+  // A Gallus name is "confident" when it is the same as a league player's name (or the same with first and last swapped). Only a
+  // last-name guess or no match at all needs a person to look at it.
+  function gallusNameIsConfident(gallusName) {
+    const n = String(gallusName || '').trim();
+    if (!n) return false;
+    const hit = nm => query(`SELECT 1 FROM Players WHERE Player=? COLLATE NOCASE AND ${participantSql()} LIMIT 1`, [nm]).length > 0;
+    if (hit(n)) return true;
+    if (n.includes(',')) { const parts = n.split(',').map(x => x.trim()); return parts.length === 2 && hit(`${parts[1]} ${parts[0]}`); }
+    const words = n.split(/\s+/);
+    return words.length === 2 && hit(`${words[1]} ${words[0]}`);
+  }
+  // Skip the "Confirm Player Names" screen when every name already matches a league player; otherwise show it as before.
+  async function gallusConfirmNames(pendingImport) {
+    if ((pendingImport.players || []).every(p => gallusNameIsConfident(p.name))) {
+      pendingImport.nameOverrides = {};
+      await _doGallusImportCommit(pendingImport);
+      window._pendingGallusImport = null;
+      const b = document.querySelector('#gallusSubmitModal button');
+      if (b) { b.textContent = '📥 Fetch & Import'; b.style.background = '#6a1b9a'; }
+      return;
+    }
+    showGallusNameRemapModal(pendingImport);
+  }
+
   function showGallusNameRemapModal(pendingImport) {
     const existing = document.getElementById('gallusRemapModal');
     if (existing) existing.remove();
@@ -16293,7 +16317,8 @@ function renderGallusFetchCheck() {
     showToast(`✓ Imported: ${importedNames.join(', ')}${skippedMsg}${_recMsg}`, _differ ? '#e65100' : '#2e7d32', 6000);
 
     // Show payment collection modal if anyone was imported; Done button navigates to gallus queue
-    if (importedNames.length > 0) {
+    // Skip the payment pop-up when every imported player was already on the scorecard (auto-reconciled): that night is already done.
+    if (importedNames.length > 0 && autoReconciled.length < importedNames.length) {
       showGallusPaymentModal(importedNames, today);
     } else {
       switchTab('admin');
