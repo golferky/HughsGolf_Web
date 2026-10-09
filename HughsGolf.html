@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.9';
+const APP_VERSION = '20261009.10';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -17338,6 +17338,85 @@ async function _doVerifyImport(players) {
   }
 }
 
+// ── Check a queued Gallus round against what is already on the scorecard, BEFORE it is posted ───────────────────────────
+// Per player: "new" (nothing on the sheet), "same" (every Gallus hole matches the sheet) or "different" (listing each hole that differs).
+function gallusCompareScores(players, existingFor) {
+  return players.map(p => {
+    const ex = existingFor(p.resolvedName);                      // array of 9 hole values for that nine, or null when nothing is saved
+    const have = ex && ex.some(h => h !== '' && h != null && parseInt(h) > 0);
+    if (!have) return { p, status: 'new', diffs: [] };
+    const diffs = [];
+    (p.scores || []).forEach((g, i) => {
+      const gv = g == null || g === '' ? 0 : parseInt(g), sv = ex[i] == null || ex[i] === '' ? 0 : parseInt(ex[i]);
+      if (gv > 0 && gv !== sv) diffs.push({ hole: i + 1, sheet: sv > 0 ? sv : '—', gallus: gv });
+    });
+    return { p, status: diffs.length ? 'different' : 'same', diffs };
+  });
+}
+function gallusPreCheckHtml(results) {
+  const badge = (txt, bg, fg) => `<span style="background:${bg};color:${fg};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${txt}</span>`;
+  const rows = results.map(r => {
+    const name = escapeHtml(r.p.resolvedName) + (r.p.gallusName && r.p.gallusName !== r.p.resolvedName ? ` <span style="color:#999;font-size:11px">(Gallus: ${escapeHtml(r.p.gallusName)})</span>` : '');
+    const st = r.status === 'new' ? badge('✓ New — nothing on the sheet', '#e8f5e9', '#2e7d32') : r.status === 'same' ? badge('= Same as the sheet', '#e3f2fd', '#1565c0') : badge('⚠ Different', '#ffebee', '#c62828');
+    const diff = r.diffs.length ? `<div style="font-size:12px;color:#c62828;margin-top:4px">${r.diffs.map(d => `H${d.hole}: sheet ${d.sheet} → Gallus ${d.gallus}`).join(' &nbsp;·&nbsp; ')}</div>` : '';
+    return `<div style="padding:8px 4px;border-bottom:1px solid #eee"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><strong>${name}</strong>${st}</div>${diff}</div>`;
+  }).join('');
+  const n = k => results.filter(r => r.status === k).length;
+  return `<div style="font-size:12px;color:#555;margin-bottom:8px">${n('new')} new · ${n('same')} same · ${n('different')} different</div>${rows}`;
+}
+function gallusExistingNine(player, date, frontBack, isPS) {
+  const rows = query(`SELECT "1","2","3","4","5","6","7","8","9" FROM Scores WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=CAST(? AS INTEGER)${isPS ? ' AND FrontBack=?' : ''} ORDER BY ROWID DESC LIMIT 1`,
+    isPS ? [player, date, frontBack] : [player, date]);
+  const r = rows[0]; if (!r) return null;
+  return [r['1'], r['2'], r['3'], r['4'], r['5'], r['6'], r['7'], r['8'], r['9']];
+}
+// Mark a queued round done without writing any scores (every player was already on the sheet, or the officer kept the sheet's scores).
+async function _gallusMarkGroupReconciled() {
+  for (const p of _gallusVerifyPlayers) db.run(`UPDATE GallusImport SET Reconciled=1 WHERE ID=?`, [p.id]);
+  await saveDBToServer('✓ Reconciled');
+  loadGallusQueue();
+  if (window._importAllBatch !== null && window._importAllBatch !== undefined) setTimeout(_processNextImportAllGroup, 600);
+}
+function gallusPreCheckCancel() {
+  document.getElementById('gallusPreCheckModal')?.remove();
+  if (Array.isArray(window._importAllBatch)) { window._importAllBatch = null; _hideGallusToast(); }
+}
+async function gallusPreCheckGo(mode) {
+  document.getElementById('gallusPreCheckModal')?.remove();
+  const results = window._gallusPreCheckResults || [];
+  const fresh = results.filter(r => r.status === 'new').map(r => r.p);
+  if (mode === 'overwrite') { window._gallusSkipOverwriteCheck = true; try { await _doVerifyImport(_gallusVerifyPlayers); } finally { window._gallusSkipOverwriteCheck = false; } return; }
+  if (!fresh.length) { await _gallusMarkGroupReconciled(); return; }      // nothing new to write: same / kept sheet scores
+  await _doVerifyImport(fresh);
+}
+// Show the check. A round whose players are all new goes straight through in Import All; a single import always shows it.
+async function gallusPreImportCheck(players) {
+  const date = players[0]?.date, fb = players[0]?.frontBack || 'Front';
+  const isPS = !!(date && isDatePostSeason(String(date)));
+  const results = gallusCompareScores(players, name => gallusExistingNine(name, date, fb, isPS));
+  window._gallusPreCheckResults = results;
+  const allNew = results.every(r => r.status === 'new');
+  if (allNew && Array.isArray(window._importAllBatch)) { await _doVerifyImport(_gallusVerifyPlayers); return; }
+  const anyDiff = results.some(r => r.status === 'different'), anyNew = results.some(r => r.status === 'new');
+  const btn = (label, fn, bg, fg) => `<button onclick="${fn}" style="padding:9px 16px;background:${bg};color:${fg};border:${bg === '#fff' ? '1px solid #ccc' : 'none'};border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">${label}</button>`;
+  const actions = [btn('Cancel', 'gallusPreCheckCancel()', '#fff', '#444')];
+  if (anyDiff) {
+    actions.push(btn(anyNew ? 'Keep sheet scores (import only the new)' : 'Keep sheet scores', "gallusPreCheckGo('keep')", '#1565c0', '#fff'));
+    actions.push(btn('Overwrite with Gallus', "gallusPreCheckGo('overwrite')", '#c62828', '#fff'));
+  } else if (anyNew) actions.push(btn('Import the new scores', "gallusPreCheckGo('keep')", '#2e7d32', '#fff'));
+  else actions.push(btn('Mark reconciled (nothing to import)', "gallusPreCheckGo('keep')", '#2e7d32', '#fff'));
+  document.getElementById('gallusPreCheckModal')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="gallusPreCheckModal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9300;display:flex;align-items:center;justify-content:center;padding:16px">
+      <div style="background:#fff;border-radius:10px;padding:22px;width:100%;max-width:560px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 4px 24px rgba(0,0,0,.3)">
+        <div style="font-weight:700;font-size:16px;margin-bottom:4px">🔎 Check before importing</div>
+        <div style="font-size:12px;color:#555;margin-bottom:10px">${fb} 9 · ${fmtDate(String(date))} — Gallus scores compared with what is already on the scorecard. Nothing has been changed yet.</div>
+        <div style="overflow-y:auto;flex:1;margin-bottom:14px">${gallusPreCheckHtml(results)}</div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">${actions.join('')}</div>
+      </div>
+    </div>`);
+}
+
 async function importGallusEntry(id, url) {
   if (!db) return;
   const rows = query(`SELECT * FROM GallusImport WHERE ID=?`, [id]);
@@ -17385,7 +17464,7 @@ async function importGallusEntry(id, url) {
     date: r.Date
   }));
 
-  await _doVerifyImport(_gallusVerifyPlayers);
+  await gallusPreImportCheck(_gallusVerifyPlayers);
 }
 
 function showGallusImport() {
