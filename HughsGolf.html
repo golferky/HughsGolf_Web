@@ -2651,7 +2651,7 @@
       <div id="gallusSubmitDateRow" style="margin-bottom:12px">
         <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:4px">Round Date</div>
         <!-- Officers get a free-form date picker -->
-        <input type="date" id="gallusSubmitDate" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;box-sizing:border-box;display:none">
+        <input type="date" id="gallusSubmitDate" onchange="renderGallusFetchCheck()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;box-sizing:border-box;display:none">
         <!-- Players get a dropdown of scheduled dates -->
         <select id="gallusSubmitDateSelect" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;display:none"></select>
       </div>
@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.11';
+const APP_VERSION = '20261009.12';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -15804,7 +15804,7 @@ function showGallusSubmit() {
 
   if (isOfficer) {
     document.getElementById('gallusSubmitTitle').textContent = '📥 Import Round from Gallus';
-    document.getElementById('gallusSubmitSubtitle').textContent = 'Fetch and import scores directly into the entry grid.';
+    document.getElementById('gallusSubmitSubtitle').textContent = 'Fetch a round and add it to the Gallus Queue. Nothing is posted to the scorecard until you import it from the queue.';
     document.getElementById('gallusSubmitDateRow').style.display = '';
     document.getElementById('gallusSubmitDate').style.display = '';
     document.getElementById('gallusSubmitDateSelect').style.display = 'none';
@@ -15879,6 +15879,9 @@ async function doGallusSubmit() {
     // Apply any front/back override the admin may have changed
     const _fbOverride = document.getElementById('gallusFrontBackOverride')?.value;
     if (_fbOverride) window._pendingGallusImport.frontBack = _fbOverride;
+    // The date can be changed after the fetch: import under the date that is showing now (it used to keep the date from the fetch).
+    const _dateNow = gallusDateFromInput(document.getElementById('gallusSubmitDate')?.value);
+    if (_dateNow) window._pendingGallusImport.today = _dateNow;
     showGallusNameRemapModal(window._pendingGallusImport);
     return;
   }
@@ -15985,12 +15988,14 @@ async function doGallusSubmit() {
     } else {
       okEl.innerHTML = `✓ Scorecard fetched — ${players.length} player(s).<br>
 <span style="font-size:12px;color:#1b5e20">9 holes detected: &nbsp;
-<select id="gallusFrontBackOverride" style="font-size:12px;padding:2px 6px;border:1px solid #a5d6a7;border-radius:4px;color:#1b5e20;font-weight:700">
+<select id="gallusFrontBackOverride" onchange="renderGallusFetchCheck()" style="font-size:12px;padding:2px 6px;border:1px solid #a5d6a7;border-radius:4px;color:#1b5e20;font-weight:700">
   <option value="Front"${frontBack!=='Back'?' selected':''}>Front</option>
   <option value="Back"${frontBack==='Back'?' selected':''}>Back</option>
 </select> &nbsp;— verify before importing</span>`;
     }
+    okEl.innerHTML += '<div id="gallusFetchCheck" style="margin-top:10px;padding-top:8px;border-top:1px solid #c8e6c9;font-size:12px;color:#333;text-align:left"></div>';
     okEl.style.display = 'block';
+    renderGallusFetchCheck();
     return;
   } catch(e) {
     errEl.textContent = 'Error: ' + e.message;
@@ -15998,6 +16003,23 @@ async function doGallusSubmit() {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📥 Fetch & Import'; }
   }
 } // end doGallusSubmit
+
+// Right after a round is fetched: compare it with what is already on the scorecard for the chosen date and nine, so a wrong date or
+// a round that is already recorded shows up BEFORE it is added to the queue. Display only; it re-runs when the date or nine changes.
+function renderGallusFetchCheck() {
+  const pi = window._pendingGallusImport, box = document.getElementById('gallusFetchCheck');
+  if (!pi || !box) return;
+  const date = gallusDateFromInput(document.getElementById('gallusSubmitDate')?.value) || String(pi.today || '');
+  const fb = document.getElementById('gallusFrontBackOverride')?.value || pi.frontBack || 'Front';
+  const isPS = !!(date && isDatePostSeason(String(date)));
+  const players = (pi.players || []).map(p => ({ resolvedName: (pi.nameOverrides && pi.nameOverrides[p.name]) || resolveGallusPlayerName(p.name) || p.name, gallusName: p.name, scores: p.scores }));
+  const results = gallusCompareScores(players, n => gallusExistingNine(n, date, fb, isPS));
+  const same = results.filter(r => r.status === 'same').length, diff = results.filter(r => r.status === 'different').length;
+  const verdict = diff ? '<span style="color:#c62828;font-weight:700">⚠ Some scores differ from the scorecard for this date</span>'
+    : same === results.length ? '<span style="color:#1565c0;font-weight:700">= These scores are already on the scorecard for this date</span>'
+    : '<span style="color:#2e7d32;font-weight:700">✓ Nothing conflicts with the scorecard for this date</span>';
+  box.innerHTML = `<div style="font-weight:700;margin-bottom:4px">🔎 Compared with the scorecard (${fb} 9, ${fmtDate(String(date))})</div><div style="margin-bottom:6px">${verdict}</div>${gallusPreCheckHtml(results)}`;
+}
 
 // ── Import commit (called after officer confirms) ─────────────────────────
   function showGallusPaymentModal(playerNames, date) {
