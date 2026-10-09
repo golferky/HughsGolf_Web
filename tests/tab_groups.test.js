@@ -4,7 +4,7 @@ const src = fs.readFileSync(__dirname + '/../HughsGolf.html', 'utf8');
 const layout = {};
 for (const m of src.matchAll(/<div class="subtab-group" data-group="([a-z]+)"[^>]*>([\s\S]*?)\n    <\/div>/g)) layout[m[1]] = [...m[2].matchAll(/data-tab="([a-z]+)"/g)].map(x => x[1]);
 assert.deepStrictEqual(layout, {
-  home: ['home', 'stats'], play: ['scorecard', 'matches', 'stableford', 'skins', 'handicaps'], standings: ['standings'],
+  home: ['home', 'stats'], play: ['scorecard', 'standings', 'matches', 'skins', 'handicaps', 'stableford'],
   money: ['payments', 'prizemoney'], league: ['schedule', 'noshows', 'board', 'whatsnew', 'help'], admin: ['admin'] }, 'group layout');
 // every tab still has its section
 Object.values(layout).flat().forEach(k => assert(src.includes(`id="tab-${k}"`), 'section for ' + k));

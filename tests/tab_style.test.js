@@ -2,7 +2,7 @@
 const fs = require('fs'), assert = require('assert');
 const src = fs.readFileSync(__dirname + '/../HughsGolf.html', 'utf8');
 const groups = [...src.matchAll(/<div class="gtab(?: active)?" data-group="([a-z]+)">([^<]*)/g)].map(m => ({ key: m[1], label: m[2] }));
-assert.deepStrictEqual(groups.map(g => g.key), ['home', 'play', 'standings', 'money', 'league', 'admin']);
+assert.deepStrictEqual(groups.map(g => g.key), ['home', 'play', 'money', 'league', 'admin']);
 groups.forEach(g => assert(/^[^A-Za-z0-9\s]/.test(g.label), `group ${g.key} starts with an emoji: ${g.label}`));
 const tabs = [...src.matchAll(/<div class="tab(?: active)?" data-tab="([a-z]+)"[^>]*>([^<]*)<\/div>/g)].map(m => ({ key: m[1], label: m[2] }));
 assert(tabs.length === 16, 'all 16 tabs are still there: ' + tabs.length);
