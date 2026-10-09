@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.12';
+const APP_VERSION = '20261009.13';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -16217,6 +16217,7 @@ function renderGallusFetchCheck() {
 
     const importedNames = [];
     const skippedNames = [];
+    const autoReconciled = [];
     const nameOverrides = window._pendingGallusImport?.nameOverrides || {};
     for (const p of players) {
       const resolvedName = nameOverrides[p.name] || resolveGallusPlayerName(p.name) || p.name;
@@ -16252,8 +16253,9 @@ function renderGallusFetchCheck() {
         !isFront?(h[0]??null):null, !isFront?(h[1]??null):null, !isFront?(h[2]??null):null,
         !isFront?(h[3]??null):null, !isFront?(h[4]??null):null, !isFront?(h[5]??null):null,
         !isFront?(h[6]??null):null, !isFront?(h[7]??null):null, !isFront?(h[8]??null):null,
-        0, sentBy
+        gallusMatchFlag(resolvedName, today, frontBack, h), sentBy      // already on the scorecard exactly -> auto-reconciled
       ];
+      if (vals[26] === 1) autoReconciled.push(resolvedName);
       try {
         db.run(`INSERT INTO GallusImport
           (League,Date,ImportDate,URL,Owner,GallusName,ResolvedName,FrontBack,
@@ -16285,7 +16287,10 @@ function renderGallusFetchCheck() {
     document.getElementById('gallusSubmitUrl').value = '';
     document.getElementById('gallusSubmitModal').style.display = 'none';
     const skippedMsg = skippedNames.length ? ` (skipped: ${skippedNames.join(', ')})` : '';
-    showToast(`✓ Imported: ${importedNames.join(', ')}${skippedMsg}`, '#2e7d32', 4000);
+    const _differ = importedNames.length - autoReconciled.length;
+    const _recMsg = !importedNames.length ? '' : !_differ ? ` — all ${autoReconciled.length} already match the scorecard (auto-reconciled)`
+      : ` — ${autoReconciled.length ? autoReconciled.length + ' auto-reconciled, ' : ''}${_differ} not matching the scorecard yet (see the Gallus Queue)`;
+    showToast(`✓ Imported: ${importedNames.join(', ')}${skippedMsg}${_recMsg}`, _differ ? '#e65100' : '#2e7d32', 6000);
 
     // Show payment collection modal if anyone was imported; Done button navigates to gallus queue
     if (importedNames.length > 0) {
@@ -16699,6 +16704,16 @@ function loadGallusQueue() {
       } else {
         statusHtml = `<span style="color:#b71c1c;font-weight:600">✗ Not Used</span>`;
         bg = '#fff9c4';
+        // Already some scores on the scorecard for this player and night? Say which holes differ, so the admin can ask the scorekeeper.
+        try {
+          const _isFr = (r.FrontBack || 'Front') !== 'Back';
+          const _sc = _isFr ? [r.H1,r.H2,r.H3,r.H4,r.H5,r.H6,r.H7,r.H8,r.H9] : [r.H10,r.H11,r.H12,r.H13,r.H14,r.H15,r.H16,r.H17,r.H18];
+          const _cmp = gallusCompareScores([{ resolvedName: player, gallusName: player, scores: _sc }], n => gallusExistingNine(n, r.Date, r.FrontBack || 'Front', isDatePostSeason(String(r.Date))))[0];
+          if (_cmp.status === 'different') {
+            statusHtml = `<span style="color:#e65100;font-weight:700">⚠ Differs from the scorecard</span><div style="font-size:11px;color:#e65100;margin-top:2px">${_cmp.diffs.map(d => `H${d.hole}: sheet ${d.sheet} → Gallus ${d.gallus}`).join(' · ')}</div><div style="font-size:10px;color:#888">Check with the scorekeeper${_sentBy ? ' (' + escapeHtml(_sentBy) + ')' : ''}, then import or clear</div>`;
+            bg = '#ffe0b2';
+          }
+        } catch (e) {}
       }
 
       let playerCell;
@@ -16895,7 +16910,7 @@ async function importAllPendingGallus() {
           !isFront?(h[0]??null):null, !isFront?(h[1]??null):null, !isFront?(h[2]??null):null,
           !isFront?(h[3]??null):null, !isFront?(h[4]??null):null, !isFront?(h[5]??null):null,
           !isFront?(h[6]??null):null, !isFront?(h[7]??null):null, !isFront?(h[8]??null):null,
-          0, sentBy
+          gallusMatchFlag(resolvedName, today, frontBack, h), sentBy      // already on the scorecard exactly -> auto-reconciled
         ]);
       }
 
@@ -17391,6 +17406,14 @@ function gallusExistingNine(player, date, frontBack, isPS) {
     isPS ? [player, date, frontBack] : [player, date]);
   const r = rows[0]; if (!r) return null;
   return [r['1'], r['2'], r['3'], r['4'], r['5'], r['6'], r['7'], r['8'], r['9']];
+}
+// 1 when this player's Gallus nine already matches the scorecard exactly (so the queue row can be reconciled automatically), else 0.
+function gallusMatchFlag(name, date, frontBack, scores) {
+  try {
+    const isPS = !!(date && isDatePostSeason(String(date)));
+    const r = gallusCompareScores([{ resolvedName: name, gallusName: name, scores }], n => gallusExistingNine(n, date, frontBack, isPS))[0];
+    return r.status === 'same' ? 1 : 0;
+  } catch (e) { return 0; }
 }
 // Mark a queued round done without writing any scores (every player was already on the sheet, or the officer kept the sheet's scores).
 async function _gallusMarkGroupReconciled() {
