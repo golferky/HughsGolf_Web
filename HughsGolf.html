@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.10';
+const APP_VERSION = '20261009.11';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -22119,13 +22119,20 @@ function buildEntryGrid() {
     }
   }
 
+  // Post season: the one entry grid covers BOTH weeks, so CTP holes and winners come from both post-season dates
+  // (Week 2's winners used to be left out because only the entry date, Week 1, was queried).
+  const ctpDateFilter = isPostSeason && lp?.PostSeasonDt ? (() => {
+    const ps = parsePostSeasonDates(lp.PostSeasonDt);
+    return `Date IN (${ps.week1},${ps.week2})`;
+  })() : `Date=${date}`;
+
   // CTP holes from Payments (winners recorded) — fall back to empty
-  ctpHoles = query(`SELECT DISTINCT Detail FROM Payments WHERE Date=${date} AND Desc='CTP' AND Detail LIKE '#%'`)
+  ctpHoles = query(`SELECT DISTINCT Detail FROM Payments WHERE ${ctpDateFilter} AND Desc='CTP' AND Detail LIKE '#%'`)
     .map(r => parseInt(r.Detail.replace('#','')));
 
   // CTP winners by player name — for badge display in player cell
   window.ctpWinnersByPlayer = {};
-  query(`SELECT Player, Detail FROM Payments WHERE Date=${date} AND "Desc"='CTP' AND Detail LIKE '#%' AND Player != 'Kitty'`)
+  query(`SELECT Player, Detail FROM Payments WHERE ${ctpDateFilter} AND "Desc"='CTP' AND Detail LIKE '#%' AND Player != 'Kitty'`)
     .forEach(r => {
       const hole = r.Detail.replace('#','');
       if (!window.ctpWinnersByPlayer[r.Player]) window.ctpWinnersByPlayer[r.Player] = [];
