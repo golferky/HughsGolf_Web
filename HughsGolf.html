@@ -696,7 +696,6 @@
   <div class="tabs" id="mainTabs">
     <div class="gtab active" data-group="home">🏠 Home</div>
     <div class="gtab" data-group="play">⛳ Play</div>
-    <div class="gtab" data-group="standings">🏆 Standings</div>
     <div class="gtab" data-group="money">💰 Money</div>
     <div class="gtab" data-group="league">📅 League<span id="leagueTabDot" style="display:none"></span></div>
     <div class="gtab" data-group="admin">⚙️ Admin</div>
@@ -708,13 +707,11 @@
     </div>
     <div class="subtab-group" data-group="play" style="display:none">
       <div class="tab" data-tab="scorecard" id="scorecardTabBtn">📝 Scores</div>
+      <div class="tab" data-tab="standings">🏆 Standings</div>
       <div class="tab" data-tab="matches">⚔️ Matches</div>
-      <div class="tab" data-tab="stableford">⛳ Stableford</div>
       <div class="tab" data-tab="skins">🎯 Skins/CTPs</div>
       <div class="tab" data-tab="handicaps">📈 Handicaps</div>
-    </div>
-    <div class="subtab-group" data-group="standings" style="display:none">
-      <div class="tab" data-tab="standings">🏆 Standings</div>
+      <div class="tab" data-tab="stableford">⛳ Stableford</div>
     </div>
     <div class="subtab-group" data-group="money" style="display:none">
       <div class="tab" data-tab="payments">💵 Payments</div>
@@ -2773,7 +2770,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.2';
+const APP_VERSION = '20261009.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
