@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.6';
+const APP_VERSION = '20261009.8';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -15770,6 +15770,22 @@ async function doImpersonate() {
   window.location.reload();
 }
 
+// Dates a Gallus round can be submitted for: the season's scheduled nights plus the two post-season dates (oldest first).
+function gallusRoundDates(season) {
+  const out = {};
+  query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= ? AND Date < ?`, [String(season) + '0101', String(season + 1) + '0101'])
+    .forEach(r => { out[String(r.sDate)] = ''; });
+  try {
+    const ps = getSeasonSettings(season)?.PostSeasonDt ? parsePostSeasonDates(getSeasonSettings(season).PostSeasonDt) : null;
+    if (ps) { out[String(ps.week1)] = 'Post Season Wk 1'; out[String(ps.week2)] = 'Post Season Wk 2'; }
+  } catch (e) {}
+  return Object.keys(out).sort().map(d => ({ date: d, label: `${d.substring(4, 6)}/${d.substring(6, 8)}/${d.substring(0, 4)}${out[d] ? ' (' + out[d] + ')' : ''}` }));
+}
+// The league night "now": the latest date on or before today, else the next one coming up.
+function gallusDefaultRoundDate(dates, todayInt) {
+  const past = dates.filter(d => d.date <= todayInt), next = dates.filter(d => d.date > todayInt);
+  return (past.length ? past[past.length - 1] : next[0])?.date || todayInt;
+}
 function showGallusSubmit() {
   if (!currentUser) { alert('Please log in first.'); return; }
   const isOfficer = currentUser.role === 'admin' || currentUser.role === 'developer';
@@ -15783,9 +15799,8 @@ function showGallusSubmit() {
   // Current league date = most recent past scheduled date, or next upcoming if none
   const todayInt = new Date().toISOString().substring(0,10).replace(/-/g,'');
   const season = new Date().getFullYear();
-  const lastLeagueDate = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date <= ? ORDER BY Date DESC LIMIT 1`, [todayInt])[0]?.sDate
-                      || query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date > ? ORDER BY Date ASC LIMIT 1`, [todayInt])[0]?.sDate
-                      || todayInt;
+  const roundDates = gallusRoundDates(season);
+  const lastLeagueDate = gallusDefaultRoundDate(roundDates, todayInt);
 
   if (isOfficer) {
     document.getElementById('gallusSubmitTitle').textContent = '📥 Import Round from Gallus';
@@ -15815,15 +15830,9 @@ function showGallusSubmit() {
     document.getElementById('gallusSubmitDateRow').style.display = '';
     document.getElementById('gallusSubmitDate').style.display = 'none';
     // Populate all season scheduled dates, default to current league date
-    const schedDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" AND Date >= ? AND Date < ? ORDER BY Date`,
-      [String(season)+'0101', String(season+1)+'0101']);
     const sel = document.getElementById('gallusSubmitDateSelect');
-    if (schedDates.length) {
-      sel.innerHTML = schedDates.map(r => {
-        const d = String(r.sDate);
-        const label = `${d.substring(4,6)}/${d.substring(6,8)}/${d.substring(0,4)}`;
-        return `<option value="${d}">${label}</option>`;
-      }).join('');
+    if (roundDates.length) {
+      sel.innerHTML = roundDates.map(r => `<option value="${r.date}">${r.label}</option>`).join('');
       sel.value = String(lastLeagueDate); // pre-select current league date
     } else {
       sel.innerHTML = '<option value="">No scheduled dates</option>';
@@ -17250,7 +17259,8 @@ async function _doVerifyImport(players) {
   if (!players.length) return;
   _gallusData = {
     players: players.map(p => ({ name: p.resolvedName, gallusName: p.gallusName, scores: p.scores })),
-    frontBack: _gallusVerifyPlayers[0].frontBack
+    frontBack: _gallusVerifyPlayers[0].frontBack,
+    date: _gallusVerifyPlayers[0].date
   };
   for (const p of _gallusVerifyPlayers) {
     db.run(`UPDATE GallusImport SET Reconciled=1 WHERE ID=?`, [p.id]);
@@ -17286,9 +17296,10 @@ async function importGallusEntry(id, url) {
 
   if (gi.Date) {
     const sel = document.getElementById('entryDate');
-    const opt = Array.from(sel.options).find(o => o.value === gi.Date);
+    const entryDateValue = gallusEntryDateFor(gi.Date);          // a Week 2 card opens the post-season entry
+    const opt = Array.from(sel.options).find(o => o.value === entryDateValue);
     if (opt) {
-      sel.value = gi.Date;
+      sel.value = entryDateValue;
       // Set entry9 to the correct Front/Back BEFORE building grid so entryState and 'nine' align
       const _e9el = document.getElementById('entry9');
       if (_e9el && gi.FrontBack) _e9el.value = gi.FrontBack;
@@ -17406,6 +17417,16 @@ function cancelGallusReview() {
 
 // The nine a post-season night plays ('Front' / 'Back'): Week 1 follows the season's Week 1 nine setting, Week 2 is the other.
 // Returns null for a regular-season date.
+// The Scores screen shows the whole post season as ONE entry date (Week 1's date). A Gallus card dated on either post-season night
+// opens that entry; every other date is its own entry.
+function gallusEntryDateFor(date) {
+  const d = String(date || '');
+  try {
+    const ctx = getPostSeasonContextForDate(d);
+    if (ctx) return String(parsePostSeasonDates(ctx.postSeasonDt).week1);
+  } catch (e) {}
+  return d;
+}
 function psNineForDate(date) {
   let ctx = null;
   try { ctx = getPostSeasonContextForDate(date); } catch (e) {}
@@ -17421,7 +17442,8 @@ async function doGallusConfirm() {
   // Post-season: the grid holds all 18 holes (Front = slots 0-8, Back = slots 9-17) and each night plays one nine. A Gallus card goes
   // into the nine that night plays; a card for the other nine is refused instead of being written into the wrong holes.
   const isPS = isPostSeasonEntryMode();
-  const psDate = document.getElementById('entryDate').value;
+  // The card's own date decides which post-season night (and so which nine) it belongs to; the entry screen only has Week 1's date.
+  const psDate = (_gallusData.date && isDatePostSeason(String(_gallusData.date))) ? String(_gallusData.date) : document.getElementById('entryDate').value;
   const psNine = isPS ? psNineForDate(psDate) : null;
   if (isPS && psNine && psNine !== frontBack) {
     const msg = `This Gallus card is the ${frontBack} 9, but ${fmtDate(psDate)} is the ${psNine} 9 night. Pick the ${frontBack} 9 night's date and import again.`;
@@ -17514,7 +17536,8 @@ async function doGallusConfirm() {
   }
 
   // Batch write all scores at once — don't call savePlayerScoreNow per player (too slow)
-  const date = document.getElementById('entryDate').value;
+  // Post season: the nine is saved on the night it was played (the card's date), not on the entry screen's single date.
+  const date = isPS ? psDate : document.getElementById('entryDate').value;
   const league = "Hugh's";
   const nine = isPostSeasonEntryMode()
     ? courseData.all18
