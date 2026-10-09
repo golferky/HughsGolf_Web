@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.8';
+const APP_VERSION = '20261009.9';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -16658,7 +16658,7 @@ function loadGallusQueue() {
     html += `<tr class="gallus-group-row" data-date="${g.date||''}">
       <td colspan="4" style="background:#1b4d2e;color:#d4a843;padding:6px 10px;font-size:11px;font-weight:700;font-family:'DM Mono',monospace" title="${escapeHtml(g.url||'')}">
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <div><span>📅 ${dateDisplay} &nbsp;·&nbsp; ${g.url ? `<a href="${escapeHtml(g.url)}" target="_blank" style="color:#d4a843;text-decoration:underline">${escapeHtml(shortUrl)}</a>` : escapeHtml(shortUrl)}</span>${_byLine}</div>
+          <div><span>📅 ${dateDisplay}${allReconciled ? '' : `<span onclick="editGallusDate('${_safeAllIds}')" style="cursor:pointer;opacity:.7;margin-left:4px" title="Change the round date">✏️</span>`} &nbsp;·&nbsp; ${g.url ? `<a href="${escapeHtml(g.url)}" target="_blank" style="color:#d4a843;text-decoration:underline">${escapeHtml(shortUrl)}</a>` : escapeHtml(shortUrl)}</span>${_byLine}</div>
           ${importBtn}
         </div>
       </td>
@@ -16968,6 +16968,63 @@ function editGallusRecorder(idsCsv) {
       </div>
     </div>`;
   document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+// Change the date of a queued round (it was imported under the wrong date). Only for rounds not yet posted to the scorecard.
+function gallusDateFromInput(v) {
+  const t = String(v || '').trim();
+  if (/^\d{8}$/.test(t)) return t;
+  const m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? m[1] + m[2] + m[3] : '';
+}
+function editGallusDate(idsCsv) {
+  if (!db) return;
+  const ids = idsCsv.split(',').map(s => s.trim()).filter(Boolean);
+  if (!ids.length) return;
+  const ph = ids.map(() => '?').join(',');
+  const rows = query(`SELECT Date, ImportedToScores, Reconciled FROM GallusImport WHERE ID IN (${ph})`, ids);
+  if (rows.some(r => r.ImportedToScores === 1 || r.Reconciled === 1)) { alert('This round has already been posted to the scorecard. Use Undo Import first, then change the date.'); return; }
+  const cur = String(rows[0]?.Date || '');
+  const season = parseInt(cur.substring(0, 4)) || new Date().getFullYear();
+  const dates = gallusRoundDates(season);
+  const opts = dates.map(d => `<option value="${d.date}"${d.date === cur ? ' selected' : ''}>${d.label}</option>`).join('');
+  const curIso = cur.length === 8 ? `${cur.substring(0, 4)}-${cur.substring(4, 6)}-${cur.substring(6, 8)}` : '';
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="gallusDateModal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9200;display:flex;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:8px;padding:24px;min-width:320px;max-width:400px;box-shadow:0 4px 24px rgba(0,0,0,.3)">
+        <div style="font-weight:700;font-size:15px;margin-bottom:6px">📅 Change round date</div>
+        <div style="font-size:12px;color:#555;margin-bottom:12px">Currently <strong>${escapeHtml(gallusRoundDates(season).find(d => d.date === cur)?.label || cur)}</strong>. Pick the night this round was actually played.</div>
+        <select id="gallusDateSelect" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:14px;margin-bottom:10px">${opts}</select>
+        <div style="font-size:11px;color:#777;margin-bottom:4px">or any other date:</div>
+        <input id="gallusDateOther" type="date" value="${curIso}" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:14px;margin-bottom:16px;box-sizing:border-box">
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="document.getElementById('gallusDateModal').remove()" style="padding:7px 16px;background:#eee;border:none;border-radius:4px;cursor:pointer;font-size:13px">Cancel</button>
+          <button onclick="_saveGallusDate('${idsCsv.replace(/'/g, "\\'")}')" style="padding:7px 16px;background:#1565c0;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600">Save</button>
+        </div>
+      </div>
+    </div>`);
+  // choosing from the list fills the date box, so there is only ever one value to save
+  const sel = document.getElementById('gallusDateSelect'), other = document.getElementById('gallusDateOther');
+  sel.onchange = () => { const d = sel.value; other.value = `${d.substring(0, 4)}-${d.substring(4, 6)}-${d.substring(6, 8)}`; };
+}
+async function _saveGallusDate(idsCsv) {
+  const newDate = gallusDateFromInput(document.getElementById('gallusDateOther')?.value);
+  const ids = idsCsv.split(',').map(s => s.trim()).filter(Boolean);
+  if (!newDate || !ids.length) { alert('Please pick a valid date.'); return; }
+  const ph = ids.map(() => '?').join(',');
+  const rows = query(`SELECT ID, Date, ResolvedName, ImportedToScores, Reconciled FROM GallusImport WHERE ID IN (${ph})`, ids);
+  if (rows.some(r => r.ImportedToScores === 1 || r.Reconciled === 1)) { alert('This round has already been posted to the scorecard. Use Undo Import first.'); return; }
+  const oldDate = String(rows[0]?.Date || '');
+  document.getElementById('gallusDateModal')?.remove();
+  if (newDate === oldDate) return;
+  await serverRun(`UPDATE GallusImport SET Date=? WHERE ID IN (${ph}) AND (ImportedToScores IS NULL OR ImportedToScores=0) AND (Reconciled IS NULL OR Reconciled=0)`, [newDate, ...ids]);
+  try {
+    const t = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    await serverRun(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
+      [t, 'INFO', 'editGallusDate', 'HughsGolf', 'Gallus round date changed', `${oldDate} -> ${newDate} players=${rows.map(r => r.ResolvedName).join(', ')} by=${currentUser?.name || 'unknown'}`, t]);
+  } catch (e) {}
+  await saveDBToServer();
+  loadGallusQueue();
 }
 
 async function _saveGallusRecorder(idsCsv, sentBy) {
