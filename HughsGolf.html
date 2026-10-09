@@ -137,6 +137,8 @@
     gap: 5px;
     line-height: 1;
   }
+  .psyear { margin-left: auto; align-self: center; font-size: 12px; font-weight: 700; color: var(--green); display: inline-flex; align-items: center; gap: 6px; padding-bottom: 4px; white-space: nowrap; }
+  .psyear select { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; font-weight: 600; }
   .tab:hover { background: #ddd3bb; }
   .tab.active { color: #fff; background: var(--green); border-bottom-color: var(--gold); }
 
@@ -719,6 +721,7 @@
       <div class="tab" data-tab="ps_standings">🏅 Standings</div>
       <div class="tab" data-tab="ps_skins">🎲 Skins &amp; CTPs</div>
       <div class="tab" data-tab="ps_earned">🎁 Earned</div>
+      <label class="psyear">📅 Season <select id="psYearSelect" onchange="psTabSetSeason(this.value)"></select></label>
     </div>
     <div class="subtab-group" data-group="money" style="display:none">
       <div class="tab" data-tab="payments">💵 Payments</div>
@@ -2781,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.4';
+const APP_VERSION = '20261009.5';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -22793,10 +22796,17 @@ function psTabSetSeason(v) {
   if (t) refreshTab(t);
 }
 function psTabMoney(v) { return '$' + (Math.round((parseFloat(v) || 0) * 100) / 100).toFixed(2); }
+// The one Season dropdown sits in the Post Season sub-tab bar and applies to all four screens.
+function psTabFillYear(season) {
+  const sel = document.getElementById('psYearSelect'); if (!sel) return;
+  const years = psTabSeasons();
+  sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+  sel.value = String(season);
+  sel.disabled = years.length < 2;
+}
 function psTabHeader(title, season, note) {
-  const seasons = psTabSeasons();
-  const sel = seasons.length > 1 ? `<select onchange="psTabSetSeason(this.value)" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px">${seasons.map(y => `<option value="${y}"${y === season ? ' selected' : ''}>${y}</option>`).join('')}</select>` : `<span style="font-size:12px;color:#777">${season}</span>`;
-  return `<div class="card"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><span>🏁 Post Season — ${title}</span>${sel}</div>` +
+  psTabFillYear(season);
+  return `<div class="card"><div class="card-header"><span>🏁 Post Season ${season} — ${title}</span></div>` +
     (note ? `<div style="padding:8px 16px;font-size:12px;color:#777;border-bottom:1px solid #eee">${note}</div>` : '') + `<div style="padding:12px 16px">`;
 }
 const PS_TAB_END = '</div></div>';

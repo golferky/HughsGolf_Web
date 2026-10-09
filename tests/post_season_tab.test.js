@@ -10,7 +10,7 @@ const plain = x => JSON.parse(JSON.stringify(x));
 const ctx = vm.createContext({ Math, parseFloat, parseInt, String, Object, Array, JSON, Number, console, window: {}, courseData: null, loadCourse() {}, escapeHtml: x => String(x), fmtDate: d => d,
   ccRosterEligible: p => !/^Sub/.test(p), refreshTab() {}, document: { getElementById: () => null, querySelector: () => null }, getCurrentSeason: () => 2026,
   query: () => [{ Season: 2026 }, { Season: 2025 }] });
-['psLeaderboardRanks', 'psLeaderboardShotsBack', 'psLeaderboardCcPotential', 'psCcPrizeSchedule', 'psCcMissedWeek', 'psTabSeasons', 'psTabSeason', 'psTabMoney', 'psBoardBuild', 'psEarnedBuild'].forEach(n => vm.runInContext(extract(n), ctx));
+['psLeaderboardRanks', 'psLeaderboardShotsBack', 'psLeaderboardCcPotential', 'psCcPrizeSchedule', 'psCcMissedWeek', 'psTabSeasons', 'psTabSeason', 'psTabMoney', 'psTabFillYear', 'psTabHeader', 'psBoardBuild', 'psEarnedBuild'].forEach(n => vm.runInContext(extract(n), ctx));
 const ps = { week1: 20260929, week2: 20261006 };
 const sc = (p, D, g, n) => ({ Player: p, D, Gross: g, Net: n });
 
@@ -32,6 +32,13 @@ assert.strictEqual(earned.find(e => e.name === 'Dan').refund, 10, 'a refund show
 // season picker
 assert.strictEqual(ctx.psTabSeason(), 2026); ctx.window._psTabSeason = 2025; assert.strictEqual(ctx.psTabSeason(), 2025); ctx.window._psTabSeason = 1999; assert.strictEqual(ctx.psTabSeason(), 2026, 'unknown season falls back');
 assert.strictEqual(ctx.psTabMoney(28), '$28.00');
+// one Season dropdown for the whole tab (top bar), filled for the selected year; the screens no longer carry their own
+const sel = { innerHTML: '', value: '', disabled: false };
+ctx.document.getElementById = id => id === 'psYearSelect' ? sel : null;
+const h = ctx.psTabHeader('Standings', 2025, 'note');
+assert(/Post Season 2025 — Standings/.test(h) && !/<select/.test(h), 'screen header names the year, no dropdown of its own');
+assert(/<option value="2026">2026<\/option><option value="2025">2025<\/option>/.test(sel.innerHTML) && sel.value === '2025' && sel.disabled === false, 'top dropdown lists the post-season years and shows the selected one');
+assert(/<select id="psYearSelect" onchange="psTabSetSeason\(this\.value\)">/.test(src) && /data-group="postseason"[\s\S]{0,900}psYearSelect/.test(src), 'dropdown lives in the Post Season sub-tab bar');
 
 // wiring: loaders registered, read-only, tabs and sections exist
 const loaders = ['loadPsScores', 'loadPsStandings', 'loadPsSkins', 'loadPsEarned', 'psTabGather'].map(n => extract(n));
