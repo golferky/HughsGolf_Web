@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.5';
+const APP_VERSION = '20261009.6';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -5560,9 +5560,32 @@ async function loadHelpTab() {
         2. Search for and select <strong>${escapeHtml(course)}</strong> as your course<br>
         3. Start a round and enter your scores hole-by-hole as you play<br>
         4. When finished, open the completed round and tap <strong>Share</strong> to copy the scorecard URL<br>
-        5. Send that link to an admin — they'll import it directly into the league app
+        5. Copy that link and use <strong>Submit Round</strong> on the league page (see <em>Submit Your Group's Round</em> below)
       </div>
       <p style="margin:0;color:#666;font-size:13px">Check your Handicaps tab after each round to confirm your scores were recorded correctly.</p>
+    `),
+    helpAccordionItem('help_gallus_submit', '📤', "Submit Your Group's Round (Gallus)", `
+      <p style="margin:0 0 10px">Each group picks <strong>one person</strong> to keep score in Gallus for everyone in the group. When the round is finished, that person sends the link to the league. You do not need to text it to anyone.</p>
+
+      <p style="margin:0 0 6px;font-weight:700;color:#1b4d2e">One-time setup (do this before league night)</p>
+      <ol style="margin:0 0 14px;padding-left:20px;line-height:2;font-size:13px">
+        <li>On your iPhone, open the league page in <strong>Safari</strong> and log in with your name and password</li>
+        <li>Tap the <strong>Share</strong> button, then <strong>Add to Home Screen</strong>. You now have a Hugh's Golf icon that opens the league page in one tap</li>
+      </ol>
+
+      <p style="margin:0 0 6px;font-weight:700;color:#1b4d2e">On league night, after the round</p>
+      <ol style="margin:0 0 14px;padding-left:20px;line-height:2;font-size:13px">
+        <li>In Gallus, make sure every player's score is in for every hole</li>
+        <li>Tap <strong>Share Scores</strong>. In the share sheet, tap <strong>Copy</strong> (not Messages)</li>
+        <li>Open the Hugh's Golf League icon and log in if asked</li>
+        <li>On the <strong>Home</strong> tab, tap the purple <strong>📤 Submit Round</strong> button</li>
+        <li>Paste the link into the box and check that the <strong>date</strong> is tonight's league date</li>
+        <li>Tap <strong>Submit to Admin</strong>. You will see "Submitted!" and the box closes by itself</li>
+      </ol>
+
+      <p style="margin:0 0 8px;font-size:13px;color:#444"><strong>What happens next:</strong> your round goes into the admin's queue. An admin checks the scores and posts them to the scorecard. Look at the Handicaps tab afterward to confirm everyone in your group is there.</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#444"><strong>One link covers your whole group.</strong> Submit it once. If you submit the same link twice, the admin will see the duplicate and skip it.</p>
+      <p style="margin:0;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:8px 12px;font-size:13px;color:#5d4037">⚠ If the link will not paste, or the page says it is not a valid link, tell an admin right away. Do not retype scores by hand.</p>
     `),
     helpAccordionItem('help_standings', '📈', 'Standings', `
       <p style="margin:0 0 8px">View First Half, Second Half, and Overall standings. Points update live as scores are entered each week.</p>
@@ -5642,6 +5665,7 @@ async function loadHelpTab() {
     `, true),
     helpAccordionItem('help_gallus', '🔁', 'Gallus Queue', `
       <p style="margin:0 0 12px">Go to <strong>Admin → Gallus Queue</strong> after each round to import player scores. Two methods are available:</p>
+      <p style="margin:0 0 12px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;padding:8px 12px;font-size:13px;color:#1b4d2e"><strong>Two steps, on purpose.</strong> Fetching a round or using <strong>Import All Pending</strong> only adds it to the queue: the scorecard is not touched. Scores reach the scorecard only when you press <strong>Import</strong> on a round in the queue (or the gold <strong>Import All</strong>, which posts every unposted round).</p>
 
       <p style="margin:0 0 6px;font-weight:700;color:#1b4d2e">📷 Method 1 — Photo of Paper Scorecard</p>
       <ol style="margin:0 0 14px;padding-left:20px;line-height:2;font-size:13px">
