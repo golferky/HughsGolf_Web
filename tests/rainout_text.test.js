@@ -6,7 +6,7 @@ const plain = x => JSON.parse(JSON.stringify(x));
 let teams, sched, subs, players;
 const ctx = vm.createContext({ String, parseInt, Set, JSON, encodeURIComponent,
   query: (sql) => /FROM Players/.test(sql) ? players : /FROM Teams/.test(sql) ? teams : /FROM Schedule/.test(sql) ? (sched ? [sched] : []) : /FROM Subs/.test(sql) ? subs : [] });
-['rainoutRoster', 'rainoutBatches', 'rainoutSmsHref', 'rainoutFoursomes', 'rainoutAssignUnreachable', 'rainoutContacts'].forEach(f => vm.runInContext(extract(f), ctx));
+['rainoutRoster', 'rainoutBatches', 'rainoutSmsHref', 'rainoutFoursomes', 'rainoutAssignUnreachable', 'rainoutContacts', 'rainoutDateOptions'].forEach(f => vm.runInContext(extract(f), ctx));
 // batches: even, never more than 20
 assert.deepStrictEqual(plain(ctx.rainoutBatches([...Array(24).keys()]).map(b => b.length)), [12, 12]);
 assert.deepStrictEqual(plain(ctx.rainoutBatches([...Array(20).keys()]).map(b => b.length)), [20]);
@@ -41,6 +41,11 @@ assert.deepStrictEqual(plain(ctx.rainoutAssignUnreachable(fours, ['A1'], false))
 // nobody reachable in the foursome / not in any foursome: stranded (admin must call)
 assert.deepStrictEqual(plain(ctx.rainoutAssignUnreachable([{ point: 'A1', members: ['B1'] }], ['A1', 'B1', 'Zed'], true)), { groups: [], stranded: ['A1', 'B1', 'Zed'] });
 assert.deepStrictEqual(plain(ctx.rainoutAssignUnreachable(null, ['Zed'], true)), { groups: [], stranded: ['Zed'] });
+// dates: regular schedule nights plus the post-season weeks, sorted, no duplicates
+assert.deepStrictEqual(plain(ctx.rainoutDateOptions(['20260915', '20260922', '20260929'], { week1: 20260929, week2: 20261006 })),
+  [{ date: '20260915', ps: 0 }, { date: '20260922', ps: 0 }, { date: '20260929', ps: 1 }, { date: '20261006', ps: 2 }]);
+assert.deepStrictEqual(plain(ctx.rainoutDateOptions(['20260915'], null)), [{ date: '20260915', ps: 0 }]);
+assert(/Post Season Week \$\{o\.ps\}/.test(src) && /post-season Week \$\{wk\} round/.test(src), 'post-season labels and message');
 // links
 assert.strictEqual(ctx.rainoutSmsHref(['5025550101', '5025550102'], 'Hi there', true), 'sms:/open?addresses=+15025550101,+15025550102&body=Hi%20there');
 assert.strictEqual(ctx.rainoutSmsHref(['5025550101'], 'Hi', false), 'sms:+15025550101?body=Hi');
