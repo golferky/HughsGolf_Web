@@ -93,7 +93,7 @@ for (const role of ['player', null]) {
 assert(/<span id="viewModeGroup"/.test(src) && !/id="viewAsPlayerBtn"/.test(src), 'header has the 3-way view switcher (old single button replaced)');
 assert(/id="viewAsPlayerBanner"/.test(src));
 assert(/currentUser\.realRole = currentUser\.role;/.test(src), 'login remembers the real role');
-assert.strictEqual((src.match(/'X-Actor-Role': actorRole\(\)/g) || []).length, 7); assert(!/'X-Actor-Role': currentUser\?\.role/.test(src));
+assert.strictEqual((src.match(/'X-Actor-Role': actorRole\(\)/g) || []).length, 8); assert(!/'X-Actor-Role': currentUser\?\.role/.test(src));
 assert(!/isPersistentSessionRole\(currentUser\.role\)/.test(src), 'session logic uses the real role');
 assert(/updateViewAsPlayerUi\(\);\s*\n\s*\n\s*\/\/ League Settings/.test(src), 'applyRoleAccess keeps the switcher in sync');
 assert(/currentUser = null;\s*\n\s*updateViewAsPlayerUi\(\);/.test(src), 'logout clears it');

@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261010.4-sandbox'
+VERSION    = '20261010.6-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1339,6 +1339,117 @@ def _send_permission_request(name, email, phone, carrier, added_by, token):
         if addr:
             sent_text = _send_mail([addr], "Hugh's Golf", f"{added_by} added you as a possible sub for Hugh's Golf League. OK to contact you? {link}")
     return link, sent_email, sent_text
+
+
+def _is_private_host(host):
+    h = (host or '').split(':')[0].lower()
+    return (h in ('localhost', '') or h.startswith(('127.', '10.', '192.168.', '169.254.')) or
+            (h.startswith('172.') and h.split('.')[1:2] and h.split('.')[1].isdigit() and 16 <= int(h.split('.')[1]) <= 31) or h.endswith('.local'))
+
+
+def _contact_address(cur, name):
+    """(address, error) for one player: carrier text gateway, else email (also when they asked for email only)."""
+    cur.execute("SELECT Phone, CellCarrier, Email, COALESCE(ContactMethod,'') FROM Players WHERE Player=?", (name,))
+    r = cur.fetchone()
+    if not r:
+        return None, 'not in the player file'
+    phone, carrier, email, cm = r
+    addr, err = (None, 'email only') if cm == 'email' else sms_address(phone, carrier)
+    if not addr and email:
+        addr, err = email, None
+    return addr, (err or 'no contact info')
+
+
+@app.route('/send-rainout-text', methods=['POST'])
+def send_rainout_text():
+    """Rainout notice: one individual text per player (no group, so no reply-all) with a one-tap confirm link. Officers only.
+    test=true sends only to the officer who is logged in. The sandbox never texts real players (a test to yourself is real)."""
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    actor, role = _audit_actor()
+    if role not in ('admin', 'developer'):
+        return jsonify({'ok': False, 'error': 'Officers only'}), 403
+    b = request.get_json() or {}
+    test = bool(b.get('test'))
+    date = ''.join(c for c in str(b.get('date', '')) if c.isdigit())[:8]
+    players = [actor] if test else [str(p).strip() for p in (b.get('players') or []) if str(p).strip()][:60]
+    message = ' '.join(str(b.get('message', '')).split())[:300]
+    if not players or not message or len(date) != 8:
+        return jsonify({'ok': False, 'error': 'Date, players and a message are required'}), 400
+    base = request.host_url.rstrip('/')
+    if not test and _is_private_host(request.host):
+        return jsonify({'ok': False, 'error': 'Open the app from its public address (not the home-network address) so the confirm link works on players\' phones.'}), 400
+    simulated = ('sandbox' in VERSION.lower()) and not test
+    sent, failed = [], []
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
+        now = now_local().strftime('%Y-%m-%d %H:%M')
+        for name in players:
+            addr, err = _contact_address(cur, name)
+            if not addr:
+                failed.append({'player': name, 'reason': err}); continue
+            cur.execute("SELECT Token FROM RainoutNotice WHERE Date=? AND Player=? AND Test=?", (date, name, 1 if test else 0))
+            row = cur.fetchone()   # re-sending reuses the player's link so a confirmation is never lost
+            token = row[0] if row else uuid.uuid4().hex[:16]
+            if not row:
+                cur.execute("INSERT INTO RainoutNotice (Token, Date, Player, Message, SentAt, SentBy, Test) VALUES (?,?,?,?,?,?,?)",
+                            (token, date, name, message, now, actor, 1 if test else 0))
+            text = ('TEST: ' if test else '') + f"{message} Please tap to confirm - no need to reply: {base}/r/{token}"
+            if simulated or _send_mail([addr], "Hugh's Golf", text):
+                sent.append(name)
+            else:
+                failed.append({'player': name, 'reason': 'send failed'})
+        _log_row(cur, 'send_rainout_text', f'{actor} sent a {"TEST " if test else ""}rainout text for {date} to {len(sent)} of {len(players)}' + (' (sandbox: not actually sent)' if simulated else ''),
+                 f'message={message} failed={[f["player"] for f in failed]}')
+        conn.commit(); conn.close()
+    return jsonify({'ok': True, 'simulated': simulated, 'test': test, 'sent': sent, 'failed': failed})
+
+
+@app.route('/rainout-status')
+def rainout_status():
+    """Officers: who has confirmed the rainout notice for a date."""
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    _actor, role = _audit_actor()
+    if role not in ('admin', 'developer'):
+        return jsonify({'ok': False, 'error': 'Officers only'}), 403
+    date = ''.join(c for c in str(request.args.get('date', '')) if c.isdigit())[:8]
+    conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+    cur = conn.cursor()
+    cur.execute("SELECT Player, SentAt, COALESCE(ConfirmedAt,'') FROM RainoutNotice WHERE Date=? AND Test=0 ORDER BY Player", (date,))
+    rows = [{'player': p, 'sentAt': s, 'confirmedAt': c} for p, s, c in cur.fetchall()]
+    conn.close()
+    return jsonify({'ok': True, 'rows': rows})
+
+
+@app.route('/r/<token>', methods=['GET', 'POST'])
+def rainout_ack(token):
+    """Public one-tap page from the rainout text. GET only shows it (so link previews never confirm); the button POSTs."""
+    import html as _html
+    token = (token or '').strip()[:32]
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
+        cur.execute("SELECT Player, Date, Message, COALESCE(ConfirmedAt,'') FROM RainoutNotice WHERE Token=?", (token,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return _PREF_PAGE.replace('%BODY%', '<h1>Link not valid</h1><p>Please ask the league admin.</p>'), 404
+        name, date, msg, done = row
+        if request.method == 'POST' and not done:
+            done = now_local().strftime('%Y-%m-%d %H:%M')
+            cur.execute("UPDATE RainoutNotice SET ConfirmedAt=? WHERE Token=?", (done, token))
+            _log_row(cur, 'rainout_confirmed', f'{name} confirmed the rainout notice for {date}', f'ip={_audit_ip()}')
+            conn.commit()
+        conn.close()
+    first = _html.escape(name.split()[0])
+    if done:
+        body = f'<h1>Thanks, {first} ✅</h1><p class="ok">You are confirmed. See you at the next round!</p>'
+    else:
+        body = (f'<h1>Hi {first} 👋</h1><p>{_html.escape(msg)}</p><form method="post"><button type="submit" '
+                f'style="padding:14px 22px;font-size:17px;background:#1b4d2e;color:#fff;border:0;border-radius:8px;width:100%">👍 Got it</button></form>')
+    return _PREF_PAGE.replace('%BODY%', body)
 
 
 @app.route('/review-player', methods=['POST'])
@@ -2986,6 +3097,9 @@ def ensure_schema():
         cur.execute("""CREATE TABLE IF NOT EXISTS PlayerSeen (
             Player TEXT NOT NULL, IP TEXT NOT NULL, Device TEXT, FirstSeen TEXT, LastSeen TEXT, Hits INTEGER DEFAULT 0,
             PRIMARY KEY (Player, IP))""")
+        # Rainout notices: one row per player per rainout date (token = the one-tap "Got it" link in the text).
+        cur.execute("""CREATE TABLE IF NOT EXISTS RainoutNotice (
+            Token TEXT PRIMARY KEY, Date TEXT, Player TEXT, Message TEXT, SentAt TEXT, SentBy TEXT, Test INTEGER DEFAULT 0, ConfirmedAt TEXT)""")
         cur.execute("""CREATE TABLE IF NOT EXISTS PlayerPresence (
             Player TEXT PRIMARY KEY, LastSeen TEXT, IP TEXT, Tab TEXT, Device TEXT)""")
         # SeasonSettings.Carryover: the League Settings form has always had this field, but the column was missing, which made the
