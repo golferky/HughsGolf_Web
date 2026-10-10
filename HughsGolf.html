@@ -2808,7 +2808,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261010.8';
+const APP_VERSION = '20261010.9';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3952,9 +3952,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
   ]);
-  ensureVersion('20261010.8', 'October 10, 2026', [
+  ensureVersion('20261010.9', 'October 10, 2026', [
     ['adminsummary', 'Admins: Rain Out has a Rainout Text box (optionally text only each foursome\'s point person, who passes it on). It lists who is playing that night, can text them all from the app (each text has a one-tap Got it link so nobody has to reply), shows who has confirmed, and can send a test to just you. It also splits them into group texts of 20 or fewer for your phone.', '', 0],
-    ['admin', 'Rainout Text', 'Pick the round date (today or the next one) and edit the pre-filled message. Recipients are the roster for the teams on that night\'s schedule, minus anyone a sub covers, plus the subs. Text everyone from the app sends one text each (no 20-person limit; replies go only to the sender), or open a group text on your phone in even batches of 20 or fewer, or copy the numbers to build a named group chat. Players with no cell number are listed. Every text ends with a one-tap Got it link (a web page, no login) so replies never land in a group; Rain Out shows who has confirmed and can text again to those who have not. Send a test to me only goes to your own phone/email. Anyone with no phone or email on file (or whose text fails) is left to a point person in their foursome, who is asked to contact them. Optional: text only each foursome\'s point person (a standing list you choose; the app picks one if none is flagged). Their link shows the foursome with text/call links and an I told them tick for each, Rain Out shows who has been told, and a button texts the rest directly. The sandbox never texts real players.', 1],
+    ['admin', 'Rainout Text', 'Pick the round date (today or the next one) and edit the pre-filled message. Recipients are the roster for the teams on that night\'s schedule, minus anyone a sub covers, plus the subs. Text everyone from the app sends one text each (no 20-person limit; replies go only to the sender), or open a group text on your phone in even batches of 20 or fewer, or copy the numbers to build a named group chat. Players with no cell number are listed. Every text ends with a one-tap Got it link (a web page, no login) so replies never land in a group; Rain Out shows who has confirmed and can text again to those who have not. Send a test to me only goes to your own phone/email. Post-season Week 1 and Week 2 nights are in the date list too (marked Post Season), with their own message wording. Anyone with no phone or email on file (or whose text fails) is left to a point person in their foursome, who is asked to contact them. Optional: text only each foursome\'s point person (a standing list you choose; the app picks one if none is flagged). Their link shows the foursome with text/call links and an I told them tick for each, Rain Out shows who has been told, and a button texts the rest directly. The sandbox never texts real players.', 1],
   ]);
   ensureVersion('20261010.4', 'October 10, 2026', [
     ['adminsummary', 'Admins: a Gallus round that is already reconciled can now have its date changed, the version in the header shows the GitHub PR number and commit, and the Collect Payments pop-up no longer appears when there is nothing to collect.', '', 0],
@@ -18940,13 +18940,24 @@ function rainoutAssignUnreachable(foursomes, failed, everyoneTexted) {
   });
   return { groups, stranded: failed.filter(n => !placed.has(n)) };
 }
+// Rain Out dates = regular schedule nights plus the post-season Week 1 / Week 2 nights (they are not in the Schedule table).
+function rainoutDateOptions(scheduleDates, ps) {
+  const out = {}; (scheduleDates || []).forEach(d => { out[String(d)] = { date: String(d), ps: 0 }; });
+  if (ps) { if (ps.week1) out[String(ps.week1)] = { date: String(ps.week1), ps: 1 }; if (ps.week2) out[String(ps.week2)] = { date: String(ps.week2), ps: 2 }; }
+  return Object.values(out).sort((a, b) => a.date.localeCompare(b.date));
+}
+function rainoutPsWeek(date) {
+  const ps = parsePostSeasonDates(getSeasonSettings(parseInt(String(date).substring(0, 4)))?.PostSeasonDt);
+  return ps ? (parseInt(date) === ps.week1 ? 1 : parseInt(date) === ps.week2 ? 2 : 0) : 0;
+}
 function loadRainoutText() {
   if (!db) return;
   const sel = document.getElementById('rainoutTextDate'); if (!sel) return;
-  const now = new Date(), todayKey = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
-  const dates = query(`SELECT Date as d FROM Schedule WHERE League="Hugh's" AND Date >= ? AND Date < ? ORDER BY Date`, [`${now.getFullYear()}0101`, `${now.getFullYear() + 1}0101`]).map(r => String(r.d));
-  const def = dates.find(d => parseInt(d) >= todayKey) || dates[dates.length - 1];
-  sel.innerHTML = dates.map(d => `<option value="${d}"${d === def ? ' selected' : ''}>${fmtDate(d)}</option>`).join('');
+  const now = new Date(), yr = now.getFullYear(), todayKey = yr * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+  const sched = query(`SELECT Date as d FROM Schedule WHERE League="Hugh's" AND Date >= ? AND Date < ? ORDER BY Date`, [`${yr}0101`, `${yr + 1}0101`]).map(r => String(r.d));
+  const opts = rainoutDateOptions(sched, parsePostSeasonDates(getSeasonSettings(yr)?.PostSeasonDt));
+  const def = (opts.find(o => parseInt(o.date) >= todayKey) || opts[opts.length - 1] || {}).date;
+  sel.innerHTML = opts.map(o => `<option value="${o.date}"${o.date === def ? ' selected' : ''}>${fmtDate(o.date)}${o.ps ? ` — Post Season Week ${o.ps}` : ''}</option>`).join('');
   renderRainoutText();
   loadRainoutPoints();
 }
@@ -18957,7 +18968,7 @@ function renderRainoutText() {
   window._rainoutNames = names;
   renderRainoutPoint(date);
   refreshRainoutConfirms();
-  if (msg && !msg.dataset.edited) msg.value = `Hugh's Golf: tonight's round (${fmtDate(date)}) is rained out. We'll post the updated schedule soon.`;
+  if (msg && !msg.dataset.edited) { const wk = rainoutPsWeek(date); msg.value = wk ? `Hugh's Golf: tonight's post-season Week ${wk} round (${fmtDate(date)}) is rained out. We'll post the new date soon.` : `Hugh's Golf: tonight's round (${fmtDate(date)}) is rained out. We'll post the updated schedule soon.`; }
   if (msg) msg.oninput = () => { msg.dataset.edited = '1'; renderRainoutText(); };
   who.innerHTML = `${names.length} playing that night` + (c.unreachable.length ? ` · <span style="color:#e65100">no phone or email on file: ${c.unreachable.map(escapeHtml).join(', ')} (their foursome's point person will be asked to contact them)</span>` : '');
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -19010,7 +19021,7 @@ function renderRainoutPoint(date) {
   box.style.display = point ? '' : 'none'; window._rainoutGroups = null;
   if (!point) return;
   const pts = window._rainoutPoints || new Set(), fsx = rainoutFoursomes(date, pts);
-  if (!fsx) { box.innerHTML = '<span style="color:#c62828;font-size:12px">No schedule for that night, so the foursomes are unknown. Use "Text every player".</span>'; return; }
+  if (!fsx) { box.innerHTML = '<span style="color:#c62828;font-size:12px">${rainoutPsWeek(date) ? 'Post season has no set foursomes' : 'No schedule for that night, so the foursomes are unknown'}. Use "Text every player".</span>'; return; }
   window._rainoutGroups = fsx;
   const roster = [...new Set(query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=? ORDER BY Player`, [parseInt(String(date).substring(0, 4))]).map(r => r.Player))];
   box.innerHTML = `<div style="border:1px solid #ddd;border-radius:6px;padding:8px 10px;font-size:12px">
