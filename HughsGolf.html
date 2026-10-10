@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261009.14';
+const APP_VERSION = '20261010.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -16229,8 +16229,9 @@ function renderGallusFetchCheck() {
       const dupRows = query(`SELECT DISTINCT ResolvedName, Date FROM GallusImport WHERE URL LIKE ? LIMIT 10`, [`%${roundGuid}%`]);
       if (dupRows.length) {
         const dupDate = dupRows[0].Date ? String(dupRows[0].Date).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '';
+        const dupDiffers = String(dupRows[0].Date || '') !== String(today || '');
         const dupNames = dupRows.map(r => r.ResolvedName || '').filter(Boolean).join(', ');
-        const proceed = confirm(`⚠️ This round is already in the queue (${dupDate}: ${dupNames}).\n\nAdd it again anyway?`);
+        const proceed = confirm(`⚠️ This round is already in the queue (${dupDate}: ${dupNames}).${dupDiffers ? `\n\nThe queued copy is dated ${dupDate}, not the date you entered. If that date is wrong, press Cancel and use the ✏️ next to the date on that round to fix it.` : ''}\n\nAdd it again anyway?`);
         if (!proceed) {
           if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📥 Fetch & Import'; }
           _hideGallusToast();
@@ -16710,7 +16711,7 @@ function loadGallusQueue() {
     html += `<tr class="gallus-group-row" data-date="${g.date||''}">
       <td colspan="4" style="background:#1b4d2e;color:#d4a843;padding:6px 10px;font-size:11px;font-weight:700;font-family:'DM Mono',monospace" title="${escapeHtml(g.url||'')}">
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <div><span>📅 ${dateDisplay}${allReconciled ? '' : `<span onclick="editGallusDate('${_safeAllIds}')" style="cursor:pointer;opacity:.7;margin-left:4px" title="Change the round date">✏️</span>`} &nbsp;·&nbsp; ${g.url ? `<a href="${escapeHtml(g.url)}" target="_blank" style="color:#d4a843;text-decoration:underline">${escapeHtml(shortUrl)}</a>` : escapeHtml(shortUrl)}</span>${_byLine}</div>
+          <div><span>📅 ${dateDisplay}<span onclick="editGallusDate('${_safeAllIds}')" style="cursor:pointer;opacity:.7;margin-left:4px" title="Change the round date">✏️</span> &nbsp;·&nbsp; ${g.url ? `<a href="${escapeHtml(g.url)}" target="_blank" style="color:#d4a843;text-decoration:underline">${escapeHtml(shortUrl)}</a>` : escapeHtml(shortUrl)}</span>${_byLine}</div>
           ${importBtn}
         </div>
       </td>
@@ -17045,7 +17046,7 @@ function editGallusDate(idsCsv) {
   if (!ids.length) return;
   const ph = ids.map(() => '?').join(',');
   const rows = query(`SELECT Date, ImportedToScores, Reconciled FROM GallusImport WHERE ID IN (${ph})`, ids);
-  if (rows.some(r => r.ImportedToScores === 1 || r.Reconciled === 1)) { alert('This round has already been posted to the scorecard. Use Undo Import first, then change the date.'); return; }
+  const posted = rows.some(r => r.ImportedToScores === 1 || r.Reconciled === 1);
   const cur = String(rows[0]?.Date || '');
   const season = parseInt(cur.substring(0, 4)) || new Date().getFullYear();
   const dates = gallusRoundDates(season);
@@ -17055,7 +17056,7 @@ function editGallusDate(idsCsv) {
     <div id="gallusDateModal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9200;display:flex;align-items:center;justify-content:center">
       <div style="background:#fff;border-radius:8px;padding:24px;min-width:320px;max-width:400px;box-shadow:0 4px 24px rgba(0,0,0,.3)">
         <div style="font-weight:700;font-size:15px;margin-bottom:6px">📅 Change round date</div>
-        <div style="font-size:12px;color:#555;margin-bottom:12px">Currently <strong>${escapeHtml(gallusRoundDates(season).find(d => d.date === cur)?.label || cur)}</strong>. Pick the night this round was actually played.</div>
+        <div style="font-size:12px;color:#555;margin-bottom:12px">Currently <strong>${escapeHtml(gallusRoundDates(season).find(d => d.date === cur)?.label || cur)}</strong>. Pick the night this round was actually played.${posted ? '<br><span style="color:#b26a00">This round is already on the scorecard. Only the date shown in this list changes — scores already recorded are not moved or deleted.</span>' : ''}</div>
         <select id="gallusDateSelect" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:14px;margin-bottom:10px">${opts}</select>
         <div style="font-size:11px;color:#777;margin-bottom:4px">or any other date:</div>
         <input id="gallusDateOther" type="date" value="${curIso}" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:14px;margin-bottom:16px;box-sizing:border-box">
@@ -17075,11 +17076,10 @@ async function _saveGallusDate(idsCsv) {
   if (!newDate || !ids.length) { alert('Please pick a valid date.'); return; }
   const ph = ids.map(() => '?').join(',');
   const rows = query(`SELECT ID, Date, ResolvedName, ImportedToScores, Reconciled FROM GallusImport WHERE ID IN (${ph})`, ids);
-  if (rows.some(r => r.ImportedToScores === 1 || r.Reconciled === 1)) { alert('This round has already been posted to the scorecard. Use Undo Import first.'); return; }
   const oldDate = String(rows[0]?.Date || '');
   document.getElementById('gallusDateModal')?.remove();
   if (newDate === oldDate) return;
-  await serverRun(`UPDATE GallusImport SET Date=? WHERE ID IN (${ph}) AND (ImportedToScores IS NULL OR ImportedToScores=0) AND (Reconciled IS NULL OR Reconciled=0)`, [newDate, ...ids]);
+  await serverRun(`UPDATE GallusImport SET Date=? WHERE ID IN (${ph})`, [newDate, ...ids]);
   try {
     const t = new Date().toISOString().replace('T', ' ').substring(0, 19);
     await serverRun(`INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES (?,?,?,?,?,?,?)`,
