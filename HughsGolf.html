@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261010.1';
+const APP_VERSION = '20261010.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -26285,6 +26285,15 @@ function buildTableList() {
     const loginVer = document.getElementById('loginVersionDisplay');
     if (appVer)   appVer.textContent   = label;
     if (loginVer) loginVer.textContent = label;
+    // append the deployed GitHub PR number + git commit (from /version, written by deploy_qnap.sh)
+    try {
+      fetch('/version', { cache: 'no-store' }).then(r => r.json()).then(v => {
+        const b = v && v.build; if (!b || (!b.pr && !b.commit)) return;
+        const full = label + (b.pr ? ` · PR #${b.pr}` : '') + (b.commit ? ` · ${b.commit}` : '');
+        if (appVer)   appVer.textContent   = full;
+        if (loginVer) loginVer.textContent = full;
+      }).catch(() => {});
+    } catch (e) {}
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', setVersionDisplays);
