@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261010.3';
+const APP_VERSION = '20261010.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3895,6 +3895,45 @@ function ensureAppChangelogTable() {
   ]);
 
   // ── October 3, 2026: post-season rollout (PRs #1-#38 on sandbox-enhancements). Audit scripts are developer-only. ──
+  ensureVersion('20261007.14', 'October 7, 2026', [
+    ['summary', 'Money: the Balance Sheet is easier to read. Each grid is its own panel you can open or close, and clicking a row shows who paid. Post-season Skins now calculate by themselves once a week is fully scored.', '', 0],
+    ['adminsummary', 'Admins: League Settings no longer fails to save a season (Carry Last Yrs is now Yes/No), and the post-season cursor jumps to the next nine when a player finishes.', '', 0],
+    ['enhancement', 'Balance Sheet: separate collapsible grids', 'Each grid is its own panel with Expand all / Collapse all; open/closed state is remembered. PR #55.', 1],
+    ['enhancement', 'Balance Sheet: click a row to see who paid', 'League dues, the EOY Skins/CTP pool and the Skins and CTP kitties expand to show name, method and amount. EOY pool shows pending rows for post-season weeks whose Skins are not calculated yet. PRs #54, #56, #58, #59.', 2],
+    ['enhancement', 'Post-season Skins calculate automatically', 'Once a week is fully scored no approval is needed. Paid rows and future weeks are left alone. PR #61.', 3],
+    ['admin', 'Post-season entry: cursor jumps to the next nine', 'After a player\'s nine for the night is complete, entry moves on to the next nine. PR #60.', 1],
+    ['admin', 'Carry Last Yrs is Yes/No', 'There is no year limit, a pot either carries over or it does not. Older numeric values read as Yes/No. PR #62.', 2],
+    ['bugfix', 'League Settings: season save failed on a missing column', 'Added SeasonSettings.Carryover. PR #53.', 1],
+  ]);
+  ensureVersion('20261008.8', 'October 8, 2026', [
+    ['summary', 'Money: officers can undo a payment marked paid by mistake, and paid/undo buttons are right on the Balance Sheet. The top menu now looks like real tabs.', '', 0],
+    ['adminsummary', 'Admins: post-season CTP amounts follow the week\'s pot automatically, and the regular-season CTP kitty no longer counts post-season CTP winners.', '', 0],
+    ['enhancement', 'Undo paid', 'Put a paid prize back to unpaid from Award Prizes or the Prize Money tab; logged. PR #63.', 1],
+    ['enhancement', 'Mark paid / Undo on the Balance Sheet and Award CTP Winners', 'No need to find another screen to pay or undo. PR #68.', 2],
+    ['enhancement', 'Top navigation looks like real tabs', 'Dark bar, rounded tabs and a gold underline on the active tab. PR #70.', 3],
+    ['enhancement', 'Stats: Season dropdown lists only seasons with scores', 'Players no longer see years with no rounds. PR #65.', 4],
+    ['bugfix', 'Stats: Avg Net row used the previous player\'s rounds', 'The selected player and season\'s rounds are loaded before the average is drawn. PR #64.', 1],
+    ['bugfix', 'Post-season CTP amounts out of step ($21 vs $25)', 'Unpaid winner and carryover amounts follow the week\'s pot, also refreshed when the CTP screen opens. PRs #66, #67.', 2],
+    ['bugfix', 'Regular-season CTP kitty counted post-season CTP winners', 'They are paid from the EOY pool, so the kitty no longer includes them. PR #69.', 3],
+  ]);
+  ensureVersion('20261009.14', 'October 9, 2026', [
+    ['summary', 'The menu is organized into groups (Home, Play, Post Season, Money, League, Admin) with sub-tabs, and there is a new Post Season tab everyone can see. Gallus rounds are checked against the scorecard and rounds that already match are reconciled automatically.', '', 0],
+    ['adminsummary', 'Admins: the Gallus queue can change a round\'s date, check a round before importing, and skips the name and payment screens when everything already matches.', '', 0],
+    ['enhancement', 'Tab groups with sub-tabs', 'Home, Play (Scores, Standings, Matches, Skins/CTPs, Handicaps, Stableford), Post Season, Money, League and Admin; the last sub-tab in each group is remembered. PRs #72, #73.', 1],
+    ['enhancement', 'Post Season tab for everyone', 'Scores, Standings, Skins & CTPs and Earned, with one Season dropdown at the top. PRs #74, #75.', 2],
+    ['enhancement', 'Gallus: post-season rounds', 'Submit My Round offers post-season dates, and a Week 2 card is saved on Week 2. PR #76.', 3],
+    ['admin', 'Gallus queue: change a round\'s date', 'A pencil next to the date fixes a round imported under the wrong date; logged. PR #77.', 1],
+    ['admin', 'Gallus: compare with the scorecard', 'Before a round is added to the queue, and before it is posted, each player shows as new, same or different with the holes that differ. PRs #78, #80.', 2],
+    ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
+    ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
+    ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261010.4', 'October 10, 2026', [
+    ['adminsummary', 'Admins: a Gallus round that is already reconciled can now have its date changed, the version in the header shows the GitHub PR number and commit, and the Collect Payments pop-up no longer appears when there is nothing to collect.', '', 0],
+    ['admin', 'Gallus queue: change the date of a reconciled round', 'Only the queue date changes; scores and handicaps are untouched. The duplicate-link prompt now names the queued date and points to the pencil. PR #83.', 1],
+    ['admin', 'Version shows PR number and git commit', 'For example v20261010.4-sandbox · PR #n · abc1234, taken from the deployed commit. PR #84.', 2],
+    ['admin', 'No empty Collect Payments pop-up after a Gallus import', 'Skipped when none of the imported players has an entry fee for that date. PR #85.', 3],
+  ]);
   ensureVersion('20261003.1', 'October 3, 2026', [
     ['summary', 'New Scores tab: everyone can now see the post-season scores, the live leaderboard (places, shots back and the prize you would win), skins and CTP winners. Prize Money is visible to everyone, and post-season Stableford is now an individual award.', '', 0],
     ['adminsummary', 'Admins: a View switcher shows the app as a player sees it, you can clear one player\'s Front or Back 9, refunds now show in EOY Paid, and unpaid players are offered that week\'s skins when scoring starts.', '', 0],
