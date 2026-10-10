@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261010.1-sandbox'
+VERSION    = '20261010.2-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -247,6 +247,19 @@ def index():
     return resp
 
 
+def read_build_info():
+    """Git commit + GitHub PR number of what deploy_qnap.sh uploaded (DEPLOYED_COMMIT = '<hash> <commit subject>')."""
+    try:
+        import re
+        with open(os.path.join(BASE_DIR, 'DEPLOYED_COMMIT'), 'r') as f:
+            line = f.readline().strip()
+        parts = line.split(' ', 1)
+        m = re.search(r'#(\d+)', parts[1] if len(parts) > 1 else '')
+        return {'commit': parts[0], 'pr': int(m.group(1)) if m else None}
+    except Exception:
+        return {'commit': '', 'pr': None}
+
+
 @app.route('/version')
 def version():
     try:
@@ -264,6 +277,7 @@ def version():
     return jsonify({
         'version': html_version,
         'flaskVersion': VERSION,
+        'build': read_build_info(),
         'dbModified': db_modified,
         'updateNotice': read_update_notice(),
     })
