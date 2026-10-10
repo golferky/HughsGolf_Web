@@ -1644,6 +1644,22 @@
       </div>
     </div>
     <div id="adminRainout" style="display:none">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">📱 Rainout Text</div>
+        <div style="padding:16px">
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+            <div class="filter-group"><label>Round date</label><select id="rainoutTextDate" onchange="renderRainoutText()"></select></div>
+            <div id="rainoutTextWho" style="font-size:12px;color:#555"></div>
+          </div>
+          <textarea id="rainoutTextMsg" rows="3" maxlength="300" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;font-family:inherit"></textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+            <button onclick="sendRainoutText()" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">📲 Text everyone from the app</button>
+          </div>
+          <div style="font-size:11px;color:#777;margin-bottom:8px">Each player gets their own text; replies come back only to the sender. Or open a group text on your phone (iPhone groups are limited to 20 people, so the list is split evenly):</div>
+          <div id="rainoutTextBatches"></div>
+          <div id="rainoutTextResult" style="margin-top:10px;font-size:12px"></div>
+        </div>
+      </div>
       <div class="card">
         <div class="card-header">🌧 Schedule Builder</div>
         <div style="padding:16px">
@@ -2784,7 +2800,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261010.4';
+const APP_VERSION = '20261010.5';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3927,6 +3943,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261010.5', 'October 10, 2026', [
+    ['adminsummary', 'Admins: Rain Out has a Rainout Text box. It lists who is playing that night, can text them all from the app, and splits them into group texts of 20 or fewer for your phone.', '', 0],
+    ['admin', 'Rainout Text', 'Pick the round date (today or the next one) and edit the pre-filled message. Recipients are the roster for the teams on that night\'s schedule, minus anyone a sub covers, plus the subs. Text everyone from the app sends one text each (no 20-person limit; replies go only to the sender), or open a group text on your phone in even batches of 20 or fewer, or copy the numbers to build a named group chat. Players with no cell number are listed. The sandbox never sends real texts.', 1],
   ]);
   ensureVersion('20261010.4', 'October 10, 2026', [
     ['adminsummary', 'Admins: a Gallus round that is already reconciled can now have its date changed, the version in the header shows the GitHub PR number and commit, and the Collect Payments pop-up no longer appears when there is nothing to collect.', '', 0],
@@ -11408,7 +11428,7 @@ function showAdminSection(section) {
   if (section==='teams')   loadAdminTeams();
   if (section==='subs')    loadAdminSubs();
   if (section==='sql')     buildTableList();
-  if (section==='rainout') loadScheduleBuilder();
+  if (section==='rainout') { loadScheduleBuilder(); loadRainoutText(); }
   if (section==='sync')    initSync();
   if (section==='gallus')  loadGallusQueue();
   if (section==='serverlog') loadServerLog();
@@ -18861,6 +18881,81 @@ function scheduleSideFor(date) {
   if (stored === 'BACK' || stored === 'B') return 'Back';
   if (stored === 'FRONT' || stored === 'F') return 'Front';
   return getScheduledFrontBack(date);
+}
+
+// ── Rainout text: who is playing on a date, group-text batches (iPhone groups max 20), and send ──
+// Playing = this season's roster for teams on that night's schedule, minus anyone a sub covers, plus the subs.
+function rainoutRoster(date) {
+  const season = parseInt(String(date).substring(0, 4));
+  const teams = query(`SELECT Player, Team, Grade FROM Teams WHERE League="Hugh's" AND Year=?`, [season]);
+  const sched = query(`SELECT * FROM Schedule WHERE League="Hugh's" AND Date=?`, [String(date)])[0];
+  let playing = null;
+  if (sched) { playing = new Set(); for (let i = 1; i <= 24; i++) { const t = parseInt(sched[String(i)]); if (t) playing.add(t); } if (!playing.size) playing = null; }
+  const subs = query(`SELECT Player, Team, Grade FROM Subs WHERE League="Hugh's" AND CAST(Date AS INTEGER)=?`, [parseInt(date)]);
+  const covered = new Set(subs.map(s => `${s.Team}-${s.Grade}`));
+  const names = teams.filter(t => (!playing || playing.has(parseInt(t.Team))) && !covered.has(`${t.Team}-${t.Grade}`)).map(t => t.Player).concat(subs.map(s => s.Player));
+  return [...new Set(names.filter(Boolean))];
+}
+// Even batches no bigger than max: 24 -> 12 + 12, 28 -> 14 + 14, 41 -> 14 + 14 + 13.
+function rainoutBatches(items, max = 20) {
+  const n = items.length; if (!n) return [];
+  const k = Math.ceil(n / max), out = []; let i = 0;
+  for (let b = 0; b < k; b++) { const size = Math.floor(n / k) + (b < n % k ? 1 : 0); out.push(items.slice(i, i + size)); i += size; }
+  return out;
+}
+function rainoutSmsHref(numbers, body, ios) {
+  const nums = numbers.map(n => '+1' + String(n).replace(/\D/g, '').slice(-10)).join(',');
+  return ios ? `sms:/open?addresses=${nums}&body=${encodeURIComponent(body)}` : `sms:${nums}?body=${encodeURIComponent(body)}`;
+}
+function rainoutContacts(names) {
+  const rows = names.length ? query(`SELECT Player, Phone FROM Players WHERE Player IN (${names.map(() => '?').join(',')})`, names) : [];
+  const phone = {}; rows.forEach(r => { const d = String(r.Phone || '').replace(/\D/g, '').slice(-10); if (d.length === 10) phone[r.Player] = d; });
+  return { withPhone: names.filter(n => phone[n]), noPhone: names.filter(n => !phone[n]), phone };
+}
+function loadRainoutText() {
+  if (!db) return;
+  const sel = document.getElementById('rainoutTextDate'); if (!sel) return;
+  const now = new Date(), todayKey = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+  const dates = query(`SELECT Date as d FROM Schedule WHERE League="Hugh's" AND Date >= ? AND Date < ? ORDER BY Date`, [`${now.getFullYear()}0101`, `${now.getFullYear() + 1}0101`]).map(r => String(r.d));
+  const def = dates.find(d => parseInt(d) >= todayKey) || dates[dates.length - 1];
+  sel.innerHTML = dates.map(d => `<option value="${d}"${d === def ? ' selected' : ''}>${fmtDate(d)}</option>`).join('');
+  renderRainoutText();
+}
+function renderRainoutText() {
+  const sel = document.getElementById('rainoutTextDate'), who = document.getElementById('rainoutTextWho'), box = document.getElementById('rainoutTextBatches'), msg = document.getElementById('rainoutTextMsg');
+  if (!sel || !sel.value) { if (who) who.textContent = 'No schedule dates found.'; if (box) box.innerHTML = ''; return; }
+  const date = sel.value, names = rainoutRoster(date), c = rainoutContacts(names);
+  window._rainoutNames = names;
+  if (msg && !msg.dataset.edited) msg.value = `Hugh's Golf: tonight's round (${fmtDate(date)}) is rained out. We'll post the updated schedule soon.`;
+  if (msg) msg.oninput = () => { msg.dataset.edited = '1'; renderRainoutText(); };
+  who.innerHTML = `${names.length} playing that night` + (c.noPhone.length ? ` · <span style="color:#c62828">no cell number: ${c.noPhone.map(escapeHtml).join(', ')}</span>` : '');
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const batches = rainoutBatches(c.withPhone, 20);
+  box.innerHTML = batches.map((b, i) => {
+    const nums = b.map(n => c.phone[n]);
+    return `<div style="border:1px solid #ddd;border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:12px">
+      <strong>Group ${i + 1} of ${batches.length}</strong> (${b.length}): ${b.map(escapeHtml).join(', ')}
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+        <a href="${rainoutSmsHref(nums, msg ? msg.value : '', ios)}" style="padding:5px 12px;background:#2e7d32;color:white;border-radius:5px;text-decoration:none;font-weight:600">💬 Open in Messages</a>
+        <button onclick="navigator.clipboard && navigator.clipboard.writeText('${nums.join(', ')}'); this.textContent='Copied ✓'" style="padding:5px 12px;border:1px solid #999;background:white;border-radius:5px;cursor:pointer;font-size:12px">Copy numbers</button>
+      </div></div>`;
+  }).join('') || '<div style="font-size:12px;color:#888">Nobody with a cell number on file for that night.</div>';
+}
+async function sendRainoutText() {
+  const names = window._rainoutNames || [], msg = (document.getElementById('rainoutTextMsg')?.value || '').trim(), out = document.getElementById('rainoutTextResult');
+  if (!names.length || !msg) { alert('Pick a date with players and write a message first.'); return; }
+  if (!confirm(`Send this text to ${names.length} player(s)?\n\n${msg}`)) return;
+  out.textContent = 'Sending…';
+  try {
+    const token = await ensureSaveToken();
+    const resp = await fetch('/send-rainout-text', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Save-Token': token, 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': actorRole() },
+      body: JSON.stringify({ players: names, message: msg }) });
+    const j = await resp.json();
+    if (!j.ok) { out.innerHTML = `<span style="color:#c62828">${escapeHtml(j.error || 'Failed')}</span>`; return; }
+    out.innerHTML = (j.simulated ? '<b>Sandbox: nothing was actually sent.</b> ' : '') + `✓ ${j.sent.length} sent` +
+      (j.failed.length ? ` · <span style="color:#c62828">couldn't reach: ${j.failed.map(f => escapeHtml(f.player) + ' (' + escapeHtml(f.reason) + ')').join(', ')}</span>` : '');
+  } catch (e) { out.innerHTML = `<span style="color:#c62828">${escapeHtml(e.message)}</span>`; }
 }
 
 function loadScheduleBuilder() {

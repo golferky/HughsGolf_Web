@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261010.4-sandbox'
+VERSION    = '20261010.5-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1339,6 +1339,45 @@ def _send_permission_request(name, email, phone, carrier, added_by, token):
         if addr:
             sent_text = _send_mail([addr], "Hugh's Golf", f"{added_by} added you as a possible sub for Hugh's Golf League. OK to contact you? {link}")
     return link, sent_email, sent_text
+
+
+@app.route('/send-rainout-text', methods=['POST'])
+def send_rainout_text():
+    """Rainout broadcast: one text per player through their carrier gateway (no group-size limit). Officers only.
+    The sandbox never sends real messages; it reports what it would have sent."""
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    actor, role = _audit_actor()
+    if role not in ('admin', 'developer'):
+        return jsonify({'ok': False, 'error': 'Officers only'}), 403
+    b = request.get_json() or {}
+    players = [str(p).strip() for p in (b.get('players') or []) if str(p).strip()][:60]
+    message = ' '.join(str(b.get('message', '')).split())[:300]
+    if not players or not message:
+        return jsonify({'ok': False, 'error': 'Players and a message are required'}), 400
+    simulated = 'sandbox' in VERSION.lower()
+    sent, failed = [], []
+    conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+    cur = conn.cursor()
+    for name in players:
+        cur.execute("SELECT Phone, CellCarrier, Email, COALESCE(ContactMethod,'') FROM Players WHERE Player=?", (name,))
+        r = cur.fetchone()
+        if not r:
+            failed.append({'player': name, 'reason': 'not in the player file'}); continue
+        phone, carrier, email, cm = r
+        addr, err = (None, 'email only') if cm == 'email' else sms_address(phone, carrier)
+        if not addr and email:
+            addr, err = email, None   # no usable cell (or prefers email): fall back to email
+        if not addr:
+            failed.append({'player': name, 'reason': err or 'no contact info'}); continue
+        if simulated or _send_mail([addr], "Hugh's Golf", message):
+            sent.append(name)
+        else:
+            failed.append({'player': name, 'reason': 'send failed'})
+    _log_row(cur, 'send_rainout_text', f'{actor} sent a rainout text to {len(sent)} of {len(players)}' + (' (sandbox: not actually sent)' if simulated else ''),
+             f'message={message} failed={[f["player"] for f in failed]}')
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'simulated': simulated, 'sent': sent, 'failed': failed})
 
 
 @app.route('/review-player', methods=['POST'])
