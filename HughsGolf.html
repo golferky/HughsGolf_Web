@@ -1651,6 +1651,11 @@
             <div class="filter-group"><label>Round date</label><select id="rainoutTextDate" onchange="renderRainoutText()"></select></div>
             <div id="rainoutTextWho" style="font-size:12px;color:#555"></div>
           </div>
+          <div style="font-size:12px;margin-bottom:8px">
+            <label style="margin-right:14px;cursor:pointer"><input type="radio" name="rainoutMode2" value="all" checked onchange="renderRainoutText()"> Text every player</label>
+            <label style="cursor:pointer"><input type="radio" name="rainoutMode2" value="point" onchange="renderRainoutText()"> Text only each foursome's point person (they pass it on)</label>
+          </div>
+          <div id="rainoutPointBox" style="display:none;margin-bottom:10px"></div>
           <textarea id="rainoutTextMsg" rows="3" maxlength="300" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;font-family:inherit"></textarea>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
             <button onclick="sendRainoutText(true)" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">🧪 Send a test to me only</button>
@@ -2803,7 +2808,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261010.6';
+const APP_VERSION = '20261010.7';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3947,9 +3952,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
   ]);
-  ensureVersion('20261010.6', 'October 10, 2026', [
-    ['adminsummary', 'Admins: Rain Out has a Rainout Text box. It lists who is playing that night, can text them all from the app (each text has a one-tap Got it link so nobody has to reply), shows who has confirmed, and can send a test to just you. It also splits them into group texts of 20 or fewer for your phone.', '', 0],
-    ['admin', 'Rainout Text', 'Pick the round date (today or the next one) and edit the pre-filled message. Recipients are the roster for the teams on that night\'s schedule, minus anyone a sub covers, plus the subs. Text everyone from the app sends one text each (no 20-person limit; replies go only to the sender), or open a group text on your phone in even batches of 20 or fewer, or copy the numbers to build a named group chat. Players with no cell number are listed. Every text ends with a one-tap Got it link (a web page, no login) so replies never land in a group; Rain Out shows who has confirmed and can text again to those who have not. Send a test to me only goes to your own phone/email. The sandbox never texts real players.', 1],
+  ensureVersion('20261010.7', 'October 10, 2026', [
+    ['adminsummary', 'Admins: Rain Out has a Rainout Text box (optionally text only each foursome\'s point person, who passes it on). It lists who is playing that night, can text them all from the app (each text has a one-tap Got it link so nobody has to reply), shows who has confirmed, and can send a test to just you. It also splits them into group texts of 20 or fewer for your phone.', '', 0],
+    ['admin', 'Rainout Text', 'Pick the round date (today or the next one) and edit the pre-filled message. Recipients are the roster for the teams on that night\'s schedule, minus anyone a sub covers, plus the subs. Text everyone from the app sends one text each (no 20-person limit; replies go only to the sender), or open a group text on your phone in even batches of 20 or fewer, or copy the numbers to build a named group chat. Players with no cell number are listed. Every text ends with a one-tap Got it link (a web page, no login) so replies never land in a group; Rain Out shows who has confirmed and can text again to those who have not. Send a test to me only goes to your own phone/email. Optional: text only each foursome\'s point person (a standing list you choose; the app picks one if none is flagged). Their link shows the foursome with text/call links and an I told them tick for each, Rain Out shows who has been told, and a button texts the rest directly. The sandbox never texts real players.', 1],
   ]);
   ensureVersion('20261010.4', 'October 10, 2026', [
     ['adminsummary', 'Admins: a Gallus round that is already reconciled can now have its date changed, the version in the header shows the GitHub PR number and commit, and the Collect Payments pop-up no longer appears when there is nothing to collect.', '', 0],
@@ -18923,12 +18928,14 @@ function loadRainoutText() {
   const def = dates.find(d => parseInt(d) >= todayKey) || dates[dates.length - 1];
   sel.innerHTML = dates.map(d => `<option value="${d}"${d === def ? ' selected' : ''}>${fmtDate(d)}</option>`).join('');
   renderRainoutText();
+  loadRainoutPoints();
 }
 function renderRainoutText() {
   const sel = document.getElementById('rainoutTextDate'), who = document.getElementById('rainoutTextWho'), box = document.getElementById('rainoutTextBatches'), msg = document.getElementById('rainoutTextMsg');
   if (!sel || !sel.value) { if (who) who.textContent = 'No schedule dates found.'; if (box) box.innerHTML = ''; return; }
   const date = sel.value, names = rainoutRoster(date), c = rainoutContacts(names);
   window._rainoutNames = names;
+  renderRainoutPoint(date);
   refreshRainoutConfirms();
   if (msg && !msg.dataset.edited) msg.value = `Hugh's Golf: tonight's round (${fmtDate(date)}) is rained out. We'll post the updated schedule soon.`;
   if (msg) msg.oninput = () => { msg.dataset.edited = '1'; renderRainoutText(); };
@@ -18945,6 +18952,53 @@ function renderRainoutText() {
       </div></div>`;
   }).join('') || '<div style="font-size:12px;color:#888">Nobody with a cell number on file for that night.</div>';
 }
+// Point-person mode: each night's foursomes are the pairs of schedule slots (1+2, 3+4 ...). The point person is a flagged player in the
+// foursome (the standing list lives on the server), else the first regular; a sub is never chosen unless nobody else is there.
+function rainoutFoursomes(date, points) {
+  const season = parseInt(String(date).substring(0, 4));
+  const teams = query(`SELECT Player, Team, Grade FROM Teams WHERE League="Hugh's" AND Year=?`, [season]);
+  const sched = query(`SELECT * FROM Schedule WHERE League="Hugh's" AND Date=?`, [String(date)])[0];
+  if (!sched) return null;
+  const subs = query(`SELECT Player, Team, Grade FROM Subs WHERE League="Hugh's" AND CAST(Date AS INTEGER)=?`, [parseInt(date)]);
+  const covered = new Set(subs.map(s => `${s.Team}-${s.Grade}`)), byTeam = {};
+  const add = (t, p) => { (byTeam[parseInt(t)] = byTeam[parseInt(t)] || []).push(p); };
+  teams.forEach(t => { if (!covered.has(`${t.Team}-${t.Grade}`)) add(t.Team, { name: t.Player, sub: false }); });
+  subs.forEach(s => add(s.Team, { name: s.Player, sub: true }));
+  const out = [];
+  for (let i = 1; i <= 23; i += 2) {
+    const ppl = [...(byTeam[parseInt(sched[String(i)])] || []), ...(byTeam[parseInt(sched[String(i + 1)])] || [])];
+    if (!ppl.length) continue;
+    const flagged = ppl.find(p => !p.sub && points.has(p.name)) || ppl.find(p => points.has(p.name));
+    const point = flagged || ppl.find(p => !p.sub) || ppl[0];
+    out.push({ point: point.name, members: ppl.map(p => p.name).filter(n => n !== point.name), fallback: !flagged });
+  }
+  return out;
+}
+async function loadRainoutPoints() {
+  try { const j = await (await fetch('/rainout-point-people', { headers: await rainoutHeaders() })).json(); window._rainoutPoints = new Set(j.ok ? j.players : []); } catch (e) { window._rainoutPoints = window._rainoutPoints || new Set(); }
+  renderRainoutText();
+}
+async function saveRainoutPoints() {
+  const names = [...document.querySelectorAll('#rainoutPointBox input[type=checkbox]:checked')].map(c => c.value);
+  try { const j = await (await fetch('/rainout-point-people', { method: 'POST', headers: await rainoutHeaders(), body: JSON.stringify({ players: names }) })).json(); if (j.ok) window._rainoutPoints = new Set(j.players); } catch (e) {}
+  renderRainoutText();
+}
+function rainoutMode() { return document.querySelector('input[name=rainoutMode2]:checked')?.value || 'all'; }
+function renderRainoutPoint(date) {
+  const box = document.getElementById('rainoutPointBox'); if (!box) return;
+  const point = rainoutMode() === 'point';
+  box.style.display = point ? '' : 'none'; window._rainoutGroups = null;
+  if (!point) return;
+  const pts = window._rainoutPoints || new Set(), fsx = rainoutFoursomes(date, pts);
+  if (!fsx) { box.innerHTML = '<span style="color:#c62828;font-size:12px">No schedule for that night, so the foursomes are unknown. Use "Text every player".</span>'; return; }
+  window._rainoutGroups = fsx;
+  const roster = [...new Set(query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=? ORDER BY Player`, [parseInt(String(date).substring(0, 4))]).map(r => r.Player))];
+  box.innerHTML = `<div style="border:1px solid #ddd;border-radius:6px;padding:8px 10px;font-size:12px">
+    <strong>Foursomes that night</strong>${fsx.map(g => `<div style="margin-top:4px">📞 <b>${escapeHtml(g.point)}</b>${g.fallback ? ' <span style="color:#e65100">(no point person flagged, picked for you)</span>' : ''} → ${g.members.map(escapeHtml).join(', ') || '<i>nobody else</i>'}</div>`).join('')}
+    <details style="margin-top:8px"><summary style="cursor:pointer;color:#1565c0">Choose the standing point people (${pts.size})</summary>
+      <div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0">${roster.map(n => `<label><input type="checkbox" value="${escapeHtml(n)}"${pts.has(n) ? ' checked' : ''}> ${escapeHtml(n)}</label>`).join('')}</div>
+      <button onclick="saveRainoutPoints()" style="padding:4px 12px;font-size:12px;cursor:pointer">Save point people</button></details></div>`;
+}
 async function rainoutHeaders() {
   const token = await ensureSaveToken();
   return { 'Content-Type': 'application/json', 'X-Save-Token': token, 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': actorRole() };
@@ -18952,12 +19006,15 @@ async function rainoutHeaders() {
 // who = list of names to send to (default: everyone playing); test = send only to the logged-in officer
 async function sendRainoutText(test, who) {
   const date = document.getElementById('rainoutTextDate')?.value || '';
-  const names = who || window._rainoutNames || [], msg = (document.getElementById('rainoutTextMsg')?.value || '').trim(), out = document.getElementById('rainoutTextResult');
-  if (!date || !msg || (!test && !names.length)) { alert('Pick a date with players and write a message first.'); return; }
-  if (!test && !confirm(`Send this text to ${names.length} player(s)?\n\n${msg}`)) return;
+  const names = (who && who.groups ? who.groups.map(g => g.point) : who) || window._rainoutNames || [], msg = (document.getElementById('rainoutTextMsg')?.value || '').trim(), out = document.getElementById('rainoutTextResult');
+  if (!date || !msg || (!test && !names.length && !(rainoutMode() === 'point' && (window._rainoutGroups || []).length))) { alert('Pick a date with players and write a message first.'); return; }
+  const nTo = (!who && rainoutMode() === 'point' && window._rainoutGroups) ? window._rainoutGroups.filter(g => g.members.length).length : names.length;
+  if (!test && !confirm(`Send this text to ${nTo} ${(!who && rainoutMode() === 'point') ? 'point person(s)' : 'player(s)'}?\n\n${msg}`)) return;
   out.textContent = 'Sending…';
   try {
-    const resp = await fetch('/send-rainout-text', { method: 'POST', headers: await rainoutHeaders(), body: JSON.stringify({ players: names, message: msg, date, test: !!test }) });
+    // point-person mode (initial send only): text the point person of each foursome; a "text again" passes explicit names/groups
+    const groups = (!who && rainoutMode() === 'point' && window._rainoutGroups) ? window._rainoutGroups.filter(g => g.members.length).map(g => ({ point: g.point, members: g.members })) : (who && who.groups) || null;
+    const resp = await fetch('/send-rainout-text', { method: 'POST', headers: await rainoutHeaders(), body: JSON.stringify({ players: names, groups, message: msg, date, test: !!test }) });
     const j = await resp.json();
     if (!j.ok) { out.innerHTML = `<span style="color:#c62828">${escapeHtml(j.error || 'Failed')}</span>`; return; }
     out.innerHTML = (j.simulated ? '<b>Sandbox: nothing was actually sent to players.</b> ' : '') + (j.test ? '🧪 Test sent to you: ' : '✓ ') + `${j.sent.length} sent` +
@@ -18972,15 +19029,28 @@ async function refreshRainoutConfirms() {
   try {
     const j = await (await fetch('/rainout-status?date=' + date, { headers: await rainoutHeaders() })).json();
     if (!j.ok || !j.rows.length) { box.innerHTML = ''; return; }
-    const done = j.rows.filter(r => r.confirmedAt), waiting = j.rows.filter(r => !r.confirmedAt);
-    window._rainoutWaiting = waiting.map(r => r.player);
-    box.innerHTML = `<div style="border:1px solid #ddd;border-radius:6px;padding:8px 10px;font-size:12px">
-      <strong>Confirmed ${done.length} of ${j.rows.length}</strong>
-      <button onclick="refreshRainoutConfirms()" style="margin-left:8px;padding:2px 8px;font-size:11px;border:1px solid #999;background:white;border-radius:4px;cursor:pointer">Refresh</button>
-      ${done.length ? `<div style="color:#2e7d32;margin-top:4px">✓ ${done.map(r => escapeHtml(r.player)).join(', ')}</div>` : ''}
-      ${waiting.length ? `<div style="color:#c62828;margin-top:4px">Waiting on: ${waiting.map(r => escapeHtml(r.player)).join(', ')}</div>
-        <button onclick="sendRainoutText(false, window._rainoutWaiting)" style="margin-top:6px;padding:5px 12px;background:#e65100;color:white;border:none;border-radius:5px;font-weight:600;font-size:12px;cursor:pointer">🔁 Text again to the ${waiting.length} who haven't confirmed</button>` : '<div style="margin-top:4px;color:#2e7d32">Everyone has confirmed.</div>'}
-    </div>`;
+    const btn = 'margin-top:6px;margin-right:6px;padding:5px 12px;color:white;border:none;border-radius:5px;font-weight:600;font-size:12px;cursor:pointer;background:';
+    const direct = j.rows.filter(r => r.kind !== 'point'), points = j.rows.filter(r => r.kind === 'point');
+    let html = '';
+    if (direct.length) {
+      const done = direct.filter(r => r.confirmedAt), waiting = direct.filter(r => !r.confirmedAt);
+      window._rainoutWaiting = waiting.map(r => r.player);
+      html += `<div style="border:1px solid #ddd;border-radius:6px;padding:8px 10px;font-size:12px;margin-bottom:6px"><strong>Confirmed ${done.length} of ${direct.length}</strong>
+        ${done.length ? `<div style="color:#2e7d32;margin-top:4px">✓ ${done.map(r => escapeHtml(r.player)).join(', ')}</div>` : ''}
+        ${waiting.length ? `<div style="color:#c62828;margin-top:4px">Waiting on: ${waiting.map(r => escapeHtml(r.player)).join(', ')}</div>
+        <button onclick="sendRainoutText(false, window._rainoutWaiting)" style="${btn}#e65100">🔁 Text again to the ${waiting.length} who haven't confirmed</button>` : '<div style="margin-top:4px;color:#2e7d32">Everyone has confirmed.</div>'}</div>`;
+    }
+    if (points.length) {
+      const notTold = []; points.forEach(r => r.members.forEach(m => { if (!r.told.includes(m)) notTold.push(m); }));
+      const waitingPts = points.filter(r => !r.confirmedAt);
+      window._rainoutNotTold = notTold;
+      window._rainoutWaitingPoints = { groups: waitingPts.map(r => ({ point: r.player, members: r.members })) };
+      html += `<div style="border:1px solid #ddd;border-radius:6px;padding:8px 10px;font-size:12px"><strong>Point people: ${points.length - waitingPts.length} of ${points.length} confirmed</strong>
+        ${points.map(r => `<div style="margin-top:3px">${r.confirmedAt ? '✓' : '⏳'} <b>${escapeHtml(r.player)}</b> — told ${r.told.length} of ${r.members.length}${r.told.length < r.members.length ? ` <span style="color:#c62828">(not yet: ${r.members.filter(m => !r.told.includes(m)).map(escapeHtml).join(', ')})</span>` : ' ✓'}</div>`).join('')}
+        ${waitingPts.length ? `<button onclick="sendRainoutText(false, window._rainoutWaitingPoints)" style="${btn}#e65100">🔁 Text again to the ${waitingPts.length} point person(s) who haven't confirmed</button>` : ''}
+        ${notTold.length ? `<button onclick="sendRainoutText(false, window._rainoutNotTold)" style="${btn}#c62828">📲 Text the ${notTold.length} not yet told directly</button>` : '<div style="margin-top:4px;color:#2e7d32">Everyone has been told.</div>'}</div>`;
+    }
+    box.innerHTML = `<div style="margin-bottom:4px"><button onclick="refreshRainoutConfirms()" style="padding:2px 8px;font-size:11px;border:1px solid #999;background:white;border-radius:4px;cursor:pointer">Refresh</button></div>` + html;
   } catch (e) {}
 }
 

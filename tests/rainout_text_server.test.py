@@ -62,3 +62,39 @@ j = post({**body, 'players': ['Fallback', 'Mail Only', 'Prefers Email']}).get_js
 assert [re.search(r'/r/([0-9a-f]{16})', t).group(1) for _, t in sent_to] == [toks[3], toks[1], toks[2]] and [r['player'] for r in st() if r['confirmedAt']] == ['Cell One']
 assert sqlite3.connect(app.DB_PATH).execute("SELECT COUNT(*) FROM LogTable WHERE method='rainout_confirmed'").fetchone()[0] == 1
 print('ok')
+
+# ── point-person mode ──
+c = sqlite3.connect(app.DB_PATH)
+c.executescript("""INSERT INTO Players (Player, Phone, CellCarrier, Email, ContactMethod) VALUES ('Point Pat','502-555-0201','verizon','',''), ('Mem Ann','502-555-0202','verizon','',''), ('Mem Bob','502-555-0203','att','',''), ('Mem Cy','','','',''),
+  ('Alone Al','502-555-0204','verizon','','');""")
+c.commit(); c.close()
+sent_to.clear()
+groups = [{'point': 'Point Pat', 'members': ['Mem Ann', 'Mem Bob', 'Mem Cy']}, {'point': 'Ghost', 'members': ['Mem Ann']}, {'point': 'Alone Al', 'members': []}]
+pb = {'groups': groups, 'message': 'Rain out tonight', 'date': '20261020', 'players': ['ignored']}
+j = post(pb).get_json()
+assert j['ok'] and j['sent'] == ['Point Pat'] and [f['player'] for f in j['failed']] == ['Ghost'], j   # empty group dropped; players ignored
+assert len(sent_to) == 1 and sent_to[0][0] == '5025550201@vtext.com'
+t = sent_to[0][1]; assert "You're the point person for Mem Ann, Mem Bob, Mem Cy" in t and 'tick off who you told' in t
+ptok = re.search(r'/r/([0-9a-f]{16})', t).group(1)
+rows = cl.get('/rainout-status?date=20261020', headers=H).get_json()['rows']
+assert rows == [{'player': 'Point Pat', 'sentAt': rows[0]['sentAt'], 'confirmedAt': '', 'kind': 'point', 'members': ['Mem Ann', 'Mem Bob', 'Mem Cy'], 'told': []}], rows
+# the point person's page lists the foursome with text/call links; GET changes nothing
+page = cl.get(f'/r/{ptok}').data.decode()
+assert 'Mem Ann' in page and 'sms:+15025550202' in page and 'tel:+15025550203' in page and 'I told Mem' in page and 'Got it' in page
+assert cl.get('/rainout-status?date=20261020', headers=H).get_json()['rows'][0]['told'] == []
+# tick off who was told (only foursome members count); Got it confirms the point person
+cl.post(f'/r/{ptok}', data={'told': 'Mem Ann'}); cl.post(f'/r/{ptok}', data={'told': 'Somebody Else'})
+page = cl.post(f'/r/{ptok}').data.decode()
+r0 = cl.get('/rainout-status?date=20261020', headers=H).get_json()['rows'][0]
+assert r0['told'] == ['Mem Ann'] and r0['confirmedAt'] and '✓ told' in page and 'you are confirmed' in page.lower()
+# sending a direct (non-point) notice to the same person the same night is a separate link
+sent_to.clear(); post({'players': ['Point Pat'], 'message': 'Rain out tonight', 'date': '20261020'})
+assert re.search(r'/r/([0-9a-f]{16})', sent_to[0][1]).group(1) != ptok
+# test in point mode: only the officer, with the first foursome's members
+sent_to.clear(); j = post({**pb, 'test': True}).get_json()
+assert j['sent'] == ['Boss Admin'] and sent_to[0][1].startswith('TEST: ') and 'point person for Mem Ann, Mem Bob, Mem Cy' in sent_to[0][1]
+# standing point-people list: officers only, replace-all
+assert cl.get('/rainout-point-people').status_code == 403
+assert cl.post('/rainout-point-people', json={'players': ['Point Pat', 'Mem Bob']}, headers=H).get_json()['players'] == ['Mem Bob', 'Point Pat']
+assert cl.post('/rainout-point-people', json={'players': ['Mem Cy']}, headers=H).get_json()['players'] == ['Mem Cy']
+print('ok point')
