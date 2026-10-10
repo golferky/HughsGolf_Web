@@ -2784,7 +2784,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261010.2';
+const APP_VERSION = '20261010.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -16319,7 +16319,9 @@ function renderGallusFetchCheck() {
 
     // Show payment collection modal if anyone was imported; Done button navigates to gallus queue
     // Skip the payment pop-up when every imported player was already on the scorecard (auto-reconciled): that night is already done.
-    if (importedNames.length > 0 && autoReconciled.length < importedNames.length) {
+    // Also skip it when none of them has any entry-fee row for that date (nothing to collect, e.g. post season).
+    const _hasFees = importedNames.length > 0 && importedNames.some(n => (query(`SELECT COUNT(*) as c FROM Payments WHERE League="Hugh's" AND Player=? AND CAST(Date AS INTEGER)=? AND Detail='Payment'`, [n, parseInt(today)])[0]?.c || 0) > 0);
+    if (importedNames.length > 0 && autoReconciled.length < importedNames.length && _hasFees) {
       showGallusPaymentModal(importedNames, today);
     } else {
       switchTab('admin');

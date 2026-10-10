@@ -23,7 +23,8 @@ const T = (...n) => ({ players: n.map(name => ({ name })) });
   assert.deepStrictEqual(calls.map(c => c[0]), ['modal'], 'one unsure name: the confirm screen still appears');
   // wiring
   assert(/await gallusConfirmNames\(window\._pendingGallusImport\)/.test(src) && !/\n\s*showGallusNameRemapModal\(window\._pendingGallusImport\);\s*\n\s*return;/.test(src), 'the confirm click goes through the check');
-  assert(/importedNames\.length > 0 && autoReconciled\.length < importedNames\.length\) \{\s*showGallusPaymentModal/.test(src), 'payment pop-up only when something was not already on the scorecard');
+  assert(/importedNames\.length > 0 && autoReconciled\.length < importedNames\.length && _hasFees\) \{\s*showGallusPaymentModal/.test(src), 'payment pop-up only when something was not already on the scorecard and someone has a fee row');
+  assert(/_hasFees = importedNames\.length > 0 && importedNames\.some\([^\n]*FROM Payments/.test(src), 'no pop-up when there is no entry fee to collect');
   assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]));
   console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });
