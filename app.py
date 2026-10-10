@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261010.6-sandbox'
+VERSION    = '20261010.7-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1372,10 +1372,23 @@ def send_rainout_text():
     b = request.get_json() or {}
     test = bool(b.get('test'))
     date = ''.join(c for c in str(b.get('date', '')) if c.isdigit())[:8]
-    players = [actor] if test else [str(p).strip() for p in (b.get('players') or []) if str(p).strip()][:60]
     message = ' '.join(str(b.get('message', '')).split())[:300]
+    # Point-person mode: groups = [{point, members}] -> only the point person is texted, with their foursome to relay to.
+    groups = []
+    for g in (b.get('groups') or [])[:30]:
+        pt = str(g.get('point', '')).strip(); mem = [str(m).strip() for m in (g.get('members') or []) if str(m).strip() and str(m).strip() != pt][:6]
+        if pt and mem:
+            groups.append({'point': pt, 'members': mem})
+    if test:
+        players = [actor]
+        if groups:
+            groups = [{'point': actor, 'members': groups[0]['members']}]
+    else:
+        players = [g['point'] for g in groups] if groups else [str(p).strip() for p in (b.get('players') or []) if str(p).strip()][:60]
     if not players or not message or len(date) != 8:
         return jsonify({'ok': False, 'error': 'Date, players and a message are required'}), 400
+    kind = 'point' if groups else ''
+    members_of = {g['point']: g['members'] for g in groups}
     base = request.host_url.rstrip('/')
     if not test and _is_private_host(request.host):
         return jsonify({'ok': False, 'error': 'Open the app from its public address (not the home-network address) so the confirm link works on players\' phones.'}), 400
@@ -1389,21 +1402,49 @@ def send_rainout_text():
             addr, err = _contact_address(cur, name)
             if not addr:
                 failed.append({'player': name, 'reason': err}); continue
-            cur.execute("SELECT Token FROM RainoutNotice WHERE Date=? AND Player=? AND Test=?", (date, name, 1 if test else 0))
+            members_json = json.dumps(members_of.get(name, [])) if kind else None
+            cur.execute("SELECT Token FROM RainoutNotice WHERE Date=? AND Player=? AND Test=? AND COALESCE(Kind,'')=?", (date, name, 1 if test else 0, kind))
             row = cur.fetchone()   # re-sending reuses the player's link so a confirmation is never lost
             token = row[0] if row else uuid.uuid4().hex[:16]
             if not row:
-                cur.execute("INSERT INTO RainoutNotice (Token, Date, Player, Message, SentAt, SentBy, Test) VALUES (?,?,?,?,?,?,?)",
-                            (token, date, name, message, now, actor, 1 if test else 0))
-            text = ('TEST: ' if test else '') + f"{message} Please tap to confirm - no need to reply: {base}/r/{token}"
+                cur.execute("INSERT INTO RainoutNotice (Token, Date, Player, Message, SentAt, SentBy, Test, Kind, Members) VALUES (?,?,?,?,?,?,?,?,?)",
+                            (token, date, name, message, now, actor, 1 if test else 0, kind, members_json))
+            elif kind:
+                cur.execute("UPDATE RainoutNotice SET Members=? WHERE Token=?", (members_json, token))
+            if kind:
+                text = ('TEST: ' if test else '') + f"{message} You're the point person for {', '.join(members_of[name])}: please let them know. Tap to confirm and tick off who you told: {base}/r/{token}"
+            else:
+                text = ('TEST: ' if test else '') + f"{message} Please tap to confirm - no need to reply: {base}/r/{token}"
             if simulated or _send_mail([addr], "Hugh's Golf", text):
                 sent.append(name)
             else:
                 failed.append({'player': name, 'reason': 'send failed'})
-        _log_row(cur, 'send_rainout_text', f'{actor} sent a {"TEST " if test else ""}rainout text for {date} to {len(sent)} of {len(players)}' + (' (sandbox: not actually sent)' if simulated else ''),
+        _log_row(cur, 'send_rainout_text', f'{actor} sent a {"TEST " if test else ""}{"point-person " if kind else ""}rainout text for {date} to {len(sent)} of {len(players)}' + (' (sandbox: not actually sent)' if simulated else ''),
                  f'message={message} failed={[f["player"] for f in failed]}')
         conn.commit(); conn.close()
     return jsonify({'ok': True, 'simulated': simulated, 'test': test, 'sent': sent, 'failed': failed})
+
+
+@app.route('/rainout-point-people', methods=['GET', 'POST'])
+def rainout_point_people():
+    """Officers: the standing list of players who are asked to pass a rainout on to their foursome."""
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    _actor, role = _audit_actor()
+    if role not in ('admin', 'developer'):
+        return jsonify({'ok': False, 'error': 'Officers only'}), 403
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
+        if request.method == 'POST':
+            names = [str(n).strip() for n in ((request.get_json() or {}).get('players') or []) if str(n).strip()][:60]
+            cur.execute("DELETE FROM RainoutPointPerson")
+            cur.executemany("INSERT OR IGNORE INTO RainoutPointPerson (Player) VALUES (?)", [(n,) for n in names])
+            conn.commit()
+        cur.execute("SELECT Player FROM RainoutPointPerson ORDER BY Player")
+        out = [p for (p,) in cur.fetchall()]
+        conn.close()
+    return jsonify({'ok': True, 'players': out})
 
 
 @app.route('/rainout-status')
@@ -1417,38 +1458,72 @@ def rainout_status():
     date = ''.join(c for c in str(request.args.get('date', '')) if c.isdigit())[:8]
     conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
     cur = conn.cursor()
-    cur.execute("SELECT Player, SentAt, COALESCE(ConfirmedAt,'') FROM RainoutNotice WHERE Date=? AND Test=0 ORDER BY Player", (date,))
-    rows = [{'player': p, 'sentAt': s, 'confirmedAt': c} for p, s, c in cur.fetchall()]
+    cur.execute("SELECT Token, Player, SentAt, COALESCE(ConfirmedAt,''), COALESCE(Kind,''), COALESCE(Members,'[]') FROM RainoutNotice WHERE Date=? AND Test=0 ORDER BY Player", (date,))
+    rows = []
+    for tk, p, s, c, kd, mem in cur.fetchall():
+        row = {'player': p, 'sentAt': s, 'confirmedAt': c, 'kind': kd}
+        if kd == 'point':
+            cur.execute("SELECT Member FROM RainoutTold WHERE Token=?", (tk,))
+            row['members'] = json.loads(mem or '[]'); row['told'] = [m for (m,) in cur.fetchall()]
+        rows.append(row)
     conn.close()
     return jsonify({'ok': True, 'rows': rows})
 
 
 @app.route('/r/<token>', methods=['GET', 'POST'])
 def rainout_ack(token):
-    """Public one-tap page from the rainout text. GET only shows it (so link previews never confirm); the button POSTs."""
+    """Public one-tap page from the rainout text. GET only shows it (so link previews never confirm); buttons POST.
+    A point person's page also lists their foursome with call/text links and a "told" tick for each."""
     import html as _html
     token = (token or '').strip()[:32]
     with DB_WRITE_LOCK:
         conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
         cur = conn.cursor()
-        cur.execute("SELECT Player, Date, Message, COALESCE(ConfirmedAt,'') FROM RainoutNotice WHERE Token=?", (token,))
+        cur.execute("SELECT Player, Date, Message, COALESCE(ConfirmedAt,''), COALESCE(Kind,''), COALESCE(Members,'[]') FROM RainoutNotice WHERE Token=?", (token,))
         row = cur.fetchone()
         if not row:
             conn.close()
             return _PREF_PAGE.replace('%BODY%', '<h1>Link not valid</h1><p>Please ask the league admin.</p>'), 404
-        name, date, msg, done = row
-        if request.method == 'POST' and not done:
-            done = now_local().strftime('%Y-%m-%d %H:%M')
-            cur.execute("UPDATE RainoutNotice SET ConfirmedAt=? WHERE Token=?", (done, token))
-            _log_row(cur, 'rainout_confirmed', f'{name} confirmed the rainout notice for {date}', f'ip={_audit_ip()}')
-            conn.commit()
+        name, date, msg, done, kind, mem_json = row
+        members = json.loads(mem_json or '[]') if kind == 'point' else []
+        now = now_local().strftime('%Y-%m-%d %H:%M')
+        if request.method == 'POST':
+            member = (request.form.get('told') or '').strip()
+            if member and member in members:
+                cur.execute("INSERT OR IGNORE INTO RainoutTold (Token, Member, ToldAt) VALUES (?,?,?)", (token, member, now))
+                _log_row(cur, 'rainout_told', f'{name} told {member} about the rainout on {date}', f'ip={_audit_ip()}')
+                conn.commit()
+            elif not member and not done:
+                done = now
+                cur.execute("UPDATE RainoutNotice SET ConfirmedAt=? WHERE Token=?", (done, token))
+                _log_row(cur, 'rainout_confirmed', f'{name} confirmed the rainout notice for {date}', f'ip={_audit_ip()}')
+                conn.commit()
+        told, phones = set(), {}
+        if kind == 'point':
+            cur.execute("SELECT Member FROM RainoutTold WHERE Token=?", (token,))
+            told = {m for (m,) in cur.fetchall()}
+            for m in members:
+                cur.execute("SELECT Phone FROM Players WHERE Player=?", (m,))
+                r = cur.fetchone(); d = ''.join(c for c in (r[0] if r else '') or '' if c.isdigit())[-10:]
+                phones[m] = d if len(d) == 10 else ''
         conn.close()
     first = _html.escape(name.split()[0])
-    if done:
+    btn = 'padding:14px 22px;font-size:17px;background:#1b4d2e;color:#fff;border:0;border-radius:8px;width:100%'
+    if kind == 'point':
+        rows = ''
+        for m in members:
+            ph = phones.get(m, '')
+            links = (f' <a href="sms:+1{ph}">text</a> · <a href="tel:+1{ph}">call</a>' if ph else '')
+            tick = ('<b style="color:#2e7d32">✓ told</b>' if m in told else
+                    f'<form method="post" style="display:inline"><input type="hidden" name="told" value="{_html.escape(m)}"><button type="submit" style="padding:6px 12px;border-radius:6px;border:1px solid #1b4d2e;background:#fff">✓ I told {_html.escape(m.split()[0])}</button></form>')
+            rows += f'<p style="margin:10px 0"><b>{_html.escape(m)}</b>{links}<br>{tick}</p>'
+        ack = ('<p class="ok">Thanks, you are confirmed ✅</p>' if done else
+               f'<form method="post"><button type="submit" style="{btn}">👍 Got it</button></form>')
+        body = f'<h1>Hi {first} 👋</h1><p>{_html.escape(msg)}</p>{ack}<p>You are the point person for your foursome. Please let them know:</p>{rows}'
+    elif done:
         body = f'<h1>Thanks, {first} ✅</h1><p class="ok">You are confirmed. See you at the next round!</p>'
     else:
-        body = (f'<h1>Hi {first} 👋</h1><p>{_html.escape(msg)}</p><form method="post"><button type="submit" '
-                f'style="padding:14px 22px;font-size:17px;background:#1b4d2e;color:#fff;border:0;border-radius:8px;width:100%">👍 Got it</button></form>')
+        body = f'<h1>Hi {first} 👋</h1><p>{_html.escape(msg)}</p><form method="post"><button type="submit" style="{btn}">👍 Got it</button></form>'
     return _PREF_PAGE.replace('%BODY%', body)
 
 
@@ -3099,7 +3174,13 @@ def ensure_schema():
             PRIMARY KEY (Player, IP))""")
         # Rainout notices: one row per player per rainout date (token = the one-tap "Got it" link in the text).
         cur.execute("""CREATE TABLE IF NOT EXISTS RainoutNotice (
-            Token TEXT PRIMARY KEY, Date TEXT, Player TEXT, Message TEXT, SentAt TEXT, SentBy TEXT, Test INTEGER DEFAULT 0, ConfirmedAt TEXT)""")
+            Token TEXT PRIMARY KEY, Date TEXT, Player TEXT, Message TEXT, SentAt TEXT, SentBy TEXT, Test INTEGER DEFAULT 0, ConfirmedAt TEXT, Kind TEXT, Members TEXT)""")
+        for _c in ('Kind TEXT', 'Members TEXT'):
+            try: cur.execute(f"ALTER TABLE RainoutNotice ADD COLUMN {_c}")
+            except Exception: pass
+        # Point-person mode: who has been told by their point person, and who the league's point people are.
+        cur.execute("""CREATE TABLE IF NOT EXISTS RainoutTold (Token TEXT, Member TEXT, ToldAt TEXT, PRIMARY KEY (Token, Member))""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS RainoutPointPerson (Player TEXT PRIMARY KEY)""")
         cur.execute("""CREATE TABLE IF NOT EXISTS PlayerPresence (
             Player TEXT PRIMARY KEY, LastSeen TEXT, IP TEXT, Tab TEXT, Device TEXT)""")
         # SeasonSettings.Carryover: the League Settings form has always had this field, but the column was missing, which made the
