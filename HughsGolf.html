@@ -1653,8 +1653,11 @@
           </div>
           <textarea id="rainoutTextMsg" rows="3" maxlength="300" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;font-family:inherit"></textarea>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+            <button onclick="sendRainoutText(true)" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">🧪 Send a test to me only</button>
             <button onclick="sendRainoutText()" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">📲 Text everyone from the app</button>
           </div>
+          <div style="font-size:11px;color:#777;margin-bottom:8px">Every text ends with a one-tap <b>Got it</b> link, so players confirm on a web page instead of replying. Nothing comes back to a group. The test goes only to your own phone/email and works in the sandbox too.</div>
+          <div id="rainoutConfirmBox" style="margin-bottom:10px"></div>
           <div style="font-size:11px;color:#777;margin-bottom:8px">Each player gets their own text; replies come back only to the sender. Or open a group text on your phone (iPhone groups are limited to 20 people, so the list is split evenly):</div>
           <div id="rainoutTextBatches"></div>
           <div id="rainoutTextResult" style="margin-top:10px;font-size:12px"></div>
@@ -2800,7 +2803,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261010.5';
+const APP_VERSION = '20261010.6';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3944,9 +3947,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
   ]);
-  ensureVersion('20261010.5', 'October 10, 2026', [
-    ['adminsummary', 'Admins: Rain Out has a Rainout Text box. It lists who is playing that night, can text them all from the app, and splits them into group texts of 20 or fewer for your phone.', '', 0],
-    ['admin', 'Rainout Text', 'Pick the round date (today or the next one) and edit the pre-filled message. Recipients are the roster for the teams on that night\'s schedule, minus anyone a sub covers, plus the subs. Text everyone from the app sends one text each (no 20-person limit; replies go only to the sender), or open a group text on your phone in even batches of 20 or fewer, or copy the numbers to build a named group chat. Players with no cell number are listed. The sandbox never sends real texts.', 1],
+  ensureVersion('20261010.6', 'October 10, 2026', [
+    ['adminsummary', 'Admins: Rain Out has a Rainout Text box. It lists who is playing that night, can text them all from the app (each text has a one-tap Got it link so nobody has to reply), shows who has confirmed, and can send a test to just you. It also splits them into group texts of 20 or fewer for your phone.', '', 0],
+    ['admin', 'Rainout Text', 'Pick the round date (today or the next one) and edit the pre-filled message. Recipients are the roster for the teams on that night\'s schedule, minus anyone a sub covers, plus the subs. Text everyone from the app sends one text each (no 20-person limit; replies go only to the sender), or open a group text on your phone in even batches of 20 or fewer, or copy the numbers to build a named group chat. Players with no cell number are listed. Every text ends with a one-tap Got it link (a web page, no login) so replies never land in a group; Rain Out shows who has confirmed and can text again to those who have not. Send a test to me only goes to your own phone/email. The sandbox never texts real players.', 1],
   ]);
   ensureVersion('20261010.4', 'October 10, 2026', [
     ['adminsummary', 'Admins: a Gallus round that is already reconciled can now have its date changed, the version in the header shows the GitHub PR number and commit, and the Collect Payments pop-up no longer appears when there is nothing to collect.', '', 0],
@@ -18926,6 +18929,7 @@ function renderRainoutText() {
   if (!sel || !sel.value) { if (who) who.textContent = 'No schedule dates found.'; if (box) box.innerHTML = ''; return; }
   const date = sel.value, names = rainoutRoster(date), c = rainoutContacts(names);
   window._rainoutNames = names;
+  refreshRainoutConfirms();
   if (msg && !msg.dataset.edited) msg.value = `Hugh's Golf: tonight's round (${fmtDate(date)}) is rained out. We'll post the updated schedule soon.`;
   if (msg) msg.oninput = () => { msg.dataset.edited = '1'; renderRainoutText(); };
   who.innerHTML = `${names.length} playing that night` + (c.noPhone.length ? ` · <span style="color:#c62828">no cell number: ${c.noPhone.map(escapeHtml).join(', ')}</span>` : '');
@@ -18941,21 +18945,43 @@ function renderRainoutText() {
       </div></div>`;
   }).join('') || '<div style="font-size:12px;color:#888">Nobody with a cell number on file for that night.</div>';
 }
-async function sendRainoutText() {
-  const names = window._rainoutNames || [], msg = (document.getElementById('rainoutTextMsg')?.value || '').trim(), out = document.getElementById('rainoutTextResult');
-  if (!names.length || !msg) { alert('Pick a date with players and write a message first.'); return; }
-  if (!confirm(`Send this text to ${names.length} player(s)?\n\n${msg}`)) return;
+async function rainoutHeaders() {
+  const token = await ensureSaveToken();
+  return { 'Content-Type': 'application/json', 'X-Save-Token': token, 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': actorRole() };
+}
+// who = list of names to send to (default: everyone playing); test = send only to the logged-in officer
+async function sendRainoutText(test, who) {
+  const date = document.getElementById('rainoutTextDate')?.value || '';
+  const names = who || window._rainoutNames || [], msg = (document.getElementById('rainoutTextMsg')?.value || '').trim(), out = document.getElementById('rainoutTextResult');
+  if (!date || !msg || (!test && !names.length)) { alert('Pick a date with players and write a message first.'); return; }
+  if (!test && !confirm(`Send this text to ${names.length} player(s)?\n\n${msg}`)) return;
   out.textContent = 'Sending…';
   try {
-    const token = await ensureSaveToken();
-    const resp = await fetch('/send-rainout-text', { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Save-Token': token, 'X-Actor': encodeURIComponent(currentUser?.name || ''), 'X-Actor-Role': actorRole() },
-      body: JSON.stringify({ players: names, message: msg }) });
+    const resp = await fetch('/send-rainout-text', { method: 'POST', headers: await rainoutHeaders(), body: JSON.stringify({ players: names, message: msg, date, test: !!test }) });
     const j = await resp.json();
     if (!j.ok) { out.innerHTML = `<span style="color:#c62828">${escapeHtml(j.error || 'Failed')}</span>`; return; }
-    out.innerHTML = (j.simulated ? '<b>Sandbox: nothing was actually sent.</b> ' : '') + `✓ ${j.sent.length} sent` +
+    out.innerHTML = (j.simulated ? '<b>Sandbox: nothing was actually sent to players.</b> ' : '') + (j.test ? '🧪 Test sent to you: ' : '✓ ') + `${j.sent.length} sent` +
       (j.failed.length ? ` · <span style="color:#c62828">couldn't reach: ${j.failed.map(f => escapeHtml(f.player) + ' (' + escapeHtml(f.reason) + ')').join(', ')}</span>` : '');
+    if (!test) refreshRainoutConfirms();
   } catch (e) { out.innerHTML = `<span style="color:#c62828">${escapeHtml(e.message)}</span>`; }
+}
+// Who has tapped "Got it" for the selected date (read from the server, since confirmations happen outside the app).
+async function refreshRainoutConfirms() {
+  const box = document.getElementById('rainoutConfirmBox'), date = document.getElementById('rainoutTextDate')?.value;
+  if (!box || !date) return;
+  try {
+    const j = await (await fetch('/rainout-status?date=' + date, { headers: await rainoutHeaders() })).json();
+    if (!j.ok || !j.rows.length) { box.innerHTML = ''; return; }
+    const done = j.rows.filter(r => r.confirmedAt), waiting = j.rows.filter(r => !r.confirmedAt);
+    window._rainoutWaiting = waiting.map(r => r.player);
+    box.innerHTML = `<div style="border:1px solid #ddd;border-radius:6px;padding:8px 10px;font-size:12px">
+      <strong>Confirmed ${done.length} of ${j.rows.length}</strong>
+      <button onclick="refreshRainoutConfirms()" style="margin-left:8px;padding:2px 8px;font-size:11px;border:1px solid #999;background:white;border-radius:4px;cursor:pointer">Refresh</button>
+      ${done.length ? `<div style="color:#2e7d32;margin-top:4px">✓ ${done.map(r => escapeHtml(r.player)).join(', ')}</div>` : ''}
+      ${waiting.length ? `<div style="color:#c62828;margin-top:4px">Waiting on: ${waiting.map(r => escapeHtml(r.player)).join(', ')}</div>
+        <button onclick="sendRainoutText(false, window._rainoutWaiting)" style="margin-top:6px;padding:5px 12px;background:#e65100;color:white;border:none;border-radius:5px;font-weight:600;font-size:12px;cursor:pointer">🔁 Text again to the ${waiting.length} who haven't confirmed</button>` : '<div style="margin-top:4px;color:#2e7d32">Everyone has confirmed.</div>'}
+    </div>`;
+  } catch (e) {}
 }
 
 function loadScheduleBuilder() {

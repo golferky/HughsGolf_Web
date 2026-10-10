@@ -25,4 +25,5 @@ assert.strictEqual(ctx.rainoutSmsHref(['5025550101'], 'Hi', false), 'sms:+150255
 // wiring
 assert(/section==='rainout'\) \{ loadScheduleBuilder\(\); loadRainoutText\(\);/.test(src));
 assert(/fetch\('\/send-rainout-text'/.test(src));
+assert(/sendRainoutText\(true\)/.test(src) && /rainout-status\?date=/.test(src) && /Text again to the/.test(src), 'test-to-me, confirmation tracker, text-again');
 console.log('ok');
