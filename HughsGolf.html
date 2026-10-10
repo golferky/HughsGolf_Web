@@ -2808,7 +2808,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261010.7';
+const APP_VERSION = '20261010.8';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3952,9 +3952,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
   ]);
-  ensureVersion('20261010.7', 'October 10, 2026', [
+  ensureVersion('20261010.8', 'October 10, 2026', [
     ['adminsummary', 'Admins: Rain Out has a Rainout Text box (optionally text only each foursome\'s point person, who passes it on). It lists who is playing that night, can text them all from the app (each text has a one-tap Got it link so nobody has to reply), shows who has confirmed, and can send a test to just you. It also splits them into group texts of 20 or fewer for your phone.', '', 0],
-    ['admin', 'Rainout Text', 'Pick the round date (today or the next one) and edit the pre-filled message. Recipients are the roster for the teams on that night\'s schedule, minus anyone a sub covers, plus the subs. Text everyone from the app sends one text each (no 20-person limit; replies go only to the sender), or open a group text on your phone in even batches of 20 or fewer, or copy the numbers to build a named group chat. Players with no cell number are listed. Every text ends with a one-tap Got it link (a web page, no login) so replies never land in a group; Rain Out shows who has confirmed and can text again to those who have not. Send a test to me only goes to your own phone/email. Optional: text only each foursome\'s point person (a standing list you choose; the app picks one if none is flagged). Their link shows the foursome with text/call links and an I told them tick for each, Rain Out shows who has been told, and a button texts the rest directly. The sandbox never texts real players.', 1],
+    ['admin', 'Rainout Text', 'Pick the round date (today or the next one) and edit the pre-filled message. Recipients are the roster for the teams on that night\'s schedule, minus anyone a sub covers, plus the subs. Text everyone from the app sends one text each (no 20-person limit; replies go only to the sender), or open a group text on your phone in even batches of 20 or fewer, or copy the numbers to build a named group chat. Players with no cell number are listed. Every text ends with a one-tap Got it link (a web page, no login) so replies never land in a group; Rain Out shows who has confirmed and can text again to those who have not. Send a test to me only goes to your own phone/email. Anyone with no phone or email on file (or whose text fails) is left to a point person in their foursome, who is asked to contact them. Optional: text only each foursome\'s point person (a standing list you choose; the app picks one if none is flagged). Their link shows the foursome with text/call links and an I told them tick for each, Rain Out shows who has been told, and a button texts the rest directly. The sandbox never texts real players.', 1],
   ]);
   ensureVersion('20261010.4', 'October 10, 2026', [
     ['adminsummary', 'Admins: a Gallus round that is already reconciled can now have its date changed, the version in the header shows the GitHub PR number and commit, and the Collect Payments pop-up no longer appears when there is nothing to collect.', '', 0],
@@ -18916,9 +18916,29 @@ function rainoutSmsHref(numbers, body, ios) {
   return ios ? `sms:/open?addresses=${nums}&body=${encodeURIComponent(body)}` : `sms:${nums}?body=${encodeURIComponent(body)}`;
 }
 function rainoutContacts(names) {
-  const rows = names.length ? query(`SELECT Player, Phone FROM Players WHERE Player IN (${names.map(() => '?').join(',')})`, names) : [];
-  const phone = {}; rows.forEach(r => { const d = String(r.Phone || '').replace(/\D/g, '').slice(-10); if (d.length === 10) phone[r.Player] = d; });
-  return { withPhone: names.filter(n => phone[n]), noPhone: names.filter(n => !phone[n]), phone };
+  const rows = names.length ? query(`SELECT Player, Phone, CellCarrier, Email, ContactMethod FROM Players WHERE Player IN (${names.map(() => '?').join(',')})`, names) : [];
+  const phone = {}, unreachable = new Set(names);
+  rows.forEach(r => {
+    const d = String(r.Phone || '').replace(/\D/g, '').slice(-10); if (d.length === 10) phone[r.Player] = d;
+    const email = String(r.Email || '').trim(), cell = d.length === 10 && String(r.CellCarrier || '').trim() && r.ContactMethod !== 'email';
+    if (email || cell) unreachable.delete(r.Player);
+  });
+  return { withPhone: names.filter(n => phone[n]), noPhone: names.filter(n => !phone[n]), phone, unreachable: names.filter(n => unreachable.has(n)) };
+}
+// Anyone who could not be reached (no usable phone/email, or the send failed) is left to a point person in their foursome.
+// everyoneTexted: the others were texted directly, so the point person only needs to reach the missing ones; in point-person mode
+// (everyoneTexted false) a point person who could not be reached is replaced by another member who must tell the whole foursome.
+function rainoutAssignUnreachable(foursomes, failed, everyoneTexted) {
+  const bad = new Set(failed), groups = [], placed = new Set();
+  (foursomes || []).forEach(g => {
+    const people = [g.point, ...g.members], miss = people.filter(n => bad.has(n));
+    if (!miss.length) return;
+    const pointOk = !bad.has(g.point), point = pointOk ? g.point : people.find(n => !bad.has(n));
+    if (!point) return;
+    const members = people.filter(n => n !== point && (everyoneTexted ? bad.has(n) : (!pointOk || bad.has(n))));
+    if (members.length) { groups.push({ point, members }); miss.forEach(n => placed.add(n)); }
+  });
+  return { groups, stranded: failed.filter(n => !placed.has(n)) };
 }
 function loadRainoutText() {
   if (!db) return;
@@ -18939,7 +18959,7 @@ function renderRainoutText() {
   refreshRainoutConfirms();
   if (msg && !msg.dataset.edited) msg.value = `Hugh's Golf: tonight's round (${fmtDate(date)}) is rained out. We'll post the updated schedule soon.`;
   if (msg) msg.oninput = () => { msg.dataset.edited = '1'; renderRainoutText(); };
-  who.innerHTML = `${names.length} playing that night` + (c.noPhone.length ? ` · <span style="color:#c62828">no cell number: ${c.noPhone.map(escapeHtml).join(', ')}</span>` : '');
+  who.innerHTML = `${names.length} playing that night` + (c.unreachable.length ? ` · <span style="color:#e65100">no phone or email on file: ${c.unreachable.map(escapeHtml).join(', ')} (their foursome's point person will be asked to contact them)</span>` : '');
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
   const batches = rainoutBatches(c.withPhone, 20);
   box.innerHTML = batches.map((b, i) => {
@@ -19019,7 +19039,19 @@ async function sendRainoutText(test, who) {
     if (!j.ok) { out.innerHTML = `<span style="color:#c62828">${escapeHtml(j.error || 'Failed')}</span>`; return; }
     out.innerHTML = (j.simulated ? '<b>Sandbox: nothing was actually sent to players.</b> ' : '') + (j.test ? '🧪 Test sent to you: ' : '✓ ') + `${j.sent.length} sent` +
       (j.failed.length ? ` · <span style="color:#c62828">couldn't reach: ${j.failed.map(f => escapeHtml(f.player) + ' (' + escapeHtml(f.reason) + ')').join(', ')}</span>` : '');
-    if (!test) refreshRainoutConfirms();
+    if (!test && !(who && who.groups)) {
+      // anyone with no phone/email (or whose text failed) is left to a point person in their foursome
+      const failedNames = j.failed.map(f => f.player), fsx = window._rainoutGroups || rainoutFoursomes(date, window._rainoutPoints || new Set());
+      const a = failedNames.length ? rainoutAssignUnreachable(fsx, failedNames, !groups) : { groups: [], stranded: [] };
+      let extra = '';
+      if (a.groups.length) {
+        const r2 = await (await fetch('/send-rainout-text', { method: 'POST', headers: await rainoutHeaders(), body: JSON.stringify({ groups: a.groups, message: msg, date }) })).json();
+        extra += r2.ok ? `<div>📞 No phone/email (or the text failed) for ${failedNames.length}: their point person was asked to contact them (${a.groups.map(g => escapeHtml(g.point) + ' → ' + g.members.map(escapeHtml).join(', ')).join('; ')}).</div>` : `<div style="color:#c62828">${escapeHtml(r2.error || 'Could not reach the point person')}</div>`;
+      }
+      if (a.stranded.length) extra += `<div style="color:#c62828">Nobody could be asked to contact: ${a.stranded.map(escapeHtml).join(', ')}. Please call them yourself.</div>`;
+      if (extra) out.innerHTML += extra;
+      refreshRainoutConfirms();
+    }
   } catch (e) { out.innerHTML = `<span style="color:#c62828">${escapeHtml(e.message)}</span>`; }
 }
 // Who has tapped "Got it" for the selected date (read from the server, since confirmations happen outside the app).
