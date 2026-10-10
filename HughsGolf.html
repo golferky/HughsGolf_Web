@@ -19021,7 +19021,7 @@ function renderRainoutPoint(date) {
   box.style.display = point ? '' : 'none'; window._rainoutGroups = null;
   if (!point) return;
   const pts = window._rainoutPoints || new Set(), fsx = rainoutFoursomes(date, pts);
-  if (!fsx) { box.innerHTML = '<span style="color:#c62828;font-size:12px">${rainoutPsWeek(date) ? 'Post season has no set foursomes' : 'No schedule for that night, so the foursomes are unknown'}. Use "Text every player".</span>'; return; }
+  if (!fsx) { box.innerHTML = `<span style="color:#c62828;font-size:12px">${rainoutPsWeek(date) ? 'Post season has no set foursomes' : 'No schedule for that night, so the foursomes are unknown'}. Use "Text every player".</span>`; return; }
   window._rainoutGroups = fsx;
   const roster = [...new Set(query(`SELECT Player FROM Teams WHERE League="Hugh's" AND Year=? ORDER BY Player`, [parseInt(String(date).substring(0, 4))]).map(r => r.Player))];
   box.innerHTML = `<div style="border:1px solid #ddd;border-radius:6px;padding:8px 10px;font-size:12px">
