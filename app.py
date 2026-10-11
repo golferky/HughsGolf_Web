@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261010.9-sandbox'
+VERSION    = '20261011.1-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -258,6 +258,22 @@ def read_build_info():
         return {'commit': parts[0], 'pr': int(m.group(1)) if m else None}
     except Exception:
         return {'commit': '', 'pr': None}
+
+
+@app.route('/backlog-md')
+def backlog_md():
+    """Admins: the BACKLOG.md that deploy_qnap.sh uploads next to the app (shown on Admin > Backlog)."""
+    if request.headers.get('X-Save-Token', '') != SAVE_TOKEN:
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
+    _actor, role = _audit_actor()
+    if role not in ('admin', 'developer'):
+        return jsonify({'ok': False, 'error': 'Admins only'}), 403
+    path = os.path.join(BASE_DIR, 'BACKLOG.md')
+    if not os.path.exists(path):
+        return jsonify({'ok': False, 'error': 'BACKLOG.md has not been deployed yet'}), 404
+    with open(path, 'r', encoding='utf-8') as f:
+        text = f.read()
+    return jsonify({'ok': True, 'text': text, 'modified': os.path.getmtime(path)})
 
 
 @app.route('/version')
