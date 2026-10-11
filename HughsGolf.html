@@ -1415,6 +1415,7 @@
       <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">💾 Backups</button>
       <button onclick="showAdminSection('proposals')" id="adminBtnProposals" class="admin-btn">📋 Proposals</button>
       <button onclick="showAdminSection('changelog')" id="adminBtnChangelog" class="admin-btn">📝 Changelog</button>
+      <button onclick="showAdminSection('backlog')" id="adminBtnBacklog" class="admin-btn">🗒️ Backlog</button>
       <button onclick="showAdminSection('expenses')" id="adminBtnExpenses" class="admin-btn">💰 Expenses</button>
       <button onclick="showAdminSection('awards')" id="adminBtnAwards" class="admin-btn">🏆 Award Prizes</button>
       <button onclick="showAdminSection('balance')" id="adminBtnBalance" class="admin-btn">📒 Balance Sheet</button>
@@ -1884,6 +1885,19 @@
     </div>
 
     <!-- CHANGELOG ENTRY SECTION -->
+    <div id="adminBacklog" style="display:none">
+      <div class="card">
+        <div class="card-header">🗒️ Backlog — planned and future changes</div>
+        <div style="padding:16px">
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <input id="backlogSearch" type="search" placeholder="Search the backlog…" oninput="renderBacklog()" style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px;min-width:220px">
+            <label style="font-size:12px;cursor:pointer"><input type="checkbox" id="backlogShowDone" onchange="renderBacklog()"> Show completed</label>
+            <span id="backlogSummary" style="font-size:12px;color:#666"></span>
+          </div>
+          <div id="backlogBody">Loading…</div>
+        </div>
+      </div>
+    </div>
     <div id="adminChangelog" style="display:none">
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">📝 Add Changelog Entry</div>
@@ -2808,7 +2822,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261010.9';
+const APP_VERSION = '20261011.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3951,6 +3965,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261011.1', 'October 11, 2026', [
+    ['adminsummary', 'Admins: a new Backlog page (Admin → Backlog) shows the planned and future changes, with search and a Show completed switch.', '', 0],
+    ['admin', 'Admin ▸ Backlog', 'Reads the BACKLOG.md that deploy_qnap.sh now uploads with the app, grouped by section with open and completed items. Admins and developers only.', 1],
   ]);
   ensureVersion('20261010.9', 'October 10, 2026', [
     ['adminsummary', 'Admins: Rain Out has a Rainout Text box (optionally text only each foursome\'s point person, who passes it on). It lists who is playing that night, can text them all from the app (each text has a one-tap Got it link so nobody has to reply), shows who has confirmed, and can send a test to just you. It also splits them into group texts of 20 or fewer for your phone.', '', 0],
@@ -11383,7 +11401,7 @@ function loadSchedule() {
 }
 
 // ── ADMIN TAB ──
-const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals','awards','balance'];
+const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals','awards','balance','backlog'];
 const ADMIN_GROUPS = {
   tables: ['players','teams','subs','leaguesettings'],
   logging: ['loginactivity','serverlog','pageviews','whoson','emaillog']
@@ -11397,6 +11415,60 @@ function adminGroupForSection(section) {
   if (ADMIN_GROUPS.tables.includes(section)) return 'tables';
   if (ADMIN_GROUPS.logging.includes(section)) return 'logging';
   return section;
+}
+
+// ── Admin ▸ Backlog: BACKLOG.md (uploaded by deploy_qnap.sh) shown as sections of open / completed items ──
+// Lines: "## Section", "- [ ] **Title** — description" (or [x] = done), indented lines = more description / sub-bullets.
+function parseBacklog(md) {
+  const sections = []; let sec = null, item = null, updated = '';
+  String(md || '').split('\n').forEach(raw => {
+    const line = raw.replace(/\s+$/, '');
+    let m;
+    if ((m = line.match(/^Last updated:\s*(.+)$/))) { updated = m[1]; return; }
+    if ((m = line.match(/^##\s+(.*)$/))) { sec = { title: m[1], items: [] }; sections.push(sec); item = null; return; }
+    if ((m = line.match(/^- \[( |x|X)\]\s*(.*)$/))) {
+      if (!sec) { sec = { title: 'Backlog', items: [] }; sections.push(sec); }
+      const body = m[2], t = body.match(/^\*\*(.+?)\*\*\s*(?:[—–-]+\s*)?(.*)$/);
+      item = { done: m[1] !== ' ', title: t ? t[1] : body, text: t ? t[2] : '', subs: [] }; sec.items.push(item); return;
+    }
+    if (item && /^\s+\S/.test(line)) {
+      const s = line.match(/^\s+[-*]\s+(.*)$/);
+      if (s) item.subs.push(s[1]); else if (item.subs.length) item.subs[item.subs.length - 1] += ' ' + line.trim(); else item.text += (item.text ? ' ' : '') + line.trim();
+      return;
+    }
+    if (line.trim() === '' || /^---+$/.test(line)) { if (/^---+$/.test(line)) item = null; return; }
+    if (!/^#/.test(line) && !/^- /.test(line)) item = null;
+  });
+  return { sections: sections.filter(s => s.items.length), updated };
+}
+function backlogInline(s) {
+  return escapeHtml(String(s || '')).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<i>$1</i>');
+}
+async function loadBacklog() {
+  const body = document.getElementById('backlogBody'); if (!body) return;
+  try {
+    const j = await (await fetch('/backlog-md', { headers: await rainoutHeaders() })).json();
+    if (!j.ok) { body.innerHTML = `<span style="color:#c62828">${escapeHtml(j.error || 'Could not load the backlog')}</span>`; return; }
+    window._backlog = parseBacklog(j.text);
+    renderBacklog();
+  } catch (e) { body.innerHTML = `<span style="color:#c62828">${escapeHtml(e.message)}</span>`; }
+}
+function renderBacklog() {
+  const body = document.getElementById('backlogBody'), bl = window._backlog; if (!body || !bl) return;
+  const q = (document.getElementById('backlogSearch')?.value || '').trim().toLowerCase(), showDone = !!document.getElementById('backlogShowDone')?.checked;
+  const hit = it => !q || (it.title + ' ' + it.text + ' ' + it.subs.join(' ')).toLowerCase().includes(q);
+  let open = 0, done = 0;
+  const html = bl.sections.map(s => {
+    const o = s.items.filter(i => !i.done && hit(i)), d = s.items.filter(i => i.done && hit(i));
+    open += o.length; done += d.length;
+    if (!o.length && !(showDone && d.length)) return '';
+    const row = i => `<div style="padding:8px 0;border-top:1px solid #eee"><div>${i.done ? '✅' : '☐'} <b>${backlogInline(i.title)}</b></div>
+      ${i.text ? `<div style="font-size:12px;color:#555;margin:2px 0 0 22px">${backlogInline(i.text)}</div>` : ''}
+      ${i.subs.length ? `<ul style="margin:4px 0 0 40px;padding:0;font-size:12px;color:#555">${i.subs.map(x => `<li>${backlogInline(x)}</li>`).join('')}</ul>` : ''}</div>`;
+    return `<div style="margin-bottom:14px"><div style="font-weight:700;color:var(--green);font-size:14px">${backlogInline(s.title)} <span style="font-weight:400;color:#888;font-size:12px">(${o.length} open${showDone ? `, ${d.length} done` : ''})</span></div>${o.map(row).join('')}${showDone ? d.map(row).join('') : ''}</div>`;
+  }).join('');
+  body.innerHTML = html || '<div style="color:#888;font-size:13px">Nothing matches.</div>';
+  const sum = document.getElementById('backlogSummary'); if (sum) sum.textContent = `${open} open` + (showDone ? ` · ${done} done` : '') + (bl.updated ? ` · last updated ${bl.updated}` : '');
 }
 
 function showAdminSection(section) {
@@ -11422,7 +11494,7 @@ function showAdminSection(section) {
     const btn = document.getElementById(`adminGroup${g}`);
     if (btn) btn.className = 'admin-btn' + (group === g.toLowerCase() || (g === 'Sql' && section === 'sql') ? ' active-admin-btn' : '');
   });
-  ['pdfs','rainout','sync','gallus','backups','changelog','expenses','compare','proposals'].forEach(s => {
+  ['pdfs','rainout','sync','gallus','backups','changelog','backlog','expenses','compare','proposals'].forEach(s => {
     const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
     if (btn) btn.className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
@@ -11445,6 +11517,7 @@ function showAdminSection(section) {
   if (section==='loginactivity') loadLoginActivity();
   if (section==='pdfs') { populatePdfControls(); loadPdfEmailHistory(); }
   if (section==='changelog') loadAdminChangelog();
+  if (section==='backlog')   loadBacklog();
   if (section==='proposals') loadProposalsAdmin();
   if (section==='expenses')  loadExpenses();
   if (section==='compare')   loadCompareSection();

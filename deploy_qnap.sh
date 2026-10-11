@@ -39,6 +39,7 @@ ok "git clean and pushed: $COMMIT"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 cp HughsGolf.html app.py "$TMP/"
 cp qnap/hughsgolf_ctl.sh "$TMP/"
+[ -f BACKLOG.md ] && cp BACKLOG.md "$TMP/"   # shown to admins on Admin > Backlog
 if [ "$SITE" = "live" ]; then
   sed -i '' "s/^VERSION    = '\(.*\)-sandbox'/VERSION    = '\1'/" "$TMP/app.py"
 fi
@@ -74,6 +75,7 @@ fi
 
 # ── 5. Upload ───────────────────────────────────────────────────────────────
 scp -q "${SSH_OPTS[@]}" "$TMP/HughsGolf.html" "$TMP/app.py" "$TMP/DEPLOYED_COMMIT" "$QNAP:$DIR/" || die "upload failed"
+[ -f "$TMP/BACKLOG.md" ] && { scp -q "${SSH_OPTS[@]}" "$TMP/BACKLOG.md" "$QNAP:$DIR/" || die "upload of BACKLOG.md failed"; }
 scp -q "${SSH_OPTS[@]}" "$TMP/hughsgolf_ctl.sh" "$QNAP:$BASE/" || die "upload of hughsgolf_ctl.sh failed"
 rsh "chmod +x \"$BASE/hughsgolf_ctl.sh\""
 ok "uploaded to $DIR"

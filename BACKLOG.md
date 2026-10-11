@@ -1,6 +1,6 @@
 # Hugh's Golf — Backlog
 
-Last updated: 2026-09-25
+Last updated: 2026-10-11
 
 ---
 
@@ -46,6 +46,10 @@ Last updated: 2026-09-25
 - [ ] **Post-season CTP hole designation in settings**
 - [ ] **Player dashboard / card management** — Players can show/hide and rearrange cards and grids on their own screen. Big task, offseason. More details TBD.
 - [ ] **Future Enhancements tab (2027)** — New top-level tab. Move Stableford under it as a sub-tab. Add sub-tab "Scratch Skin Game" (skins on gross scores, no handicaps).
+- [ ] **Preprinted scorecards** — (2027 consideration) Printable scorecards prefilled with the night's data (date, tee/side, players, pars, handicaps/strokes per hole). Details TBD.
+- [ ] **Labels for non-preprinted scorecards** — (2027 consideration) Printable labels (e.g., Avery sheets) with player name, handicap and strokes per hole, to stick on blank scorecards. Details TBD.
+- [ ] **Venmo ID for players** — (2027 consideration) Optional Venmo ID on each player record (Edit Player), for players who want to pay or be paid by Venmo. Possible uses: show it on the Payments/Award Prizes screens, link or copy button for dues. Details TBD.
+- [ ] **Voice score entry** — (2027 consideration) Mic button on the score-entry screen using the browser's speech recognition (Safari needs a tap to start + mic permission). Flow: (1) pick the group first (voice or tap; groups come from the night's Matches/Schedule, falling back to the card's own player list); (2) say the player's name and match it against only that group's ~4 players, showing "Gary Scudder?" Yes/No (No = tap-to-pick from the others; a "Sub / other player" option searches the whole player file with the same validation; mishearings like Garry/Carrie fall back to the picker, never a guess); (3) only after the name is confirmed, say the scores as a run of single digits, e.g. "544455444" (also accepts "5 4 4 4…" or spoken words); (4) preview the row and tap to confirm before saving, then move to the next player. Rules: card length comes from league settings (9 or 18 holes) and the digit count must match exactly, otherwise the row is flagged and left for the user to fix, never guessed; no double-digit scores allowed (max 9 per hole, each digit = one hole); a 0 is rejected. Optional later shortcut once the name step is trusted: name and digits in one sentence ("Gary 544455444"). Optional later: short nickname on the player record for matching. Needs a signal/typing fallback. Details TBD.
 - [ ] **Offline score entry** — Site is unusable without internet. Scores will be entered on a computer (laptop), not a phone. Need: app opens offline (laptop loads the site once while online beforehand), scores saved on the laptop, auto-upload when a connection returns, clear "not yet synced" indicator.
 - [ ] **2027 season setup** — New SeasonSettings entry, roster updates, new schedule, rule changes from proposals discussion.
   - Gallus TournamentHost yearly setup (https://manager.gallusgolf.com/TournamentHost/7b446045) as a wizard step: event details (name, dates, 4:00 PM Boone Links, Individuals/Stroke, In App Scoring, logo) + Gallus checklist: 1 Rounds, 2 League Roster, 3 Groups, 4 Flights, 5 Leaderboards, 6 Materials. Idea: export schedule/roster from HughsGolf for Gallus. More details from Gary TBD.
