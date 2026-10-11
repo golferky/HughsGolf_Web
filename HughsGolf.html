@@ -2822,7 +2822,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261011.1';
+const APP_VERSION = '20261011.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3965,6 +3965,11 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261011.2', 'October 11, 2026', [
+    ['adminsummary', 'Admins: the Backlog now lists finished items with their PR numbers, and the Changelog has PR numbers for the recent work.', '', 0],
+    ['admin', 'Backlog tidied', 'Completed items moved out of the open lists with their PR numbers (Gallus import for PS dates #76, injured-player / CC sub exception #29 and #30, post-season standings view #74 and #75, changelog #86), plus an October 2026 group (PRs #54-#91). PR #92.', 1],
+    ['developer', 'PR numbers for recent work', 'Rainout Text: PRs #87 (text, group batches, test, confirm link), #88 (point person), #89 (no phone/email goes to the point person), #90 (post-season nights). Admin Backlog page: PR #91. Changelog catch-up: PR #86.', 1],
   ]);
   ensureVersion('20261011.1', 'October 11, 2026', [
     ['adminsummary', 'Admins: a new Backlog page (Admin → Backlog) shows the planned and future changes, with search and a Show completed switch.', '', 0],
