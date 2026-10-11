@@ -6,14 +6,14 @@ Last updated: 2026-10-11
 
 ## 🏌️ Post-Season *(target: before first PS round, ~late Sept 2026)*
 
-- [ ] **Gallus import for PS dates** — When Gallus sends a 9-hole round on a PS date, detect it and store as Front or Back appropriately. Currently deferred until score entry is solid.
+- [x] **Gallus import for PS dates** — When Gallus sends a 9-hole round on a PS date, detect it and store as Front or Back appropriately. Currently deferred until score entry is solid. **Done:** post-season Gallus rounds are detected and saved as Front/Back on the card's own date; Week 2 cards are saved on Week 2 (PR #76).
 - [ ] **18H Gallus seed test** — Gary to play Boone Links round Monday; then test the "Seed from 18H Gallus" button end-to-end.
 - [x] **PS scoring rules / points calculation** — No points in PS. Prize money only. Nothing to implement.
 - [ ] **PS skins/CTP end-to-end verification** — Confirm `calcEoySkins` handles PS correctly through to payout.
 - [x] **PS handicap verification** — Confirmed correct. Both front/back 9 use last regular season Hdcp. PS rounds don't write new handicap records.
 - [ ] **Version bump + changelog** — All post-season work groups under a single "Post Season" changelog entry. Do at end-of-season cutover.
 - [ ] **PS skins / CTP split (future)** — Let a player choose Wk1 Skins ($SkinsPS), Wk1 CTP ($ClosestPS), Wk2 Skins, Wk2 CTP separately instead of one EOY Skins buy-in per week. Needs: per-game payment storage, separate skins/CTP eligibility per week, pot + winner calc, refunds, grid "in skins" display, prize money reports. Interim (v20260925.2): post-season EOY amount is fixed by Wk 1 / Wk 2 / Both, no typed amount.
-- [ ] **Injured-player exception (Matt McDonald)** — Admins to decide: Matt was injured and Howard subbed all season. Should Matt (or Howard) get an exception for League Championship? If yes, add a per-player CC override. Current rule (v20260925.6): CC eligible = regular roster player with scores both PS weeks; $20 EOY payment not required (champ prizes come from $45 dues); subs not eligible (SUBS_CC_ELIGIBLE = false).
+- [x] **Injured-player exception (Matt McDonald)** — Admins to decide: Matt was injured and Howard subbed all season. Should Matt (or Howard) get an exception for League Championship? If yes, add a per-player CC override. Current rule (v20260925.6): CC eligible = regular roster player with scores both PS weeks; $20 EOY payment not required (champ prizes come from $45 dues); subs not eligible (SUBS_CC_ELIGIBLE = false). **Done:** decided and built as the League Championship sub exception (Howard Gorman, 2026) in the leaderboard and Stableford award.
 - [ ] **Extra (non-roster) players in post-season** — If a regular returns for post season (e.g. Matt plays the championship) AND his season-long sub still wants EOY skins/CTP (Howard), both need to be on the scorecard. Today the post-season grid is one slot per team/grade (regular OR sub), so there's no slot for Howard once Matt takes his own. Need: add extra post-season-only players to the grid (skins/CTP only, not CC). Not needed for 2026 unless it comes up.
 - [ ] **Post-season rules finalized** — Edge cases (all skins tied, all CTPs missed) pending admin discussion on League Board. Update rulebook once consensus reached.
 
@@ -42,7 +42,7 @@ Last updated: 2026-10-11
 
 - [ ] **Twilio SMS notifications** — Text players when Announcements/Rainouts are posted to the League Board, and when they receive a direct message. Requires: Twilio account (~$1/mo number + ~$0.01/msg), `pip install twilio` on QNAP, `TextOptIn` column added to Players table, `+1` prefix applied to existing 10-digit phone numbers. Implement after QNAP cutover alongside the direct messaging feature.
 - [ ] **Direct player-to-player / admin-to-player messaging** — Inbox UI (floating panel, accessible from any tab), Messages table, Flask routes (fetch/send/mark-read), badge + toast notification. SMS hookup via Twilio. Build on QNAP after cutover.
-- [ ] **Post-season leaderboard / standings tab view**
+- [x] **Post-season leaderboard / standings tab view** **Done:** the Post Season tab (Scores, Standings, Skins & CTPs, Earned) and the Scores tab leaderboard are visible to everyone (PRs #74, #75).
 - [ ] **Post-season CTP hole designation in settings**
 - [ ] **Player dashboard / card management** — Players can show/hide and rearrange cards and grids on their own screen. Big task, offseason. More details TBD.
 - [ ] **Future Enhancements tab (2027)** — New top-level tab. Move Stableford under it as a sub-tab. Add sub-tab "Scratch Skin Game" (skins on gross scores, no handicaps).
