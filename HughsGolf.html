@@ -2822,7 +2822,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261011.1';
+const APP_VERSION = '20261011.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3966,13 +3966,19 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
   ]);
+  ensureVersion('20261011.2', 'October 11, 2026', [
+    ['adminsummary', 'Admins: the Backlog now lists finished items with their PR numbers, and the Changelog has PR numbers for the recent work.', '', 0],
+    ['admin', 'Backlog tidied', 'Completed items moved out of the open lists with their PR numbers (Gallus import for PS dates #76, injured-player / CC sub exception #29 and #30, post-season standings view #74 and #75, changelog #86), plus an October 2026 group (PRs #54-#91). PR #92.', 1],
+    ['developer', 'PR numbers for recent work', 'Rainout Text: PRs #87 (text, group batches, test, confirm link), #88 (point person), #89 (no phone/email goes to the point person), #90 (post-season nights). Admin Backlog page: PR #91. Changelog catch-up: PR #86.', 1],
+  ]);
   ensureVersion('20261011.1', 'October 11, 2026', [
     ['adminsummary', 'Admins: a new Backlog page (Admin → Backlog) shows the planned and future changes, with search and a Show completed switch.', '', 0],
-    ['admin', 'Admin ▸ Backlog', 'Reads the BACKLOG.md that deploy_qnap.sh now uploads with the app, grouped by section with open and completed items. Admins and developers only.', 1],
+    ['admin', 'Admin ▸ Backlog', 'Reads the BACKLOG.md that deploy_qnap.sh now uploads with the app, grouped by section with open and completed items. Admins and developers only. Completed items list their PR numbers. PR #91.', 1],
+    ['developer', 'Changelog caught up with PR numbers', 'Entries for Oct 7-10 (PRs #53-#85) were added, and a test now fails if the current version\'s day has no changelog entry. PR #86.', 1],
   ]);
   ensureVersion('20261010.9', 'October 10, 2026', [
     ['adminsummary', 'Admins: Rain Out has a Rainout Text box (optionally text only each foursome\'s point person, who passes it on). It lists who is playing that night, can text them all from the app (each text has a one-tap Got it link so nobody has to reply), shows who has confirmed, and can send a test to just you. It also splits them into group texts of 20 or fewer for your phone.', '', 0],
-    ['admin', 'Rainout Text', 'Pick the round date (today or the next one) and edit the pre-filled message. Recipients are the roster for the teams on that night\'s schedule, minus anyone a sub covers, plus the subs. Text everyone from the app sends one text each (no 20-person limit; replies go only to the sender), or open a group text on your phone in even batches of 20 or fewer, or copy the numbers to build a named group chat. Players with no cell number are listed. Every text ends with a one-tap Got it link (a web page, no login) so replies never land in a group; Rain Out shows who has confirmed and can text again to those who have not. Send a test to me only goes to your own phone/email. Post-season Week 1 and Week 2 nights are in the date list too (marked Post Season), with their own message wording. Anyone with no phone or email on file (or whose text fails) is left to a point person in their foursome, who is asked to contact them. Optional: text only each foursome\'s point person (a standing list you choose; the app picks one if none is flagged). Their link shows the foursome with text/call links and an I told them tick for each, Rain Out shows who has been told, and a button texts the rest directly. The sandbox never texts real players.', 1],
+    ['admin', 'Rainout Text', 'Pick the round date (today or the next one) and edit the pre-filled message. Recipients are the roster for the teams on that night\'s schedule, minus anyone a sub covers, plus the subs. Text everyone from the app sends one text each (no 20-person limit; replies go only to the sender), or open a group text on your phone in even batches of 20 or fewer, or copy the numbers to build a named group chat. Players with no cell number are listed. Every text ends with a one-tap Got it link (a web page, no login) so replies never land in a group; Rain Out shows who has confirmed and can text again to those who have not. Send a test to me only goes to your own phone/email. Post-season Week 1 and Week 2 nights are in the date list too (marked Post Season), with their own message wording. Anyone with no phone or email on file (or whose text fails) is left to a point person in their foursome, who is asked to contact them. Optional: text only each foursome\'s point person (a standing list you choose; the app picks one if none is flagged). Their link shows the foursome with text/call links and an I told them tick for each, Rain Out shows who has been told, and a button texts the rest directly. The sandbox never texts real players. PRs #87 (text, group batches, test, confirm link), #88 (point person), #89 (no phone/email goes to the point person), #90 (post-season nights).', 1],
   ]);
   ensureVersion('20261010.4', 'October 10, 2026', [
     ['adminsummary', 'Admins: a Gallus round that is already reconciled can now have its date changed, the version in the header shows the GitHub PR number and commit, and the Collect Payments pop-up no longer appears when there is nothing to collect.', '', 0],
