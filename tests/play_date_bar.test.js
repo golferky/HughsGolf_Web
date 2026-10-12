@@ -57,6 +57,16 @@ const path = require('path');
   assert.deepStrictEqual(await p.evaluate(() => [document.getElementById('entryDate').value, window.__changed, window.__asked]), ['20260922', 0, 1], 'declined: nothing changes');
   await p.evaluate(() => { window.confirm = () => true; onPlayDatePicked('20261006'); });
   assert.deepStrictEqual(await p.evaluate(() => [document.getElementById('entryDate').value, window.__changed, entryDirty, window._playDate]), ['20260929', 1, false, '20261006']);
+  // opening Scores after the date was changed elsewhere: follows it; an unsaved scorecard asks first (declining keeps the Scores date)
+  assert(/if \(tab === 'scorecard'\) \{ if \(!courseData\) initEntry\(\); else reRenderEntry\(\); playDateApplyEntry\(\); \}/.test(src), 'wired into refreshTab');
+  const entryState2 = () => p.evaluate(() => [document.getElementById('entryDate').value, window.__changed, window._playDate, entryDirty]);
+  await p.evaluate(() => { document.getElementById('entryDate').value = '20260922'; window.__changed = 0; entryDirty = false; window._playDate = '20261006'; window.confirm = () => { throw new Error('no prompt expected'); }; playDateApplyEntry(); });
+  assert.deepStrictEqual(await entryState2(), ['20260929', 1, '20261006', false], 'clean scorecard: follows (Week 2 -> the post-season entry)');
+  await p.evaluate(() => { document.getElementById('entryDate').value = '20260922'; window.__changed = 0; entryDirty = true; window._playDate = '20260929'; window.confirm = () => false; playDateApplyEntry(); });
+  assert.deepStrictEqual(await entryState2(), ['20260922', 0, '20260922', true], 'unsaved + declined: stays, shared date follows the Scores date');
+  await p.evaluate(() => { window._playDate = '20260929'; window.confirm = () => true; playDateApplyEntry(); });
+  assert.deepStrictEqual(await entryState2(), ['20260929', 1, '20260929', false], 'unsaved + accepted: switches');
+  await p.evaluate(() => { window._playDate = '20990101'; document.getElementById('entryDate').value = '20260922'; window.__changed = 0; playDateApplyEntry(); }); assert.deepStrictEqual((await entryState2())[0], '20260922', 'a date Score Entry does not have is ignored');
   assert.deepStrictEqual(errs, [], errs.join('; '));
   await b.close(); console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });
