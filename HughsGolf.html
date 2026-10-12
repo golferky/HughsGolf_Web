@@ -1947,7 +1947,8 @@
       </div>
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-          <span>Recent Entries</span>
+          <span>Entries <span id="clCount" style="font-weight:400;font-size:11px;color:#888"></span></span>
+          <input id="clSearch" type="search" placeholder="Search entries…" oninput="loadAdminChangelog()" style="padding:4px 10px;border:1px solid #ccc;border-radius:6px;font-size:12px;min-width:180px">
           <button onclick="loadAdminChangelog()" style="padding:4px 12px;background:white;color:var(--green);border:1px solid var(--green);border-radius:5px;font-size:12px;cursor:pointer">Refresh</button>
         </div>
         <div id="clRecentList" style="padding:12px 16px;font-size:13px;color:#555;min-height:40px">Loading…</div>
@@ -2832,7 +2833,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261012.9';
+const APP_VERSION = '20261012.10';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3894,6 +3895,9 @@ function ensureAppChangelogTable() {
   )`);
   // Add Notes column to existing DBs that predate it
   try { db.run(`ALTER TABLE AppChangelog ADD COLUMN Notes TEXT`); } catch(e) {}
+  // Who added an entry in the app, and when (entries from a release have neither)
+  ['AddedBy TEXT', 'AddedAt TEXT'].forEach(c => { try { db.run(`ALTER TABLE AppChangelog ADD COLUMN ${c}`); } catch(e) {} });
+  if (!window._clAddedColsServer) { window._clAddedColsServer = true; ['AddedBy TEXT', 'AddedAt TEXT'].forEach(c => { try { serverRun(`ALTER TABLE AppChangelog ADD COLUMN ${c}`, [], { silent: true }); } catch (e) {} }); }
   // Add ChampPlaces column to SeasonSettings (how many CC places are paid: 1, 2, or 3)
   try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN ChampPlaces INTEGER DEFAULT 3`); } catch(e) {}
   serverRun(`ALTER TABLE SeasonSettings ADD COLUMN ChampPlaces INTEGER DEFAULT 3`, [], {silent:true});
@@ -3989,6 +3993,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261012.10', 'October 12, 2026', [
+    ['adminsummary', 'Admins: Changelog entries typed into Admin → Changelog are now easy to find: newest added first, searchable, and marked with who added them.', '', 0],
+    ['bugfix', 'Changelog entries added in the app were hard to find', 'The Recent Entries list was sorted by version text and limited to 30, so an entry typed in with a short version (for example 20261011) sorted below every 20261011.x / 20261012.x release note and dropped off the list. The list now shows the newest added first, has a search box and a count, and entries added in the app show who added them and when. PR #102.', 1],
   ]);
   ensureVersion('20261012.9', 'October 12, 2026', [
     ['adminsummary', 'Admins: the Schedule Builder (Admin → Rain Out) now has a scrollbar you can always see, directly under the schedule, plus a hint to scroll sideways.', '', 0],
@@ -15063,17 +15071,22 @@ function loadAdminChangelog() {
   if (vEl && !vEl.value) vEl.value = ver;
   if (dEl && !dEl.value) dEl.value = dateStr;
 
-  // Load recent entries
+  // Entries, newest ADDED first (by ID). They used to be sorted by version text, so an entry typed in with a short version such as
+  // 20261011 sorted below every 20261011.x / 20261012.x release note and fell off the 30-row list.
   const listEl = document.getElementById('clRecentList');
   if (!listEl) return;
-  const rows = query(`SELECT ID, Version, ReleaseDate, Category, Item, Notes FROM AppChangelog ORDER BY Version DESC, ID DESC LIMIT 30`);
-  if (!rows.length) { listEl.innerHTML = '<p style="color:#aaa">No entries yet.</p>'; return; }
+  const q = (document.getElementById('clSearch')?.value || '').trim().toLowerCase();
+  const all = query(`SELECT ID, Version, ReleaseDate, Category, Item, Notes, AddedBy, AddedAt FROM AppChangelog ORDER BY ID DESC`);
+  const rows = all.filter(r => !q || [r.Item, r.Notes, r.Version, r.ReleaseDate, r.Category, r.AddedBy].join(' ').toLowerCase().includes(q));
+  const shown = q ? rows.slice(0, 300) : rows.slice(0, 100);
+  const note = document.getElementById('clCount'); if (note) note.textContent = `${shown.length} of ${all.length} entries` + (q ? ' match' : ' (newest added first)');
+  if (!shown.length) { listEl.innerHTML = `<p style="color:#aaa">${q ? 'Nothing matches.' : 'No entries yet.'}</p>`; return; }
   const catIcon = { bugfix:'🔧', enhancement:'✨', admin:'🏌️', developer:'🛠️' };
-  listEl.innerHTML = rows.map(r => `
+  listEl.innerHTML = shown.map(r => `
     <div style="border-bottom:1px solid #f0f0f0;padding:8px 0;display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start">
-      <span style="font-size:11px;background:#f5f5f5;border-radius:4px;padding:2px 7px;white-space:nowrap;color:#555">${escapeHtml(r.ReleaseDate)} · ${catIcon[r.Category]||''} ${r.Category}</span>
+      <span style="font-size:11px;background:#f5f5f5;border-radius:4px;padding:2px 7px;white-space:nowrap;color:#555">${escapeHtml(r.ReleaseDate)} · ${catIcon[r.Category]||''} ${escapeHtml(r.Category)}</span>
       <div>
-        <div style="font-weight:600;color:#1b4d2e;font-size:13px">${escapeHtml(r.Item)}</div>
+        <div style="font-weight:600;color:#1b4d2e;font-size:13px">${escapeHtml(r.Item)} <span style="font-weight:400;color:#999;font-size:11px">v${escapeHtml(r.Version)}${r.AddedBy ? ` · ✍️ added by ${escapeHtml(r.AddedBy)}${r.AddedAt ? ' ' + escapeHtml(r.AddedAt) : ''}` : ''}</span></div>
         ${r.Notes ? `<div style="font-size:12px;color:#666;margin-top:3px;white-space:pre-wrap;background:#f9f9f9;border-left:3px solid #ccc;padding:4px 8px;border-radius:0 4px 4px 0">${escapeHtml(r.Notes)}</div>` : ''}
       </div>
     </div>`).join('');
@@ -15093,8 +15106,9 @@ function adminSaveChangelog() {
   }
   ensureAppChangelogTable();
   const maxOrder = query(`SELECT MAX(SortOrder) as m FROM AppChangelog WHERE Version=?`, [version])[0]?.m || 0;
-  serverRun(`INSERT INTO AppChangelog (Version, ReleaseDate, Category, Item, Notes, SortOrder) VALUES (?,?,?,?,?,?)`,
-    [version, date, category, summary, notes || null, maxOrder + 1]);
+  const addedAt = new Date().toISOString().replace('T', ' ').substring(0, 16);
+  serverRun(`INSERT INTO AppChangelog (Version, ReleaseDate, Category, Item, Notes, SortOrder, AddedBy, AddedAt) VALUES (?,?,?,?,?,?,?,?)`,
+    [version, date, category, summary, notes || null, maxOrder + 1, currentUser?.name || null, addedAt]);
   saveDBToServer();
   if (statusEl) { statusEl.textContent = '✓ Saved'; setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000); }
   document.getElementById('clSummary').value = '';
