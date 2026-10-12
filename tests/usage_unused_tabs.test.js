@@ -6,7 +6,7 @@ function extract(name) {
   let d = 0, j = src.indexOf('{', i);
   for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; if (src[k] === '}' && --d === 0) return src.slice(i, k + 1); }
 }
-const labels = { home: 'Home', admin: '⚙ Admin', scorecard: '📝 Scores', noshows: 'Attendance', whatsnew: '📋 Changelog', payments: 'Payments', stats: '📊 Stats' };
+const labels = { home: 'Home', admin: '⚙ Admin', scorecard: '📝 Scores', noshows: 'Attendance', whatsnew: '📋 Change History', payments: 'Payments', stats: '📊 Stats' };
 const tabs = Object.keys(labels);
 const c = vm.createContext({ ADMIN_SECTIONS: ['players', 'sql', 'leaguesettings', 'backups', 'sync', 'pdfs'], PV_STATS_VIEWS: ['individual', 'h2h'],
   PV_DEV_ONLY_SECTIONS: ['leaguesettings', 'backups', 'sql', 'sync'], ADMIN_ONLY_TABS: new Set(['admin', 'payments', 'schedule']),
@@ -19,7 +19,7 @@ const keys = lvl => J(c.pvKnownTabKeys(lvl)).map(k => c.pvTabKey(k.tab, k.sub));
 // friendly names: the header text without its icon; unknown tabs keep their stored name
 assert.strictEqual(c.pvTabLabel('scorecard'), 'Scores', "'scorecard' is the Scores tab");
 assert.strictEqual(c.pvTabLabel('noshows'), 'Attendance');
-assert.strictEqual(c.pvTabLabel('whatsnew'), 'Changelog');
+assert.strictEqual(c.pvTabLabel('whatsnew'), 'Change History');
 assert.strictEqual(c.pvTabLabel('admin'), 'Admin');
 assert.strictEqual(c.pvTabLabel('mystery'), 'mystery');
 assert.strictEqual(c.pvDisplayKey('scorecard', null), 'Scores');
