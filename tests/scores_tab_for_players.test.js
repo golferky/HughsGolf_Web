@@ -33,10 +33,10 @@ a.showAdminSection('scores');
 assert.deepStrictEqual(calls, [['switchTab', 'scorecard']], "showAdminSection('scores') just opens the Scores tab");
 // refreshTab loads the grid when the Scores tab is opened
 const log = [];
-const r = vm.createContext({ db: {}, courseData: null, initEntry: () => log.push('initEntry'), reRenderEntry: () => log.push('reRender'), switchTab: t => log.push('switchTab:' + t), setTimeout: () => {}, highlightCurrentPlayer() {} });
+const r = vm.createContext({ db: {}, courseData: null, initEntry: () => log.push('initEntry'), reRenderEntry: () => log.push('reRender'), playDateApplyEntry: () => log.push('playDate'), switchTab: t => log.push('switchTab:' + t), setTimeout: () => {}, highlightCurrentPlayer() {} });
 vm.runInContext(extract('refreshTab'), r);
-r.refreshTab('scorecard'); assert.deepStrictEqual(log, ['initEntry']);
-r.courseData = {}; log.length = 0; r.refreshTab('scorecard'); assert.deepStrictEqual(log, ['reRender']);
+r.refreshTab('scorecard'); assert.deepStrictEqual(log, ['initEntry', 'playDate'], 'entry opens, then follows the Round date');
+r.courseData = {}; log.length = 0; r.refreshTab('scorecard'); assert.deepStrictEqual(log, ['reRender', 'playDate']);
 log.length = 0; r.refreshTab('scores'); assert.deepStrictEqual(log, ['switchTab:scorecard'], 'legacy "scores" tab name redirects');
 // external DB refresh watches the new tab name
 assert(/activeTabName\(\) !== 'scorecard'/.test(src) && /targetTab === 'scorecard' && DB_UPDATE_PENDING/.test(src));

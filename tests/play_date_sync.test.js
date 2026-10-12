@@ -19,7 +19,7 @@ assert.strictEqual(ctx.playDateApply('stablefordDate'), true); assert.strictEqua
 assert.strictEqual(ctx.playDateApply('hdcpAsOfDate'), true); assert.strictEqual(els.hdcpAsOfDate.value, '20261006');
 // a tab that does not have that date keeps its own
 assert.strictEqual(ctx.playDateApply('ctpsDate'), false); assert.strictEqual(els.ctpsDate.value, '20260922');
-// Score Entry supplies the date but never follows it
+// Score Entry supplies the date; it follows it only through playDateApplyEntry (tested in play_date_bar.test.js), never through playDateApply
 ctx.playDateRemember('entryDate', '20261013'); assert.strictEqual(win._playDate, '20261013');
 els.entryDate.value = '20261013'; assert.strictEqual(ctx.playDateApply('entryDate'), false); assert.strictEqual(els.entryDate.value, '20261013');
 // other controls and bad values are ignored

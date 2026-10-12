@@ -2825,7 +2825,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261012.6';
+const APP_VERSION = '20261012.7';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3982,6 +3982,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261012.7', 'October 12, 2026', [
+    ['summary', 'Scores now opens on the Round date you picked on another Play tab.', '', 0],
+    ['enhancement', 'Scores follows the Round date', 'Change the Round date on Matches, Standings, Skins/CTPs, Handicaps or Stableford and Scores opens on that date (a post-season Week 2 date opens the post-season entry). If the scorecard has unsaved changes it asks before switching, and declining keeps the Scores date. PR #99.', 1],
   ]);
   ensureVersion('20261012.6', 'October 12, 2026', [
     ['summary', 'The Round date bar now covers Standings too: pick a date and Standings show the standings after the last round played on or before it.', '', 0],
@@ -5879,7 +5883,7 @@ async function loadHelpTab() {
 
 // ── One date for every Play tab ──────────────────────────────────────────────────────────────────────────────────────
 // Picking a date on Scores, Matches, Skins/CTPs, Stableford or Handicaps remembers it, and the other Play tabs open on that same
-// date (when it is one of their dates). Score Entry only supplies the date and never follows it: opening Scores on a date picked
+// date (when it is one of their dates). Score Entry follows it too (playDateApplyEntry), but never silently throws away an unsaved scorecard: opening Scores on a date picked
 // elsewhere could put scores onto the wrong night. Choosing "Most Recent" on Handicaps clears it.
 const PLAY_DATE_FOLLOWERS = ['matchesDate', 'skinsDate', 'ctpsDate', 'stablefordDate', 'hdcpAsOfDate'];
 const PLAY_DATE_SOURCES = [...PLAY_DATE_FOLLOWERS, 'entryDate', 'standAsOf'];   // standAsOf follows too, but through playDateApplyStandings (nearest earlier round)
@@ -5947,6 +5951,17 @@ function syncPlayDateBar() {
   sel.innerHTML = (want ? '' : '<option value="">— choose a date —</option>') + opts.map(o => `<option value="${o.date}">${label(o)}</option>`).join('');
   sel.value = want;
 }
+// Opening Scores after the Round date was changed elsewhere puts Score Entry on that date. A post-season Week 2 date opens the single
+// post-season entry. If the scorecard has unsaved changes it asks first; declining keeps the entry date and the shared date follows it.
+function playDateApplyEntry() {
+  const d = window._playDate, entry = document.getElementById('entryDate'); if (!d || !entry) return false;
+  const want = playDateEntryDate(d, playDatePsList());
+  if (!Array.from(entry.options).some(o => String(o.value) === want)) return false;
+  if (String(entry.value) === want) return true;
+  if (typeof entryDirty !== 'undefined' && entryDirty && !confirm(`The Round date is ${fmtDate(d)}. Switch Scores to it? Unsaved scorecard changes will be discarded.`)) { window._playDate = String(entry.value); return false; }
+  entryDirty = false; entry.value = want; entry.dispatchEvent(new Event('change')); window._playDate = String(d);
+  return true;
+}
 function onPlayDatePicked(value) {
   const v = String(value || ''); if (!/^\d{8}$/.test(v)) return;
   const tab = document.querySelector('.tab.active')?.dataset.tab;
@@ -5981,7 +5996,7 @@ function refreshTab(tab) {
   if (tab === 'board') { loadBoard(); markBoardSeen(); }
   if (tab === 'help') loadHelpTab();
   if (tab === 'whatsnew') loadWhatsNewTab();
-  if (tab === 'scorecard') { if (!courseData) initEntry(); else reRenderEntry(); }
+  if (tab === 'scorecard') { if (!courseData) initEntry(); else reRenderEntry(); playDateApplyEntry(); }
   if (tab === 'scores' || tab === 'entry') switchTab('scorecard');
   if (tab === 'stats') loadPlayerStats();
   if (tab === 'ps_scores') loadPsScores();
