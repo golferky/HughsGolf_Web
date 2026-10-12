@@ -735,7 +735,7 @@
       <div class="tab" data-tab="schedule">📅 Schedule</div>
       <div class="tab" data-tab="noshows">✅ Attendance</div>
       <div class="tab" data-tab="board" id="boardTabBtn">📋 Board</div>
-      <div class="tab" data-tab="whatsnew">🆕 Changelog</div>
+      <div class="tab" data-tab="whatsnew">🆕 Change History</div>
       <div class="tab" data-tab="help">❓ Help</div>
     </div>
     <div class="subtab-group" data-group="admin" style="display:none">
@@ -1910,7 +1910,7 @@
     </div>
     <div id="adminChangelog" style="display:none">
       <div class="card" style="margin-bottom:16px">
-        <div class="card-header">📝 Add Changelog Entry</div>
+        <div class="card-header">📝 Add Changelog Entry <span style="font-weight:400;font-size:11px;opacity:.8">· shows on League ▸ Change History</span></div>
         <div style="padding:16px;display:grid;gap:12px;max-width:700px">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
@@ -2833,7 +2833,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261012.10';
+const APP_VERSION = '20261012.11';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3993,6 +3993,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261012.11', 'October 12, 2026', [
+    ['summary', 'The League ▸ Changelog tab is now called Change History.', '', 0],
+    ['enhancement', 'League ▸ Change History', 'The tab that lists what changed in each release was named Changelog, the same as the Admin page where officers add entries, which was confusing. The tab and its page title now say Change History; Admin ▸ Changelog (the entry form) keeps its name and says where its entries show. PR #103.', 1],
   ]);
   ensureVersion('20261012.10', 'October 12, 2026', [
     ['adminsummary', 'Admins: Changelog entries typed into Admin → Changelog are now easy to find: newest added first, searchable, and marked with who added them.', '', 0],
@@ -9905,7 +9909,7 @@ function loadWhatsNewTab() {
   }).join('');
 
   el.innerHTML = `
-    <div style="font-family:'Bebas Neue',cursive;font-size:32px;color:#1b4d2e;margin-bottom:4px">📋 Changelog</div>
+    <div style="font-family:'Bebas Neue',cursive;font-size:32px;color:#1b4d2e;margin-bottom:4px">📋 Change History</div>
     <p style="font-family:'DM Sans',sans-serif;font-size:13px;color:#555;margin:0 0 18px">Full update history for Hugh's Golf League App</p>
     ${entries || '<p style="color:#888;font-size:13px">No updates to show.</p>'}
   `;
