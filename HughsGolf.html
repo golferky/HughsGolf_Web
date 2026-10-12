@@ -740,7 +740,7 @@
   <div id="playDateBar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 16px;background:#fff;border-bottom:1px solid #e0d8c8;font-size:13px">
     <label for="playDateSel" style="font-weight:700;color:var(--green)">📅 Round date</label>
     <select id="playDateSel" onchange="onPlayDatePicked(this.value)" style="padding:5px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;min-width:190px"></select>
-    <span style="color:#888;font-size:11px">One date for Scores, Matches, Skins/CTPs, Handicaps and Stableford</span>
+    <span id="playDateHint" style="color:#888;font-size:11px">One date for Scores, Standings, Matches, Skins/CTPs, Handicaps and Stableford</span>
   </div>
 </div>
 
@@ -2825,7 +2825,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261012.5';
+const APP_VERSION = '20261012.6';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3982,6 +3982,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261012.6', 'October 12, 2026', [
+    ['summary', 'The Round date bar now covers Standings too: pick a date and Standings show the standings after the last round played on or before it.', '', 0],
+    ['enhancement', 'Standings follow the Round date', 'The bar shows on Standings and sets its As of date to the last round played on or before the date you pick (a night not played yet, or a post-season night, shows the latest regular round). Choosing Current on Standings clears the shared date. PR #98.', 1],
   ]);
   ensureVersion('20261012.5', 'October 12, 2026', [
     ['summary', 'Play has a Round date box under the tabs: pick a date once and Scores, Matches, Skins/CTPs, Handicaps and Stableford all use it.', '', 0],
@@ -5878,13 +5882,28 @@ async function loadHelpTab() {
 // date (when it is one of their dates). Score Entry only supplies the date and never follows it: opening Scores on a date picked
 // elsewhere could put scores onto the wrong night. Choosing "Most Recent" on Handicaps clears it.
 const PLAY_DATE_FOLLOWERS = ['matchesDate', 'skinsDate', 'ctpsDate', 'stablefordDate', 'hdcpAsOfDate'];
-const PLAY_DATE_SOURCES = [...PLAY_DATE_FOLLOWERS, 'entryDate'];
+const PLAY_DATE_SOURCES = [...PLAY_DATE_FOLLOWERS, 'entryDate', 'standAsOf'];   // standAsOf follows too, but through playDateApplyStandings (nearest earlier round)
 window._playDate = window._playDate || null;
+// Standings are "as of" a round: the chosen date shows the standings after the last round played on or before it (a night not played yet,
+// or a post-season night, shows the standings after the most recent regular round). null = no round on or before that date.
+function playDateStandAsOfValue(date, optionValues) {
+  let best = null;
+  (optionValues || []).filter(v => /^\d{8}$/.test(String(v))).map(String).sort().forEach(v => { if (v <= String(date)) best = v; });
+  return best;
+}
+function playDateApplyStandings() {
+  const d = window._playDate, sel = document.getElementById('standAsOf'); if (!d || !sel) return false;
+  const seasonSel = document.getElementById('standSeason'), yr = String(d).substring(0, 4);
+  if (seasonSel && seasonSel.value !== yr && Array.from(seasonSel.options).some(o => o.value === yr)) { seasonSel.value = yr; populateStandAsOf(); }
+  const pick = playDateStandAsOfValue(d, Array.from(sel.options).map(o => o.value));
+  if (pick === null) return false;
+  sel.value = pick; return true;
+}
 function playDateRemember(id, value) {
   if (!PLAY_DATE_SOURCES.includes(id)) return;
   const v = String(value || '');
   if (/^\d{8}$/.test(v)) window._playDate = v;
-  else if (id === 'hdcpAsOfDate' && v === '') window._playDate = null;
+  else if ((id === 'hdcpAsOfDate' || id === 'standAsOf') && v === '') window._playDate = null;
 }
 function playDateApply(id) {
   const sel = document.getElementById(id), d = window._playDate;
@@ -5899,7 +5918,7 @@ document.addEventListener('change', e => { playDateRemember(e.target && e.target
 // Dates are the regular schedule nights plus the post-season Week 1 / Week 2 nights. Picking one reloads the tab you are on (the other
 // tabs open on it, see playDateApply). Score Entry is the careful one: it has its own date list (one post-season entry covers both
 // weeks) and changing it discards an unsaved scorecard, so that is confirmed first.
-const PLAY_DATE_TAB_SELECT = { scorecard: 'entryDate', matches: 'matchesDate', skins: 'skinsDate', handicaps: 'hdcpAsOfDate', stableford: 'stablefordDate' };
+const PLAY_DATE_TAB_SELECT = { scorecard: 'entryDate', standings: 'standAsOf', matches: 'matchesDate', skins: 'skinsDate', handicaps: 'hdcpAsOfDate', stableford: 'stablefordDate' };
 function playDateBuildOptions(scheduleDates, psList) {
   const out = {};
   (scheduleDates || []).forEach(d => { out[String(d)] = { date: String(d), ps: 0 }; });
@@ -5922,7 +5941,9 @@ function syncPlayDateBar() {
   const label = o => fmtDate(o.date) + (o.ps ? ` — Post Season Wk ${o.ps}` : '');
   const own = String(document.getElementById(ownId)?.value || '');
   const has = d => opts.some(o => o.date === String(d));
-  const want = has(own) ? own : (has(window._playDate) ? String(window._playDate) : '');
+  const picked = has(window._playDate) ? String(window._playDate) : '';
+  const want = tab === 'standings' ? (picked || (has(own) ? own : '')) : (has(own) ? own : picked);   // Standings maps a date to the nearest earlier round, so keep showing the date that was picked
+  const hint = document.getElementById('playDateHint'); if (hint) hint.textContent = tab === 'standings' ? 'Standings after the last round on or before this date' : 'One date for Scores, Standings, Matches, Skins/CTPs, Handicaps and Stableford';
   sel.innerHTML = (want ? '' : '<option value="">— choose a date —</option>') + opts.map(o => `<option value="${o.date}">${label(o)}</option>`).join('');
   sel.value = want;
 }
@@ -6614,6 +6635,7 @@ function populateStandAsOf() {
 
 function loadStandings() {
   if (!db) return;
+  playDateApplyStandings();
   const year = document.getElementById('standSeason').value;
   const view = document.getElementById('standView').value;
 
