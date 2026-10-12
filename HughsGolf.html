@@ -717,8 +717,7 @@
       <div class="tab" data-tab="stableford">⛳ Stableford</div>
     </div>
     <div class="subtab-group" data-group="postseason" style="display:none">
-      <div class="tab" data-tab="ps_scores">🧾 Scores</div>
-      <div class="tab" data-tab="ps_standings">🏅 Standings</div>
+      <div class="tab" data-tab="ps_scores">🧾 Scores &amp; Standings</div>
       <div class="tab" data-tab="ps_skins">🎲 Skins &amp; CTPs</div>
       <div class="tab" data-tab="ps_earned">🎁 Earned</div>
       <label class="psyear">📅 Season <select id="psYearSelect" onchange="psTabSetSeason(this.value)"></select></label>
@@ -1400,7 +1399,6 @@
   <!-- ADMIN -->
   <div class="section" id="tab-scorecard"></div>
   <div class="section" id="tab-ps_scores"></div>
-  <div class="section" id="tab-ps_standings"></div>
   <div class="section" id="tab-ps_skins"></div>
   <div class="section" id="tab-ps_earned"></div>
 
@@ -2822,7 +2820,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261012.2';
+const APP_VERSION = '20261012.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3965,6 +3963,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261012.3', 'October 12, 2026', [
+    ['summary', 'Post Season: Scores and Standings are now one tab, Scores & Standings, with each week\'s gross and net, the total, the place, shots back and the prize.', '', 0],
+    ['enhancement', 'Post Season ▸ Scores & Standings', 'One table instead of two tabs: place, player, Week 1 and Week 2 gross and net, total net, shots back and the prize (projected until awarded). Roster players place; subs and missed weeks are shown without a place. PR #95.', 1],
   ]);
   ensureVersion('20261012.2', 'October 12, 2026', [
     ['summary', 'Pick a date on one Play tab and the other Play tabs open on that same date: Matches, Skins/CTPs, Stableford and Handicaps.', '', 0],
@@ -5887,7 +5889,6 @@ function refreshTab(tab) {
   if (tab === 'scores' || tab === 'entry') switchTab('scorecard');
   if (tab === 'stats') loadPlayerStats();
   if (tab === 'ps_scores') loadPsScores();
-  if (tab === 'ps_standings') loadPsStandings();
   if (tab === 'ps_skins') loadPsSkins();
   if (tab === 'ps_earned') loadPsEarned();
   setTimeout(highlightCurrentPlayer, 50);
@@ -23549,44 +23550,33 @@ const psTabTd = (t, st) => `<td style="padding:5px 10px;font-size:13px;border-bo
 const psTabNum = "text-align:right;font-family:'DM Mono',monospace";
 const psTabNoPs = '<div class="empty">No post-season dates are set up for this season.</div>';
 
+// Post Season ▸ Scores & Standings: one table with each week's gross and net, the total, the place, shots back and the prize.
 function loadPsScores() {
   const el = document.getElementById('tab-ps_scores'); if (!el) return;
   const season = psTabSeason(), d = psTabGather(season);
-  const head = psTabHeader('Scores', season, 'Week 1 and Week 2 are separate nines; each is scored against the full handicap. Scores are entered on Play ▸ Scores.');
-  if (!d.ps) { el.innerHTML = head + psTabNoPs + PS_TAB_END; return; }
-  const board = psBoardBuild(d.scores, d.ps, () => true, 99999999);
-  const rows = board.rows.slice().sort((a, b) => a.name.localeCompare(b.name));
-  const wkLabel = w => `Week ${w} · ${w === 1 ? d.w1Fb : d.w2Fb} 9 · ${fmtDate(String(w === 1 ? d.ps.week1 : d.ps.week2))}`;
-  const cell = w => w ? [psTabTd(Math.round(w.gross), psTabNum), psTabTd(Math.round(w.net), psTabNum + ';font-weight:700;color:var(--green)')] : [psTabTd('—', 'text-align:right;color:#bbb'), psTabTd('—', 'text-align:right;color:#bbb')];
-  const body = rows.map(r => `<tr>${psTabTd(`<strong>${escapeHtml(r.name)}</strong>`)}${cell(r.w1).join('')}${cell(r.w2).join('')}${psTabTd(r.frontComplete && r.backComplete ? Math.round(r.runNet) : '—', psTabNum + ';font-weight:700')}</tr>`).join('');
-  el.innerHTML = head + (rows.length ?
-    `<div class="table-wrap"><table style="border-collapse:collapse;width:100%"><thead><tr>${psTabTh('Player')}<th colspan="2" style="background:var(--green);color:var(--gold);padding:6px 10px;font-size:12px;text-align:center">${wkLabel(1)}</th><th colspan="2" style="background:var(--green);color:var(--gold);padding:6px 10px;font-size:12px;text-align:center">${wkLabel(2)}</th>${psTabTh('Total net', 'right')}</tr>
-    <tr>${psTabTh('')}${psTabTh('Gross', 'right')}${psTabTh('Net', 'right')}${psTabTh('Gross', 'right')}${psTabTh('Net', 'right')}${psTabTh('')}</tr></thead><tbody>${body}</tbody></table></div>` :
-    '<div class="empty">No post-season scores yet.</div>') + PS_TAB_END;
-}
-
-function loadPsStandings() {
-  const el = document.getElementById('tab-ps_standings'); if (!el) return;
-  const season = psTabSeason(), d = psTabGather(season);
-  const head = psTabHeader('Standings', season, 'League Championship: 18-hole net over both weeks. Roster players place; players with a missed week, and subs, are shown but do not place. Ties split the prizes of the places they cover.');
+  const head = psTabHeader('Scores & Standings', season, 'League Championship: 18-hole net over both weeks (each week is its own nine, scored against the full handicap). Roster players place; players with a missed week, and subs, are shown but do not place. Ties split the prizes of the places they cover. Scores are entered on Play ▸ Scores.');
   if (!d.ps) { el.innerHTML = head + psTabNoPs + PS_TAB_END; return; }
   const td = new Date(), todayInt = td.getFullYear() * 10000 + (td.getMonth() + 1) * 100 + td.getDate();
   const board = psBoardBuild(d.scores, d.ps, p => ccRosterEligible(p, season), todayInt);
-  const pot = psLeaderboardCcPotential(board.rows, board.ranks, psCcPrizeSchedule(d.lp, d.dues));
+  const schedule = psCcPrizeSchedule(d.lp, d.dues), paidPlaces = psPaidPlaces(schedule);
+  const pot = psLeaderboardCcPotential(board.rows, board.ranks, schedule);
   const awarded = {};
   d.pay.filter(r => r.d === 'League Championship').forEach(r => { awarded[r.Player] = (awarded[r.Player] || 0) + r.e; });
   const hasAwards = Object.keys(awarded).length > 0;
+  const wkLabel = w => `Week ${w} · ${w === 1 ? d.w1Fb : d.w2Fb} 9 · ${fmtDate(String(w === 1 ? d.ps.week1 : d.ps.week2))}`;
+  const grp = 'background:var(--green);color:var(--gold);padding:6px 10px;font-size:12px;text-align:center';
+  const cell = w => w ? [psTabTd(Math.round(w.gross), psTabNum), psTabTd(Math.round(w.net), psTabNum + ';font-weight:700;color:var(--green)')] : [psTabTd('—', 'text-align:right;color:#bbb'), psTabTd('—', 'text-align:right;color:#bbb')];
   const body = board.rows.map((p, i) => {
     const pos = board.ranks[i], tied = pos !== null && board.ranks.some((r, j) => j !== i && r === pos);
-    const medal = psMedalLabel(pos, tied, psPaidPlaces(psCcPrizeSchedule(d.lp, d.dues)));
+    const medal = psMedalLabel(pos, tied, paidPlaces);
     const back = board.back[i] === null ? '' : board.back[i] === 0 ? '<span style="color:#2e7d2e">Leader</span>' : `<span style="color:#c62828">-${Math.round(board.back[i])}</span>`;
     const note = !p.roster ? ' <span style="color:#1565c0;font-size:11px">sub</span>' : p.ccMissed ? ` <span style="color:#c62828;font-size:11px">missed week ${p.ccMissed}</span>` : '';
     const prize = awarded[p.name] !== undefined ? `<strong>${psTabMoney(awarded[p.name])}</strong> <span style="color:#2e7d32;font-size:11px">awarded</span>` : (!hasAwards && pot[i] !== null ? `<span style="color:#777" title="Projected at the current standings">${psTabMoney(pot[i])}</span>` : '');
-    const wk = w => w ? Math.round(w.net) : '—';
-    return `<tr style="${pos === 1 ? 'background:#fff8e1' : ''}">${psTabTd(medal, 'text-align:center;font-weight:700')}${psTabTd(`<strong>${escapeHtml(p.name)}</strong>${note}`)}${psTabTd(wk(p.w1), psTabNum)}${psTabTd(wk(p.w2), psTabNum)}${psTabTd(p.frontComplete || p.backComplete ? Math.round(p.runNet) : '—', psTabNum + ';font-weight:700;color:var(--green)')}${psTabTd(back, 'text-align:right')}${psTabTd(prize, 'text-align:right')}</tr>`;
+    return `<tr style="${pos === 1 ? 'background:#fff8e1' : ''}">${psTabTd(medal, 'text-align:center;font-weight:700')}${psTabTd(`<strong>${escapeHtml(p.name)}</strong>${note}`)}${cell(p.w1).join('')}${cell(p.w2).join('')}${psTabTd(p.frontComplete || p.backComplete ? Math.round(p.runNet) : '—', psTabNum + ';font-weight:700;color:var(--green)')}${psTabTd(back, 'text-align:right')}${psTabTd(prize, 'text-align:right')}</tr>`;
   }).join('');
   el.innerHTML = head + (board.rows.length ?
-    `<div class="table-wrap"><table style="border-collapse:collapse;width:100%"><thead><tr>${psTabTh('Place', 'center')}${psTabTh('Player')}${psTabTh('Wk 1 net', 'right')}${psTabTh('Wk 2 net', 'right')}${psTabTh('Total net', 'right')}${psTabTh('Back', 'right')}${psTabTh(hasAwards ? 'Prize' : 'Projected', 'right')}</tr></thead><tbody>${body}</tbody></table></div>` :
+    `<div class="table-wrap"><table style="border-collapse:collapse;width:100%"><thead><tr>${psTabTh('', 'center')}${psTabTh('')}<th colspan="2" style="${grp}">${wkLabel(1)}</th><th colspan="2" style="${grp}">${wkLabel(2)}</th>${psTabTh('', 'right')}${psTabTh('', 'right')}${psTabTh('', 'right')}</tr>
+    <tr>${psTabTh('Place', 'center')}${psTabTh('Player')}${psTabTh('Gross', 'right')}${psTabTh('Net', 'right')}${psTabTh('Gross', 'right')}${psTabTh('Net', 'right')}${psTabTh('Total net', 'right')}${psTabTh('Back', 'right')}${psTabTh(hasAwards ? 'Prize' : 'Projected', 'right')}</tr></thead><tbody>${body}</tbody></table></div>` :
     '<div class="empty">No post-season scores yet.</div>') + PS_TAB_END;
 }
 

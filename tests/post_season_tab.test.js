@@ -1,4 +1,4 @@
-// Post Season tab: read-only Scores / Standings / Skins & CTPs / Earned built from the database through shared helpers.
+// Post Season tab: read-only Scores & Standings / Skins & CTPs / Earned built from the database through shared helpers.
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const src = fs.readFileSync(__dirname + '/../HughsGolf.html', 'utf8');
 function extract(name, pre = '') {
@@ -41,10 +41,10 @@ assert(/<option value="2026">2026<\/option><option value="2025">2025<\/option>/.
 assert(/<select id="psYearSelect" onchange="psTabSetSeason\(this\.value\)">/.test(src) && /data-group="postseason"[\s\S]{0,900}psYearSelect/.test(src), 'dropdown lives in the Post Season sub-tab bar');
 
 // wiring: loaders registered, read-only, tabs and sections exist
-const loaders = ['loadPsScores', 'loadPsStandings', 'loadPsSkins', 'loadPsEarned', 'psTabGather'].map(n => extract(n));
+const loaders = ['loadPsScores', 'loadPsSkins', 'loadPsEarned', 'psTabGather'].map(n => extract(n));
 assert(!/serverRun|INSERT |DELETE |UPDATE /.test(loaders.join('\n')), 'the Post Season tab only reads');
-['ps_scores:loadPsScores', 'ps_standings:loadPsStandings', 'ps_skins:loadPsSkins', 'ps_earned:loadPsEarned'].forEach(x => { const [t, f] = x.split(':'); assert(new RegExp(`tab === '${t}'\\) ${f}\\(\\)`).test(src), 'refreshTab calls ' + f); assert(src.includes(`id="tab-${t}"`) && src.includes(`data-tab="${t}"`), t); });
+['ps_scores:loadPsScores', 'ps_skins:loadPsSkins', 'ps_earned:loadPsEarned'].forEach(x => { const [t, f] = x.split(':'); assert(new RegExp(`tab === '${t}'\\) ${f}\\(\\)`).test(src), 'refreshTab calls ' + f); assert(src.includes(`id="tab-${t}"`) && src.includes(`data-tab="${t}"`), t); });
 assert(/data-group="postseason">🏁 Post Season/.test(src), 'always-visible top tab (no season/date condition)');
 assert(!/ADMIN_ONLY_TABS = new Set\([^)]*ps_/.test(src), 'every player can see all four screens');
-assert(/psLeaderboardRanks\(rows, p => p\.roster && !p\.ccMissed\)/.test(extract('psBoardBuild')) && /psLeaderboardCcPotential\(board\.rows/.test(extract('loadPsStandings')), 'uses the shared leaderboard helpers');
+assert(/psLeaderboardRanks\(rows, p => p\.roster && !p\.ccMissed\)/.test(extract('psBoardBuild')) && /psLeaderboardCcPotential\(board\.rows/.test(extract('loadPsScores')), 'uses the shared leaderboard helpers');
 console.log('ok');
