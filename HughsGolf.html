@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hugh's Golf League</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
+<script src="/vendor/sqljs/sql-wasm.js"></script>   <!-- served by the app itself; startSqlJs() falls back to the CDN if this is missing -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
 
@@ -2820,7 +2820,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261012.3';
+const APP_VERSION = '20261012.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3137,7 +3137,18 @@ let SAVE_TOKEN = '';
 let SERVER_DB_MODIFIED_MS = null;
 let READONLY_DB_REFRESH_PROMISE = null;
 
-initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}` }).then(async s => {
+// The database engine (sql.js) is served by the app itself (/vendor/sqljs/). If that is unavailable (for example the page was opened as a
+// file), it falls back to the public CDN. When neither loads, the login screen says so instead of staying blank.
+const SQLJS_LOCAL = '/vendor/sqljs/', SQLJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/';
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => { const s = document.createElement('script'); s.src = src; s.onload = resolve; s.onerror = () => reject(new Error('could not load ' + src)); document.head.appendChild(s); });
+}
+async function startSqlJs() {
+  if (typeof initSqlJs !== 'function') await loadScriptOnce(SQLJS_CDN + 'sql-wasm.js');
+  try { return await initSqlJs({ locateFile: f => SQLJS_LOCAL + f }); }
+  catch (e) { return await initSqlJs({ locateFile: f => SQLJS_CDN + f }); }
+}
+startSqlJs().then(async s => {
   SQL = s;
   sqlReady = true;
   await loadSaveToken();
@@ -3148,6 +3159,8 @@ initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10
 }).catch(err => {
   console.error('sql.js failed to load', err);
   document.getElementById('dbStatus').textContent = 'Error loading sql.js';
+  const lv = document.getElementById('loginVersionDisplay');
+  if (lv) lv.innerHTML = '<span style="color:#c62828">⚠ The page could not load its database engine. Check your connection and refresh.</span>';
 });
 
 async function loadSaveToken() {
@@ -3963,6 +3976,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261012.4', 'October 12, 2026', [
+    ['summary', 'The page no longer depends on an outside website to load, so logging in cannot be blocked by it.', '', 0],
+    ['admin', 'Database engine served by the app', 'sql.js is now served from the app itself (/vendor/sqljs/), uploaded by deploy_qnap.sh, with the public CDN only as a backup. When the CDN could not be reached the login screen stayed blank (version shown as v—, empty player list). If neither loads, the login screen now says so. PR #96.', 1],
   ]);
   ensureVersion('20261012.3', 'October 12, 2026', [
     ['summary', 'Post Season: Scores and Standings are now one tab, Scores & Standings, with each week\'s gross and net, the total, the place, shots back and the prize.', '', 0],
