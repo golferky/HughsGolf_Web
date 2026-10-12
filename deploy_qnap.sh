@@ -76,6 +76,7 @@ fi
 # ── 5. Upload ───────────────────────────────────────────────────────────────
 scp -q "${SSH_OPTS[@]}" "$TMP/HughsGolf.html" "$TMP/app.py" "$TMP/DEPLOYED_COMMIT" "$QNAP:$DIR/" || die "upload failed"
 [ -f "$TMP/BACKLOG.md" ] && { scp -q "${SSH_OPTS[@]}" "$TMP/BACKLOG.md" "$QNAP:$DIR/" || die "upload of BACKLOG.md failed"; }
+scp -q -r "${SSH_OPTS[@]}" vendor "$QNAP:$DIR/" || die "upload of vendor/ (sql.js) failed"
 scp -q "${SSH_OPTS[@]}" "$TMP/hughsgolf_ctl.sh" "$QNAP:$BASE/" || die "upload of hughsgolf_ctl.sh failed"
 rsh "chmod +x \"$BASE/hughsgolf_ctl.sh\""
 ok "uploaded to $DIR"

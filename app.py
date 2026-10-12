@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261012.3-sandbox'
+VERSION    = '20261012.4-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -258,6 +258,14 @@ def read_build_info():
         return {'commit': parts[0], 'pr': int(m.group(1)) if m else None}
     except Exception:
         return {'commit': '', 'pr': None}
+
+
+@app.route('/vendor/sqljs/<path:filename>')
+def vendor_sqljs(filename):
+    """The sql.js engine the page needs, served by the app itself so a login never depends on an outside CDN."""
+    resp = send_from_directory(os.path.join(BASE_DIR, 'vendor', 'sqljs'), filename)
+    resp.headers['Cache-Control'] = 'public, max-age=86400'
+    return resp
 
 
 @app.route('/backlog-md')
