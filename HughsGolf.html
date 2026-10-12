@@ -737,6 +737,11 @@
       <div class="tab" data-tab="admin">⚙️ Admin</div>
     </div>
   </div>
+  <div id="playDateBar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 16px;background:#fff;border-bottom:1px solid #e0d8c8;font-size:13px">
+    <label for="playDateSel" style="font-weight:700;color:var(--green)">📅 Round date</label>
+    <select id="playDateSel" onchange="onPlayDatePicked(this.value)" style="padding:5px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;min-width:190px"></select>
+    <span style="color:#888;font-size:11px">One date for Scores, Matches, Skins/CTPs, Handicaps and Stableford</span>
+  </div>
 </div>
 
 <div class="content">
@@ -2820,7 +2825,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261012.4';
+const APP_VERSION = '20261012.5';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3654,6 +3659,7 @@ function switchTab(tabName) {
     if (targetTab === 'scorecard' && DB_UPDATE_PENDING) refreshScoresForExternalDbUpdate();
     else refreshTab(targetTab);
   }
+  try { syncPlayDateBar(); } catch (e) {}
 }
 
 document.querySelectorAll('.tab').forEach(t => {
@@ -3976,6 +3982,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261012.5', 'October 12, 2026', [
+    ['summary', 'Play has a Round date box under the tabs: pick a date once and Scores, Matches, Skins/CTPs, Handicaps and Stableford all use it.', '', 0],
+    ['enhancement', 'Round date bar on the Play tabs', 'A date list (regular nights and the post-season weeks) sits under the Play tabs and changes the tab you are on; the other Play tabs open on the same date. Standings has no date, so the bar is hidden there. On Scores, changing the date asks first if the scorecard has unsaved changes, and a post-season Week 2 date opens the single post-season entry. PR #97.', 1],
   ]);
   ensureVersion('20261012.4', 'October 12, 2026', [
     ['summary', 'The page no longer depends on an outside website to load, so logging in cannot be blocked by it.', '', 0],
@@ -5883,8 +5893,56 @@ function playDateApply(id) {
   if (String(sel.value) !== String(d)) sel.value = d;
   return true;
 }
-document.addEventListener('change', e => playDateRemember(e.target && e.target.id, e.target && e.target.value), true);
+document.addEventListener('change', e => { playDateRemember(e.target && e.target.id, e.target && e.target.value); if (e.target && e.target.id !== 'playDateSel') setTimeout(() => { try { syncPlayDateBar(); } catch (err) {} }, 60); }, true);
 
+// ── Round date bar (Play): one visible date that every dated Play tab uses ─────────────────────────────────────────────
+// Dates are the regular schedule nights plus the post-season Week 1 / Week 2 nights. Picking one reloads the tab you are on (the other
+// tabs open on it, see playDateApply). Score Entry is the careful one: it has its own date list (one post-season entry covers both
+// weeks) and changing it discards an unsaved scorecard, so that is confirmed first.
+const PLAY_DATE_TAB_SELECT = { scorecard: 'entryDate', matches: 'matchesDate', skins: 'skinsDate', handicaps: 'hdcpAsOfDate', stableford: 'stablefordDate' };
+function playDateBuildOptions(scheduleDates, psList) {
+  const out = {};
+  (scheduleDates || []).forEach(d => { out[String(d)] = { date: String(d), ps: 0 }; });
+  (psList || []).forEach(p => { if (p.week1) out[String(p.week1)] = { date: String(p.week1), ps: 1 }; if (p.week2) out[String(p.week2)] = { date: String(p.week2), ps: 2 }; });
+  return Object.values(out).sort((a, b) => b.date.localeCompare(a.date));
+}
+function playDateEntryDate(date, psList) {   // Score Entry has one post-season entry, dated Week 1
+  const p = (psList || []).find(x => String(x.week2) === String(date));
+  return p ? String(p.week1) : String(date);
+}
+function playDatePsList() {
+  return query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`).map(r => parsePostSeasonDates(r.PostSeasonDt)).filter(Boolean);
+}
+function syncPlayDateBar() {
+  const bar = document.getElementById('playDateBar'), sel = document.getElementById('playDateSel'); if (!bar || !sel) return;
+  const tab = document.querySelector('.tab.active')?.dataset.tab, ownId = PLAY_DATE_TAB_SELECT[tab];
+  if (!ownId || !db) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  const opts = playDateBuildOptions(query(`SELECT DISTINCT Date as d FROM Schedule WHERE League="Hugh's"`).map(r => r.d), playDatePsList());
+  const label = o => fmtDate(o.date) + (o.ps ? ` — Post Season Wk ${o.ps}` : '');
+  const own = String(document.getElementById(ownId)?.value || '');
+  const has = d => opts.some(o => o.date === String(d));
+  const want = has(own) ? own : (has(window._playDate) ? String(window._playDate) : '');
+  sel.innerHTML = (want ? '' : '<option value="">— choose a date —</option>') + opts.map(o => `<option value="${o.date}">${label(o)}</option>`).join('');
+  sel.value = want;
+}
+function onPlayDatePicked(value) {
+  const v = String(value || ''); if (!/^\d{8}$/.test(v)) return;
+  const tab = document.querySelector('.tab.active')?.dataset.tab;
+  if (tab === 'scorecard') {
+    const entry = document.getElementById('entryDate'), d = playDateEntryDate(v, playDatePsList());
+    if (!entry || !Array.from(entry.options).some(o => String(o.value) === d)) { alert('Score Entry does not have that date.'); syncPlayDateBar(); return; }
+    if (String(entry.value) !== d) {
+      if (typeof entryDirty !== 'undefined' && entryDirty && !confirm('Switch the date and rebuild the scorecard? Unsaved scorecard changes will be discarded.')) { syncPlayDateBar(); return; }
+      entryDirty = false; entry.value = d; entry.dispatchEvent(new Event('change'));
+    }
+    window._playDate = v;
+  } else {
+    window._playDate = v;
+    refreshTab(tab);
+  }
+  syncPlayDateBar();
+}
 function refreshTab(tab) {
   if (!db) return;
   if (tab === 'home') loadHome();

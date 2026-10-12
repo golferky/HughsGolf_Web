@@ -29,5 +29,5 @@ ctx.playDateRemember('matchesDate', ''); assert.strictEqual(win._playDate, '2026
 ctx.playDateRemember('hdcpAsOfDate', ''); assert.strictEqual(win._playDate, null);
 // wiring: every follower's loader applies it before loading; the change listener records it
 ['matchesDate', 'stablefordDate', 'skinsDate', 'ctpsDate', 'hdcpAsOfDate'].forEach(id => assert(src.includes(`playDateApply('${id}')`), id));
-assert(/document\.addEventListener\('change', e => playDateRemember\(e\.target && e\.target\.id, e\.target && e\.target\.value\), true\)/.test(src));
+assert(/document\.addEventListener\('change', e => \{ playDateRemember\(e\.target && e\.target\.id, e\.target && e\.target\.value\);/.test(src));
 console.log('ok');
