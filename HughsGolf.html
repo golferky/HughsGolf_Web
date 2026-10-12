@@ -88,6 +88,11 @@
     border-bottom: 3px solid var(--gold);
     scrollbar-width: none;
   }
+  /* A horizontal scroller whose bar is always visible (macOS hides ordinary scrollbars until you scroll) */
+  .hscroll { overflow-x: scroll; overflow-y: hidden; scrollbar-width: auto; scrollbar-color: #2d6a4f #e8e2d4; padding-bottom: 4px; }
+  .hscroll::-webkit-scrollbar { height: 14px; }
+  .hscroll::-webkit-scrollbar-track { background: #e8e2d4; border-radius: 7px; }
+  .hscroll::-webkit-scrollbar-thumb { background: #2d6a4f; border-radius: 7px; border: 2px solid #e8e2d4; }
   .tabs::-webkit-scrollbar { display: none; }
 
   .gtab {
@@ -1687,9 +1692,11 @@
               <label style="cursor:pointer"><input type="radio" name="rainoutMode" value="skip" style="margin-right:4px">Skip Only (season shorter)</label>
             </div>
           </div>
-          <div style="overflow-x:auto">
+          <div style="font-size:11px;color:#888;margin-bottom:4px">↔ Scroll sideways to see every date and the post-season columns.</div>
+          <div class="hscroll">
             <div id="scheduleBuilder"></div>
           </div>
+          <div id="scheduleLegend"></div>
         </div>
       </div>
     </div>
@@ -2825,7 +2832,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261012.8';
+const APP_VERSION = '20261012.9';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3982,6 +3989,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261012.9', 'October 12, 2026', [
+    ['adminsummary', 'Admins: the Schedule Builder (Admin → Rain Out) now has a scrollbar you can always see, directly under the schedule, plus a hint to scroll sideways.', '', 0],
+    ['bugfix', 'Schedule Builder: horizontal scrollbar was hidden', 'The wide schedule scrolled sideways, but its bar sat below the legend and macOS hides scrollbars until you scroll, so the post-season columns looked cut off. The legend now sits under the scrollbar, the bar is always visible, and there is a Scroll sideways hint. PR #101.', 1],
   ]);
   ensureVersion('20261012.8', 'October 12, 2026', [
     ['summary', 'A post-season week that is fully scored but still shows Preview now calculates itself when an officer signs in or opens Skins & CTPs / Earned.', '', 0],
@@ -19502,7 +19513,7 @@ function loadScheduleBuilder() {
   html += '</tbody></table>';
 
   // Legend + season info
-  html += `<div style="margin-top:12px;font-size:11px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  const legendHtml = `<div style="margin-top:12px;font-size:11px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
     <span><span style="display:inline-block;width:12px;height:12px;background:#2e7d32;border:1px solid #ccc;margin-right:4px"></span>Played</span>
     <span><span style="display:inline-block;width:12px;height:12px;background:#8b0000;border:1px solid #ccc;margin-right:4px"></span>Not played</span>
     <span><span style="display:inline-block;width:12px;height:12px;background:#1a3a1a;border:1px solid #ccc;margin-right:4px"></span>Upcoming</span>
@@ -19510,6 +19521,7 @@ function loadScheduleBuilder() {
   </div>`;
 
   document.getElementById('scheduleBuilder').innerHTML = html;
+  const legendEl = document.getElementById('scheduleLegend'); if (legendEl) legendEl.innerHTML = legendHtml;
 }
 
 function incrementRainouts(season) {
