@@ -6,11 +6,13 @@ const src = fs.readFileSync(__dirname + '/../HughsGolf.html', 'utf8');
 const vm = require('vm');
 function extract(name) { const i = src.indexOf('function ' + name + '('); assert(i >= 0, name); let d = 0, j = src.indexOf('{', i); for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; if (src[k] === '}' && --d === 0) return src.slice(i, k + 1); } }
 const ctx = vm.createContext({ String, Object });
-['playDateBuildOptions', 'playDateEntryDate'].forEach(f => vm.runInContext(extract(f), ctx));
+['playDateBuildOptions', 'playDateEntryDate', 'playDateStandAsOfValue'].forEach(f => vm.runInContext(extract(f), ctx));
 const plain = x => JSON.parse(JSON.stringify(x));
 const ps = [{ week1: 20260929, week2: 20261006 }];
 assert.deepStrictEqual(plain(ctx.playDateBuildOptions(['20260915', '20260922'], ps)), [{ date: '20261006', ps: 2 }, { date: '20260929', ps: 1 }, { date: '20260922', ps: 0 }, { date: '20260915', ps: 0 }]);
 assert.strictEqual(ctx.playDateEntryDate('20261006', ps), '20260929', 'Week 2 opens the single post-season entry'); assert.strictEqual(ctx.playDateEntryDate('20260922', ps), '20260922');
+assert.strictEqual(ctx.playDateStandAsOfValue('20260922', ['', '20260915', '20260922']), '20260922'); assert.strictEqual(ctx.playDateStandAsOfValue('20261013', ['', '20260915', '20260922']), '20260922'); assert.strictEqual(ctx.playDateStandAsOfValue('20260101', ['', '20260915']), null);
+assert(/function loadStandings\(\) \{\n  if \(!db\) return;\n  playDateApplyStandings\(\);/.test(src) && /id === 'standAsOf'\) && v === ''/.test(src), 'standings apply + Current clears');
 assert(/Post Season Wk \$\{o\.ps\}/.test(src) && /id="playDateBar"/.test(src) && /syncPlayDateBar\(\); \} catch \(e\) \{\}\n\}/.test(src));
 // in a real browser, with the app's own sql.js and a tiny database (skipped where Playwright/Chromium is not installed)
 const path = require('path');
@@ -35,10 +37,20 @@ const path = require('path');
   await p.evaluate(() => __active('matches')); let s = await state();
   assert.strictEqual(s.shown, 'flex'); assert.strictEqual(s.value, '20260922', 'shows the tab\'s own date');
   assert.deepStrictEqual(s.opts, ['10/06/2026 — Post Season Wk 2', '09/29/2026 — Post Season Wk 1', '09/22/2026', '09/15/2026']);
-  await p.evaluate(() => __active('standings')); assert.strictEqual((await state()).shown, 'none', 'Standings has no date');
+  // Standings: shown, and its As of follows the picked date by showing the last round on or before it
+  await p.evaluate(() => { document.getElementById('standSeason').innerHTML = '<option value="2026">2026</option>'; document.getElementById('standSeason').value = '2026';
+    document.getElementById('standAsOf').innerHTML = '<option value="">Current</option><option value="20260922">9/22</option><option value="20260915">9/15</option>'; document.getElementById('standAsOf').value = ''; window.populateStandAsOf = () => {}; });
+  await p.evaluate(() => __active('standings')); s = await state();
+  assert.strictEqual(s.shown, 'flex', 'Standings has the date bar too');
+  await p.evaluate(() => { window.__calls = []; onPlayDatePicked('20261006'); });   // a post-season night: standings after the latest regular round
+  assert.deepStrictEqual(await p.evaluate(() => [window.__calls.slice(), window._playDate, playDateApplyStandings(), document.getElementById('standAsOf').value]), [['refresh:standings'], '20261006', true, '20260922']);
+  assert.strictEqual((await state()).value, '20261006', 'the bar keeps showing the date that was picked');
+  await p.evaluate(() => { window._playDate = '20260916'; playDateApplyStandings(); }); assert.strictEqual(await p.evaluate(() => document.getElementById('standAsOf').value), '20260915', 'nearest earlier round');
+  await p.evaluate(() => { window._playDate = '20260101'; document.getElementById('standAsOf').value = ''; playDateApplyStandings(); }); assert.strictEqual(await p.evaluate(() => document.getElementById('standAsOf').value), '', 'before any round: leave Current');
+  await p.evaluate(() => { window._playDate = null; });
   await p.evaluate(() => __active('home')); assert.strictEqual((await state()).shown, 'none');
   // picking a date reloads the tab you are on and remembers it for the others
-  await p.evaluate(() => { __active('matches'); onPlayDatePicked('20260915'); });
+  await p.evaluate(() => { window.__calls = []; __active('matches'); onPlayDatePicked('20260915'); });
   assert.deepStrictEqual(await p.evaluate(() => [window.__calls.slice(), window._playDate]), [['refresh:matches'], '20260915']);
   // Score Entry: Week 2 opens the one post-season entry; an unsaved scorecard asks first
   await p.evaluate(() => { __active('scorecard'); window.__changed = 0; document.getElementById('entryDate').addEventListener('change', () => window.__changed++); window.confirm = () => (window.__asked = (window.__asked || 0) + 1, false); entryDirty = true; onPlayDatePicked('20261006'); });
