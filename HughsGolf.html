@@ -2825,7 +2825,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261012.7';
+const APP_VERSION = '20261012.8';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3982,6 +3982,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261012.8', 'October 12, 2026', [
+    ['summary', 'A post-season week that is fully scored but still shows Preview now calculates itself when an officer signs in or opens Skins & CTPs / Earned.', '', 0],
+    ['bugfix', 'Week 2 skins stayed on Preview', 'The automatic calculation only ran when scores were saved, a Gallus round was imported or a refund was recorded, so a week that was already fully scored but never re-checked never calculated. Officers now trigger the same safe check at sign-in and when opening the Post Season Skins & CTPs or Earned tab; it only writes when the week can be decided (all paid players have all 9 holes, nothing paid yet). PR #100.', 1],
   ]);
   ensureVersion('20261012.7', 'October 12, 2026', [
     ['summary', 'Scores now opens on the Round date you picked on another Play tab.', '', 0],
@@ -18918,6 +18922,7 @@ async function loginSuccess(player, opts = {}) {
   }
 
   startHeartbeat();   // Who's On: record this login's IP and keep checking in while the app is open
+  if (isOfficerRole()) setTimeout(() => { try { psAutoOnView(getCurrentSeason()); } catch (e) {} }, 4000);   // a fully scored post-season week that was never re-checked calculates itself
 
   // ── Periodic check: has this session been kicked out by another login? ──
   clearInterval(window._sessionCheckInterval);
@@ -21625,6 +21630,22 @@ async function psCtpAutoAll(season) {
   try { loadPrizeMoney(); } catch (e) {}
 }
 
+// The automatic Skins/CTP calculation is normally triggered by a score save, a Gallus import or a refund. A week that was already fully
+// scored but never re-checked stayed a "preview" forever, so officers also trigger the check when they sign in and whenever they open the
+// Post Season Skins & CTPs / Earned tabs. Safe to repeat: it only writes when psSkinAutoEligible says the week can be decided
+// (and psSkinCommit refuses non-officers anyway). Throttled so opening tabs does not hammer it.
+function psAutoOnView(season) {
+  if (!db || !isOfficerRole() || !season) return;
+  const now = Date.now(); if (window._psAutoViewAt && now - window._psAutoViewAt < 15000) return;
+  window._psAutoViewAt = now;
+  try { psCtpAutoAll(season).catch(e => console.warn('psCtpAutoAll failed', e)); } catch (e) {}
+  Promise.all([1, 2].map(w => { try { return psSkinAutoCommit(season, w).catch(() => false); } catch (e) { return false; } })).then(r => {
+    if (!r.some(Boolean)) return;
+    const active = document.querySelector('.tab.active')?.dataset.tab;
+    try { if (active === 'ps_skins') loadPsSkins(); else if (active === 'ps_earned') loadPsEarned(); } catch (e) {}
+  });
+}
+
 // Fire-and-forget: re-check both post-season weeks after scores, a Gallus import or a refund changed. Never throws.
 function psSkinAutoAll(season) {
   try { psCtpAutoAll(season).catch(e => console.warn('psCtpAutoAll failed', e)); } catch (e) { console.warn('psCtpAutoAll failed', e); }
@@ -23695,6 +23716,7 @@ function loadPsScores() {
 function loadPsSkins() {
   const el = document.getElementById('tab-ps_skins'); if (!el) return;
   const season = psTabSeason(), d = psTabGather(season);
+  psAutoOnView(season);
   const head = psTabHeader('Skins & CTPs', season, 'Each week is its own contest: $10 = Skins + CTP per player who is paid and has scored that week. Whole dollars only; any leftover goes to the Skins kitty.');
   if (!d.ps) { el.innerHTML = head + psTabNoPs + PS_TAB_END; return; }
   const winRows = (rows, color) => rows.length ? rows.map(r => `<div style="display:grid;grid-template-columns:48px 1fr auto auto;gap:8px;align-items:center;padding:4px 10px;border-radius:4px;font-size:13px;margin-bottom:2px;background:${color}"><span style="font-weight:700">Hole ${String(r.t).replace('#', '')}</span><span style="font-weight:600">${escapeHtml(r.Player)}</span><span style="${psTabNum};font-weight:700">${psTabMoney(r.e)}</span><span style="font-size:11px;color:${r.dp ? '#2e7d32' : '#e65100'}">${r.dp ? '✓ paid' : 'owed'}</span></div>`).join('') : '<div style="color:#aaa;font-size:13px">None yet</div>';
@@ -23710,7 +23732,8 @@ function loadPsSkins() {
       try { if (P) { if (!courseData) loadCourse(d.lp.Course || 'Boone Links'); if (courseData) { const won = psComputeWeekWinners(season, w).winners; prev = { won, pay: psWeekSkinPayout(P, won.length, st.skinAmt) }; } } } catch (e) {}
       skinHtml = prev && prev.won.length ? prev.won.map(x => `<div style="display:grid;grid-template-columns:48px 1fr auto;gap:8px;padding:4px 10px;font-size:13px;margin-bottom:2px;background:#fffde7;font-style:italic"><span style="font-weight:700">Hole ${x.hole}</span><span>${escapeHtml(x.player)}</span><span style="${psTabNum}">${psTabMoney(prev.pay.each)}</span></div>`).join('') : '<div style="color:#aaa;font-size:13px">None yet</div>';
       const waiting = psWeekWaitingOn(st);
-      status = P ? `<span style="color:#b8860b">preview — calculates itself once every paid player has all 9 holes</span>${waiting.length ? ` <span style="color:#c62828">· waiting on ${waiting.map(x => escapeHtml(x.player) + ' (' + x.holes + ' of 9)').join(', ')}</span>` : ''}` : '<span style="color:#aaa">no scores yet</span>';
+      const why = (isOfficerRole() && !waiting.length && P) ? psSkinAutoEligible(season, w, psTodayInt()) : null;   // officers: why it is not calculating itself
+      status = P ? `<span style="color:#b8860b">preview — calculates itself once every paid player has all 9 holes</span>${waiting.length ? ` <span style="color:#c62828">· waiting on ${waiting.map(x => escapeHtml(x.player) + ' (' + x.holes + ' of 9)').join(', ')}</span>` : ''}${why && !why.ok ? ` <span style="color:#999;font-size:11px">· auto-calculation paused: ${escapeHtml(String(why.why))}</span>` : ''}` : '<span style="color:#aaa">no scores yet</span>';
     } else {
       skinHtml = winRows(skins, '#f9fbe7');
       status = st.recorded ? `<span style="color:#2e7d32">calculated · remainder ${psTabMoney(st.payout.remainder)} → Skins kitty</span>` : '<span style="color:#e65100">stored, remainder not recorded</span>';
@@ -23726,6 +23749,7 @@ function loadPsSkins() {
 function loadPsEarned() {
   const el = document.getElementById('tab-ps_earned'); if (!el) return;
   const season = psTabSeason(), d = psTabGather(season);
+  psAutoOnView(season);
   const head = psTabHeader('Earned', season, 'What everyone has earned in post-season: Skins, closest-to-the-pin, the League Championship (once awarded) and refunds, with what is paid and what is still owed.');
   if (!d.ps) { el.innerHTML = head + psTabNoPs + PS_TAB_END; return; }
   const rows = psEarnedBuild(d.pay);
