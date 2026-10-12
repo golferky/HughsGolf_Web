@@ -2822,7 +2822,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261012.1';
+const APP_VERSION = '20261012.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3965,6 +3965,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261012.2', 'October 12, 2026', [
+    ['summary', 'Pick a date on one Play tab and the other Play tabs open on that same date: Matches, Skins/CTPs, Stableford and Handicaps.', '', 0],
+    ['enhancement', 'One date for every Play tab', 'The date you pick on Scores, Matches, Skins/CTPs, Stableford or Handicaps is remembered, and the other Play tabs open on it (when it is one of their dates). Score Entry supplies the date but never follows it, so scores cannot land on the wrong night; choosing Most Recent on Handicaps clears it. PR #94.', 1],
   ]);
   ensureVersion('20261012.1', 'October 12, 2026', [
     ['summary', 'Post Season Standings: only the places that pay a League Championship prize get a medal. Skins & CTPs now says who a week is still waiting on before its skins can calculate.', '', 0],
@@ -5840,6 +5844,28 @@ async function loadHelpTab() {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── One date for every Play tab ──────────────────────────────────────────────────────────────────────────────────────
+// Picking a date on Scores, Matches, Skins/CTPs, Stableford or Handicaps remembers it, and the other Play tabs open on that same
+// date (when it is one of their dates). Score Entry only supplies the date and never follows it: opening Scores on a date picked
+// elsewhere could put scores onto the wrong night. Choosing "Most Recent" on Handicaps clears it.
+const PLAY_DATE_FOLLOWERS = ['matchesDate', 'skinsDate', 'ctpsDate', 'stablefordDate', 'hdcpAsOfDate'];
+const PLAY_DATE_SOURCES = [...PLAY_DATE_FOLLOWERS, 'entryDate'];
+window._playDate = window._playDate || null;
+function playDateRemember(id, value) {
+  if (!PLAY_DATE_SOURCES.includes(id)) return;
+  const v = String(value || '');
+  if (/^\d{8}$/.test(v)) window._playDate = v;
+  else if (id === 'hdcpAsOfDate' && v === '') window._playDate = null;
+}
+function playDateApply(id) {
+  const sel = document.getElementById(id), d = window._playDate;
+  if (!sel || !d || !PLAY_DATE_FOLLOWERS.includes(id)) return false;
+  if (!Array.from(sel.options).some(o => String(o.value) === String(d))) return false;
+  if (String(sel.value) !== String(d)) sel.value = d;
+  return true;
+}
+document.addEventListener('change', e => playDateRemember(e.target && e.target.id, e.target && e.target.value), true);
+
 function refreshTab(tab) {
   if (!db) return;
   if (tab === 'home') loadHome();
@@ -7539,6 +7565,7 @@ function populateMatchesDateDropdown() {
   const todayInt = (() => { const d = new Date(); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); })();
   const best = dates.reduce((p,c) => Math.abs(parseInt(c.sDate)-todayInt) < Math.abs(parseInt(p.sDate)-todayInt) ? c : p, dates[0]);
   if (best) sel.value = best.sDate;
+  playDateApply('matchesDate');
   loadMatches();
 }
 
@@ -8136,6 +8163,7 @@ function populateStablefordDateDropdown() {
     sel.addEventListener('change', loadStableford);
     sel.dataset.listener = '1';
   }
+  playDateApply('stablefordDate');
   loadStableford();
 }
 
@@ -8746,6 +8774,7 @@ function populateSkinsDateDropdown(loadAfter = true) {
   // Post-season nights have no per-night 'Skin' buy-in (their buy-in is EOY Skins), so add them explicitly, newest first, as the CTP list does
   const skinKeys = getCtpDateKeys(skinDates.map(r => r.sDate), season);
   skSel.innerHTML = skinKeys.map(d => `<option value="${d}">${fmtDate(d)}</option>`).join('');
+  playDateApply('skinsDate');
   if (loadAfter) loadSkins();
 }
 
@@ -9223,6 +9252,7 @@ function loadHandicaps() {
     asOfSel.innerHTML = '<option value="">Most Recent</option>' +
       dates.map(r => `<option value="${r.sDate}">${fmtDate(r.sDate)}</option>`).join('');
   }
+  if (asOfSel) playDateApply('hdcpAsOfDate');
   const asOfDate = asOfSel ? asOfSel.value : '';
 
   const rosterPlayers = regularsOnly
@@ -9394,6 +9424,7 @@ function populateCtpsDateDropdown(loadAfter = true) {
     ORDER BY sDate DESC`);
   const dateKeys = getCtpDateKeys(dates.map(r => r.sDate || r.Date), season);
   sel.innerHTML = dateKeys.map(d => `<option value="${d}">${fmtDate(d)}</option>`).join('');
+  playDateApply('ctpsDate');
   if (loadAfter) {
     const skinsDate = toDateKey(document.getElementById('skinsDate')?.value);
     if (skinsDate && String(skinsDate).substring(0, 4) === String(season) && Array.from(sel.options).some(o => String(o.value) === String(skinsDate))) {
