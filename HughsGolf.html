@@ -2822,7 +2822,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261011.2';
+const APP_VERSION = '20261012.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3965,6 +3965,14 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261012.1', 'October 12, 2026', [
+    ['summary', 'Post Season Standings: only the places that pay a League Championship prize get a medal. Skins & CTPs now says who a week is still waiting on before its skins can calculate.', '', 0],
+    ['adminsummary', 'Admins: the Schedule Builder shows played dates correctly again, and Currently Logged In no longer says "likely timed out" for people who are active.', '', 0],
+    ['enhancement', 'Standings medals follow the prize places', 'With two paid places the 3rd-place player no longer gets a bronze medal (on the Post Season Standings tab and the score-entry leaderboard). PR #93.', 1],
+    ['enhancement', 'Skins & CTPs: who the week is waiting on', 'A week that has not calculated yet lists the paid players who do not have all 9 holes, with how many they have. PR #93.', 2],
+    ['bugfix', 'Schedule Builder: every date showed Not played', 'The played dates were compared as numbers against text dates, so none matched. PR #93.', 1],
+    ['bugfix', 'Currently Logged In said likely timed out for active people', 'The status used the login time. It now uses the last check-in (Who\'s On), and admins/developers, who never time out, are not flagged. The sign-in lock is also released by idle time, not by how long ago someone logged in. PR #93.', 2],
   ]);
   ensureVersion('20261011.2', 'October 11, 2026', [
     ['adminsummary', 'Admins: the Backlog now lists finished items with their PR numbers, and the Changelog has PR numbers for the recent work.', '', 0],
@@ -12428,6 +12436,7 @@ function showPersistentIdleWarning() {
 
 function resetSessionTimer() {
   if (!currentUser) return;
+  window._lastActivityAt = Date.now();
   clearTimeout(sessionTimer);
   document.getElementById('persistentIdleModal')?.remove();
   if (isPersistentSessionRole(sessionRole())) {
@@ -13982,6 +13991,21 @@ function loadEmailLog() {
 }
 
 // ── Server Log Viewer ─────────────────────────────────────────────────────────
+// "Currently logged in" status. The session token only records WHEN someone logged in, so "older than 30 minutes" said "likely timed out"
+// for people who were using the app (and admins/developers never time out). Use the last check-in (Who's On) instead.
+function loggedInStatusHtml(row, presenceByPlayer, sinceMin) {
+  const persistent = isPersistentSessionRole(roleFromOfficerValue(row.Officer));
+  const p = presenceByPlayer && presenceByPlayer[row.Player];
+  const green = t => `<span style="color:#2e7d32;font-size:11px">● ${t}</span>`, amber = t => `<span style="color:#e65100;font-size:11px">⚠ ${t}</span>`, grey = t => `<span style="color:#777;font-size:11px">○ ${t}</span>`;
+  if (p && p.secondsAgo !== null && p.secondsAgo !== undefined) {
+    if (p.online) return green(`on now`);
+    const idle = whosonAgeText(p.secondsAgo);
+    if (persistent || p.secondsAgo * 1000 <= SESSION_TIMEOUT) return grey(`signed in, last seen ${idle}`);
+    return amber(`no activity for ${idle} (session probably ended)`);
+  }
+  const ageText = sinceMin !== null && sinceMin !== undefined ? `logged in ${sinceMin}m ago` : 'logged in';
+  return persistent ? green(`${ageText}`) : grey(`${ageText} (no activity signal yet)`);
+}
 async function loadLoginActivity(options = {}) {
   if (!db) return;
   if (!options.skipServerRefresh) await refreshLiveDbSnapshotForReadOnlyView();
@@ -14139,10 +14163,15 @@ async function loadLoginActivity(options = {}) {
     }
   }
 
+  // Last check-in per player (Who's On), so the status below reflects real activity rather than the login time
+  try {
+    const wo = await (await fetch('/whos-on', { headers: { 'X-Save-Token': await ensureSaveToken() } })).json();
+    window._presenceByPlayer = {}; (wo.people || []).forEach(x => { window._presenceByPlayer[x.player] = x; });
+  } catch (e) { window._presenceByPlayer = null; }
   // ── Currently Logged In ──────────────────────────────────────────────────
   const sessionsAvailable = activeSessionsEnabled();
   const activeSessions = sessionsAvailable
-    ? query(`SELECT Player, ActiveSession FROM Players WHERE ActiveSession IS NOT NULL AND ActiveSession != ''`)
+    ? query(`SELECT Player, ActiveSession, Officer FROM Players WHERE ActiveSession IS NOT NULL AND ActiveSession != ''`)
         .filter(r => includeLoginStatPlayer(r.Player))
     : [];
   const activeEl = document.getElementById('currentlyLoggedInBody');
@@ -14156,11 +14185,7 @@ async function loadLoginActivity(options = {}) {
         const lastLogin = query(`SELECT log_time FROM LogTable WHERE method='login' AND text=? ORDER BY log_time DESC LIMIT 1`, [`${r.Player} logged in`])[0]?.log_time;
         const parsedLastLogin = parseUtcSqlTimestamp(lastLogin);
         const sinceMin = parsedLastLogin ? Math.round((Date.now() - parsedLastLogin.getTime()) / 60000) : null;
-        const likelyTimedOut = isSessionTokenStale(r.ActiveSession);
-        const ageText = sinceMin !== null ? `${sinceMin}m ago` : 'unknown age';
-        const statusBadge = likelyTimedOut
-          ? `<span style="color:#e65100;font-size:11px">⚠ likely timed out (${ageText})</span>`
-          : `<span style="color:#2e7d32;font-size:11px">● active${sinceMin!==null?` (${sinceMin}m ago)`:''}</span>`;
+        const statusBadge = loggedInStatusHtml(r, window._presenceByPlayer, sinceMin);
         return `<tr style="background:${i%2===0?'#fff':'#f9f6ee'}">
           <td style="padding:6px 12px;font-weight:600">${escapeHtml(r.Player || '')}${subPlayerNames.has(r.Player) ? subBadge : ''}</td>
           <td style="padding:6px 12px">${statusBadge}</td>
@@ -18756,7 +18781,7 @@ async function loginSuccess(player, opts = {}) {
     if (!currentUser || !window._mySessionToken || !activeSessionsEnabled()) return;
     try {
       const current = query(`SELECT ActiveSession FROM Players WHERE Player=?`, [currentUser.name])[0]?.ActiveSession;
-      if (current && isSessionTokenStale(current) && !isPersistentSessionRole(sessionRole())) {
+      if (current && Date.now() - (window._lastActivityAt || Date.now()) > SESSION_TIMEOUT && !isPersistentSessionRole(sessionRole())) {   // idle, not merely logged in a while ago
         serverRun(`UPDATE Players SET ActiveSession=NULL WHERE Player=?`, [currentUser.name]);
         return;
       }
@@ -19217,7 +19242,7 @@ function loadScheduleBuilder() {
   });
 
   // Check which dates have scores (played) or are rainouts
-  const playedDates = new Set(query(`SELECT DISTINCT Date as D FROM Scores WHERE League="Hugh's" AND Date >= ${iSeason}0101 AND Date < ${iSeason+1}0101`).map(r=>r.D));
+  const playedDates = new Set(query(`SELECT DISTINCT Date as D FROM Scores WHERE League="Hugh's" AND Date >= ${iSeason}0101 AND Date < ${iSeason+1}0101`).map(r => String(r.D)));   // strings: the schedule dates below are strings, so a Set of numbers never matched (every date showed "Not played")
 
   // Build grid - matchup rows x date cols
   const numMatchups = Math.floor(teamNums.length / 2);
@@ -19233,7 +19258,7 @@ function loadScheduleBuilder() {
   html += `<td style="padding:4px 8px;background:#1a3a1a;color:var(--gold);font-weight:600;min-width:60px">#</td>`;
   dates.forEach((d, idx) => {
     const dateInt = parseInt(d);
-    const played = playedDates.has(d);
+    const played = playedDates.has(String(d));
     const future = dateInt > todayInt;
     const isRoundStart = idx % roundLen === 0;
     const bg = played ? '#2e7d32' : isRoundStart ? '#1a3a6a' : future ? '#1a3a1a' : '#8b0000';
@@ -19300,7 +19325,7 @@ function loadScheduleBuilder() {
     html += `<td style="padding:4px 8px;border:1px solid #eee;font-weight:600;color:var(--gray)">${i+1}</td>`;
     dates.forEach(d => {
       const mu = schedRows[d]?.[i];
-      const played = playedDates.has(d);
+      const played = playedDates.has(String(d));
       const cellBg = played ? '#eaf7ec' : '';
       if (mu) {
         const a = teamMap[mu.t1];
@@ -21224,6 +21249,12 @@ function psWeekSkinState(season, week) {
   else status = 'preview';
   return { season, week, date, skinAmt, ctpAmt, potPlayers, stored, payout, skinRem, eoyRem, fingerprint, recorded, status,
            paidRows: stored.filter(r => r.DatePaid) };
+}
+// Paid-and-scored players of a week who do not have all nine holes yet (the week calculates itself once this is empty).
+function psWeekWaitingOn(st) {
+  if (!st || !st.potPlayers.length) return [];
+  return psWeekScorerRows(st.date, new Set(st.potPlayers)).map(r => ({ player: r.Player, holes: ['1','2','3','4','5','6','7','8','9'].filter(h => r[h] != null && r[h] !== '').length }))
+    .filter(x => x.holes < 9).sort((a, b) => a.player.localeCompare(b.player));
 }
 function psSkinFingerprint(players, skins, payout) {
   return `players=${players};pot=${payout.pot};skins=${skins};each=${payout.each};rem=${payout.remainder}`;
@@ -23351,6 +23382,13 @@ function psLeaderboardShotsBack(leaderboard, ranks) {
 
 // Display-only League Championship prize schedule for places 1..N from the season settings (same rules as the Prize Money
 // estimate): Flat = dollar amounts, Percent = share of league dues collected; ChampPlaces (1-3) limits how many places pay.
+// Medals go only to places that pay a League Championship prize (ChampPlaces); later places show just the number.
+function psPaidPlaces(schedule) { return (schedule || []).reduce((n, a, i) => a > 0 ? i + 1 : n, 0); }
+function psMedalLabel(pos, tied, paidPlaces) {
+  if (pos === null) return '—';
+  const icon = pos <= 3 && pos <= paidPlaces ? ['🥇', '🥈', '🥉'][pos - 1] : '';
+  return icon + (tied ? `T${pos}` : (icon ? '' : `${pos}.`));
+}
 function psCcPrizeSchedule(ss, duesCollected) {
   ss = ss || {};
   const n = Math.min(3, Math.max(1, parseInt(ss.ChampPlaces ?? 3)));
@@ -23509,7 +23547,7 @@ function loadPsStandings() {
   const hasAwards = Object.keys(awarded).length > 0;
   const body = board.rows.map((p, i) => {
     const pos = board.ranks[i], tied = pos !== null && board.ranks.some((r, j) => j !== i && r === pos);
-    const medal = pos === null ? '—' : (pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : '') + (tied ? `T${pos}` : (pos > 3 ? `${pos}.` : ''));
+    const medal = psMedalLabel(pos, tied, psPaidPlaces(psCcPrizeSchedule(d.lp, d.dues)));
     const back = board.back[i] === null ? '' : board.back[i] === 0 ? '<span style="color:#2e7d2e">Leader</span>' : `<span style="color:#c62828">-${Math.round(board.back[i])}</span>`;
     const note = !p.roster ? ' <span style="color:#1565c0;font-size:11px">sub</span>' : p.ccMissed ? ` <span style="color:#c62828;font-size:11px">missed week ${p.ccMissed}</span>` : '';
     const prize = awarded[p.name] !== undefined ? `<strong>${psTabMoney(awarded[p.name])}</strong> <span style="color:#2e7d32;font-size:11px">awarded</span>` : (!hasAwards && pot[i] !== null ? `<span style="color:#777" title="Projected at the current standings">${psTabMoney(pot[i])}</span>` : '');
@@ -23538,7 +23576,8 @@ function loadPsSkins() {
       let prev = null;
       try { if (P) { if (!courseData) loadCourse(d.lp.Course || 'Boone Links'); if (courseData) { const won = psComputeWeekWinners(season, w).winners; prev = { won, pay: psWeekSkinPayout(P, won.length, st.skinAmt) }; } } } catch (e) {}
       skinHtml = prev && prev.won.length ? prev.won.map(x => `<div style="display:grid;grid-template-columns:48px 1fr auto;gap:8px;padding:4px 10px;font-size:13px;margin-bottom:2px;background:#fffde7;font-style:italic"><span style="font-weight:700">Hole ${x.hole}</span><span>${escapeHtml(x.player)}</span><span style="${psTabNum}">${psTabMoney(prev.pay.each)}</span></div>`).join('') : '<div style="color:#aaa;font-size:13px">None yet</div>';
-      status = P ? '<span style="color:#b8860b">preview — calculates itself once every paid player has all 9 holes</span>' : '<span style="color:#aaa">no scores yet</span>';
+      const waiting = psWeekWaitingOn(st);
+      status = P ? `<span style="color:#b8860b">preview — calculates itself once every paid player has all 9 holes</span>${waiting.length ? ` <span style="color:#c62828">· waiting on ${waiting.map(x => escapeHtml(x.player) + ' (' + x.holes + ' of 9)').join(', ')}</span>` : ''}` : '<span style="color:#aaa">no scores yet</span>';
     } else {
       skinHtml = winRows(skins, '#f9fbe7');
       status = st.recorded ? `<span style="color:#2e7d32">calculated · remainder ${psTabMoney(st.payout.remainder)} → Skins kitty</span>` : '<span style="color:#e65100">stored, remainder not recorded</span>';
@@ -23761,7 +23800,7 @@ function renderPostSeasonBreakdown(nine) {
       const net = p.runNet !== '' ? p.runNet : '—';
       const gross = p.runGross !== '' ? p.runGross : '—';
       const bg = pos === 1 && p.runNet !== '' ? '#fff8e1' : i % 2 === 0 ? '#fafafa' : '#fff';
-      const medal = pos === null ? '—' : (pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : '') + (tied ? `T${pos}` : (pos > 3 ? `${pos}.` : ''));
+      const medal = psMedalLabel(pos, tied, psPaidPlaces(psCcPrizeSchedule(lp, lbDues)));
       return `<div style="${rowStyle};grid-template-columns:44px 1fr auto 52px 64px;background:${bg}">
         <span style="font-weight:700;text-align:center">${medal}</span>
         <span style="font-weight:600">${p.name} <span style="color:#aaa;font-size:11px">(hdcp ${p.phdcp})</span>${!p.inSkins ? ' <span style="color:#1565c0;font-size:10px;font-weight:600" title="Plays for the League Championship but did not buy into EOY Skins">NO SKINS</span>' : ''}${isSubLb ? ' <span style="color:#999;font-size:10px;font-weight:600" title="Subs can\'t compete for the League Championship">SUB · not CC</span>' : (p.ccMissed ? ` <span style="color:#999;font-size:10px;font-weight:600" title="The League Championship needs scores in both post-season weeks">NOT CC · no Week ${p.ccMissed}</span>` : '')}</span>
