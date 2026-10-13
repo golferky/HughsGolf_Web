@@ -2833,7 +2833,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261013.1';
+const APP_VERSION = '20261013.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3893,24 +3893,22 @@ function ensureAppChangelogTable() {
     SortOrder INTEGER DEFAULT 0,
     Notes    TEXT
   )`);
-  // Add Notes column to existing DBs that predate it
-  try { db.run(`ALTER TABLE AppChangelog ADD COLUMN Notes TEXT`); } catch(e) {}
-  // Who added an entry in the app, and when (entries from a release have neither)
-  ['AddedBy TEXT', 'AddedAt TEXT'].forEach(c => { try { db.run(`ALTER TABLE AppChangelog ADD COLUMN ${c}`); } catch(e) {} });
-  if (!window._clAddedColsServer) { window._clAddedColsServer = true; ['AddedBy TEXT', 'AddedAt TEXT'].forEach(c => { try { serverRun(`ALTER TABLE AppChangelog ADD COLUMN ${c}`, [], { silent: true }); } catch (e) {} }); }
-  // Add ChampPlaces column to SeasonSettings (how many CC places are paid: 1, 2, or 3)
-  try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN ChampPlaces INTEGER DEFAULT 3`); } catch(e) {}
-  serverRun(`ALTER TABLE SeasonSettings ADD COLUMN ChampPlaces INTEGER DEFAULT 3`, [], {silent:true});
-  // Add half-season standings payout amounts (were in LeagueParms.Place1/2/3, lost in migration)
-  try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN StandPlace1 REAL DEFAULT 120`); } catch(e) {}
-  try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN StandPlace2 REAL DEFAULT 100`); } catch(e) {}
-  try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN StandPlace3 REAL DEFAULT 90`); } catch(e) {}
-  serverRun(`ALTER TABLE SeasonSettings ADD COLUMN StandPlace1 REAL DEFAULT 120`, [], {silent:true});
-  serverRun(`ALTER TABLE SeasonSettings ADD COLUMN StandPlace2 REAL DEFAULT 100`, [], {silent:true});
-  serverRun(`ALTER TABLE SeasonSettings ADD COLUMN StandPlace3 REAL DEFAULT 90`, [], {silent:true});
-  // Byes — in LS_MID_SEASON_OK so must exist in SeasonSettings
-  try { db.run(`ALTER TABLE SeasonSettings ADD COLUMN Byes INTEGER DEFAULT 0`); } catch(e) {}
-  serverRun(`ALTER TABLE SeasonSettings ADD COLUMN Byes INTEGER DEFAULT 0`, [], {silent:true});
+  // Older databases lack some columns. Add a column only when this database really lacks it. This used to send every ALTER TABLE to the
+  // server on EVERY page load (the server answered "duplicate column name" with an error 500 each time, ~10 wasted calls per load).
+  // The server also adds these columns itself at startup (ensure_schema), so normally nothing runs here at all.
+  const ensureCol = (table, name, ddl) => {
+    if (hasDbColumn(table, name)) return;
+    try { db.run(`ALTER TABLE ${table} ADD COLUMN ${name} ${ddl}`); } catch (e) {}
+    serverRun(`ALTER TABLE ${table} ADD COLUMN ${name} ${ddl}`, [], { silent: true });
+  };
+  ensureCol('AppChangelog', 'Notes', 'TEXT');
+  ensureCol('AppChangelog', 'AddedBy', 'TEXT');      // who added an entry in the app, and when (entries from a release have neither)
+  ensureCol('AppChangelog', 'AddedAt', 'TEXT');
+  ensureCol('SeasonSettings', 'ChampPlaces', 'INTEGER DEFAULT 3');   // how many League Championship places are paid: 1, 2 or 3
+  ensureCol('SeasonSettings', 'StandPlace1', 'REAL DEFAULT 120');    // half-season standings payouts (were in LeagueParms.Place1/2/3)
+  ensureCol('SeasonSettings', 'StandPlace2', 'REAL DEFAULT 100');
+  ensureCol('SeasonSettings', 'StandPlace3', 'REAL DEFAULT 90');
+  ensureCol('SeasonSettings', 'Byes', 'INTEGER DEFAULT 0');          // in LS_MID_SEASON_OK, so it must exist
   // Backfill from LeagueParms if available and StandPlace1 is still null
   try {
     const lpRows = query(`SELECT Season, Place1, Place2, Place3 FROM LeagueParms WHERE Name="Hugh's"`);
@@ -3993,6 +3991,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261013.2', 'October 13, 2026', [
+    ['adminsummary', 'Admins: opening the app no longer sends a batch of "add column" requests that the server rejects every time.', '', 0],
+    ['bugfix', 'Every page load tried to add columns that already exist', 'The startup code sent ALTER TABLE ... ADD COLUMN for SeasonSettings (ChampPlaces, StandPlace1-3, Byes) and AppChangelog to the server on every load, and the server logged a "duplicate column name" error and answered 500 each time. It now checks first and only adds a column that is really missing; the server also adds them itself at startup. PR #105.', 1],
   ]);
   ensureVersion('20261013.1', 'October 13, 2026', [
     ['adminsummary', 'Admins: sending a rainout text no longer freezes the server for other saves.', '', 0],
