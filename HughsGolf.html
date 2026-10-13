@@ -2833,7 +2833,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261013.4';
+const APP_VERSION = '20261013.5';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4026,6 +4026,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261013.5', 'October 13, 2026', [
+    ['summary', 'The app loads faster for everyone, especially away from home: the page, the database engine and the database are now sent compressed.', '', 0],
+    ['enhancement', 'Compressed downloads', 'The page (1.6 MB), the database engine (0.65 MB) and the whole database (several MB) were sent uncompressed, about 6.7 MB of upload from the home connection on every page load, which crawled whenever that link was busy. The server now sends them gzip-compressed to browsers that ask (about a quarter of the size for the page) and keeps one compressed copy per file until it changes. PR #108.', 1],
   ]);
   ensureVersion('20261013.4', 'October 13, 2026', [
     ['adminsummary', 'Admins: Refresh on Login Activity can no longer hang for ever on a poor connection; it gives up after 30 seconds and says why.', '', 0],

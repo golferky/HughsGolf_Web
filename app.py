@@ -8,6 +8,7 @@ import os
 import shutil
 import datetime
 import json
+import gzip
 import random
 import shlex
 import string
@@ -47,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261013.4-sandbox'
+VERSION    = '20261013.5-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -241,7 +242,7 @@ def get_ip():
 
 @app.route('/')
 def index():
-    resp = send_from_directory(BASE_DIR, 'HughsGolf.html')
+    resp = _serve_compressed(BASE_DIR, 'HughsGolf.html')
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
     resp.headers['Expires'] = '0'
@@ -267,7 +268,7 @@ def read_build_info():
 @app.route('/vendor/sqljs/<path:filename>')
 def vendor_sqljs(filename):
     """The sql.js engine the page needs, served by the app itself so a login never depends on an outside CDN."""
-    resp = send_from_directory(os.path.join(BASE_DIR, 'vendor', 'sqljs'), filename)
+    resp = _serve_compressed(os.path.join(BASE_DIR, 'vendor', 'sqljs'), filename)
     resp.headers['Cache-Control'] = 'public, max-age=86400'
     return resp
 
@@ -311,9 +312,43 @@ def version():
     })
 
 
+# ── Compressed delivery of the big files ─────────────────────────────────────
+# The page (1.6 MB), the sql.js engine (0.65 MB) and the whole database (several MB) were sent uncompressed: ~6.7 MB of upload from the
+# league's home connection on every page load, which crawled whenever that link was busy or flaky. Browsers ask for gzip; send it when asked
+# (about a quarter of the size) and keep one compressed copy per file until the file changes.
+_GZ_CACHE = {}
+
+def _serve_compressed(directory, filename):
+    resp = send_from_directory(directory, filename)                      # path safety / 404 / MIME type stay with Flask
+    if request.headers.get('Range') or 'gzip' not in (request.headers.get('Accept-Encoding', '') or '').lower():
+        return resp
+    path = os.path.join(directory, filename)
+    try:
+        st = os.stat(path)
+        if st.st_size < 1024:
+            return resp
+        hit = _GZ_CACHE.get(path)
+        if not hit or hit[0] != st.st_mtime_ns or hit[1] != st.st_size:
+            with open(path, 'rb') as f:
+                raw = f.read()
+            hit = (st.st_mtime_ns, st.st_size, gzip.compress(raw, 5))
+            _GZ_CACHE[path] = hit
+    except Exception as e:
+        print(f'[{now_local():%H:%M:%S}] gzip skipped for {filename}: {e}')
+        return resp
+    out = app.response_class(hit[2], mimetype=resp.mimetype)
+    out.headers['Content-Encoding'] = 'gzip'
+    out.headers['Vary'] = 'Accept-Encoding'
+    out.headers['Content-Length'] = str(len(hit[2]))
+    for h in ('Cache-Control', 'Pragma'):
+        if h in resp.headers:
+            out.headers[h] = resp.headers[h]
+    return out
+
+
 @app.route('/HughsGolf.html')
 def html():
-    resp = send_from_directory(BASE_DIR, 'HughsGolf.html')
+    resp = _serve_compressed(BASE_DIR, 'HughsGolf.html')
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
     return resp
@@ -321,7 +356,7 @@ def html():
 
 @app.route('/HughsGolf.db')
 def database():
-    return send_from_directory(BASE_DIR, 'HughsGolf.db')
+    return _serve_compressed(BASE_DIR, 'HughsGolf.db')
 
 @app.route('/fetch-live-db')
 def fetch_live_db():
