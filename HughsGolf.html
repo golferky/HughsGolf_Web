@@ -2833,7 +2833,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261013.3';
+const APP_VERSION = '20261013.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3175,6 +3175,8 @@ let savedFileHandle = null; // remembered across page loads via IndexedDB
 let SAVE_TOKEN = '';
 let SERVER_DB_MODIFIED_MS = null;
 let READONLY_DB_REFRESH_PROMISE = null;
+let DB_REFRESH_TIMEOUT_MS = 30000;
+let PRESENCE_TIMEOUT_MS = 6000;
 
 // The database engine (sql.js) is served by the app itself (/vendor/sqljs/). If that is unavailable (for example the page was opened as a
 // file), it falls back to the public CDN. When neither loads, the login screen says so instead of staying blank.
@@ -3469,9 +3471,14 @@ async function refreshLiveDbSnapshotForReadOnlyView() {
   if (!location.href.startsWith('http') || !SQL) return false;
   if (READONLY_DB_REFRESH_PROMISE) return READONLY_DB_REFRESH_PROMISE;
   READONLY_DB_REFRESH_PROMISE = (async () => {
-    const resp = await fetch(`HughsGolf.db?v=${Date.now()}`, { cache: 'no-store' });
-    if (!resp.ok) throw new Error(`DB refresh failed: ${resp.status}`);
-    const buf = await resp.arrayBuffer();
+    // The whole database (several MB) is downloaded each time. Without a time limit a poor connection made this hang for ever.
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), DB_REFRESH_TIMEOUT_MS);
+    let buf;
+    try {
+      const resp = await fetch(`HughsGolf.db?v=${Date.now()}`, { cache: 'no-store', signal: ctl.signal });
+      if (!resp.ok) throw new Error(`DB refresh failed: ${resp.status}`);
+      buf = await resp.arrayBuffer();
+    } finally { clearTimeout(timer); }
     const nextDb = new SQL.Database(new Uint8Array(buf));
     const oldDb = db;
     db = nextDb;
@@ -3483,9 +3490,11 @@ async function refreshLiveDbSnapshotForReadOnlyView() {
     return true;
   })();
   try {
+    window._dbRefreshWhy = '';
     return await READONLY_DB_REFRESH_PROMISE;
   } catch(e) {
     console.warn('Read-only DB refresh failed:', e);
+    window._dbRefreshWhy = e && e.name === 'AbortError' ? `no answer after ${Math.round(DB_REFRESH_TIMEOUT_MS / 1000)} s - slow or broken connection` : String((e && e.message) || e).slice(0, 80);
     return false;
   } finally {
     READONLY_DB_REFRESH_PROMISE = null;
@@ -4017,6 +4026,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261013.4', 'October 13, 2026', [
+    ['adminsummary', 'Admins: Refresh on Login Activity can no longer hang for ever on a poor connection; it gives up after 30 seconds and says why.', '', 0],
+    ['bugfix', 'Refreshing Login Activity took for ever', 'The refresh downloads the whole database with no time limit, and since Oct 12 it also waited on the Who\'s On check-ins before drawing anything. The download now stops after 30 seconds with a reason ("no answer after 30 s - slow or broken connection") and the Who\'s On data loads in the background (6 s limit) so the screen draws at once. PR #107.', 1],
   ]);
   ensureVersion('20261013.3', 'October 13, 2026', [
     ['adminsummary', 'Admins: when a call to the server fails, the red bar now says which one (for example "Failed to fetch (GET /whos-on)"), and a failed read is retried once automatically.', '', 0],
@@ -6658,7 +6671,7 @@ async function refreshHomeAdminLoginActivity(button) {
   if (status) {
     status.textContent = refreshed
       ? `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-      : 'Refresh failed';
+      : `Refresh failed${window._dbRefreshWhy ? ' (' + window._dbRefreshWhy + ')' : ''} - showing what was already loaded`;
     status.style.color = refreshed ? '#777' : 'var(--red)';
   }
   if (btn) {
@@ -14213,6 +14226,15 @@ function loggedInStatusHtml(row, presenceByPlayer, sinceMin) {
   const ageText = sinceMin !== null && sinceMin !== undefined ? `logged in ${sinceMin}m ago` : 'logged in';
   return persistent ? green(`${ageText}`) : grey(`${ageText} (no activity signal yet)`);
 }
+// Last check-in per player from Who's On (6 s limit; null if unavailable). Never blocks a screen.
+async function fetchPresenceMap() {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), PRESENCE_TIMEOUT_MS);
+  try {
+    const wo = await (await fetch('/whos-on', { headers: { 'X-Save-Token': await ensureSaveToken() }, signal: ctl.signal })).json();
+    const m = {}; (wo.people || []).forEach(x => { m[x.player] = x; });
+    return m;
+  } catch (e) { return null; } finally { clearTimeout(timer); }
+}
 async function loadLoginActivity(options = {}) {
   if (!db) return;
   if (!options.skipServerRefresh) await refreshLiveDbSnapshotForReadOnlyView();
@@ -14370,12 +14392,9 @@ async function loadLoginActivity(options = {}) {
     }
   }
 
-  // Last check-in per player (Who's On), so the status below reflects real activity rather than the login time
-  try {
-    const wo = await (await fetch('/whos-on', { headers: { 'X-Save-Token': await ensureSaveToken() } })).json();
-    window._presenceByPlayer = {}; (wo.people || []).forEach(x => { window._presenceByPlayer[x.player] = x; });
-  } catch (e) { window._presenceByPlayer = null; }
   // ── Currently Logged In ──────────────────────────────────────────────────
+  // Drawn at once from the last check-in data we have, then redrawn when the fresh check-ins arrive (they used to block this whole screen).
+  const renderCurrentlyLoggedIn = () => {
   const sessionsAvailable = activeSessionsEnabled();
   const activeSessions = sessionsAvailable
     ? query(`SELECT Player, ActiveSession, Officer FROM Players WHERE ActiveSession IS NOT NULL AND ActiveSession != ''`)
@@ -14400,6 +14419,9 @@ async function loadLoginActivity(options = {}) {
       }).join('');
     }
   }
+  };
+  renderCurrentlyLoggedIn();
+  fetchPresenceMap().then(m => { if (m) { window._presenceByPlayer = m; try { renderCurrentlyLoggedIn(); } catch (e) {} } });
 
   // Populate player filter dropdown (once)
   const playerSel = document.getElementById('loginActivityPlayer');
