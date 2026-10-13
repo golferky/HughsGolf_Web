@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261013.1-sandbox'
+VERSION    = '20261013.2-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -3132,6 +3132,18 @@ def clear_stale_sessions():
                 print(f'[{now_local():%H:%M:%S}] Cleared {cleared} stale session(s)')
         except Exception as e:
             print(f'[{now_local():%H:%M:%S}] Session cleanup error: {e}')
+def _ensure_columns(cur, table, defs):
+    """Add any of defs ((name, ddl) pairs) that the table lacks. A missing table is left alone."""
+    cur.execute(f"PRAGMA table_info({table})")
+    have = {row[1] for row in cur.fetchall()}
+    if not have:
+        return
+    for name, ddl in defs:
+        if name not in have:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+            print(f'[{now_local():%H:%M:%S}] Schema check: added {table}.{name}')
+
+
 def ensure_schema():
     """One-time startup check: add columns that may be missing if the live DB
     was ever replaced by an older backup (prevents silent recurring errors)."""
@@ -3208,6 +3220,12 @@ def ensure_schema():
         conn.commit()
         # Create LeagueExpenses table if missing
         # Who has been seen on which IP (one row per player + IP) and the current "who's on" presence (one row per player).
+        # Columns the page used to ALTER in on every load (and the server answered "duplicate column name" with a 500 each time).
+        cur.execute("""CREATE TABLE IF NOT EXISTS AppChangelog (ID INTEGER PRIMARY KEY AUTOINCREMENT, Version TEXT NOT NULL, ReleaseDate TEXT NOT NULL,
+            Category TEXT NOT NULL, Item TEXT NOT NULL, SortOrder INTEGER DEFAULT 0, Notes TEXT)""")
+        _ensure_columns(cur, 'AppChangelog', [('Notes', 'TEXT'), ('AddedBy', 'TEXT'), ('AddedAt', 'TEXT')])
+        _ensure_columns(cur, 'SeasonSettings', [('ChampPlaces', 'INTEGER DEFAULT 3'), ('StandPlace1', 'REAL DEFAULT 120'),
+                                                ('StandPlace2', 'REAL DEFAULT 100'), ('StandPlace3', 'REAL DEFAULT 90'), ('Byes', 'INTEGER DEFAULT 0')])
         cur.execute("""CREATE TABLE IF NOT EXISTS PlayerSeen (
             Player TEXT NOT NULL, IP TEXT NOT NULL, Device TEXT, FirstSeen TEXT, LastSeen TEXT, Hits INTEGER DEFAULT 0,
             PRIMARY KEY (Player, IP))""")
