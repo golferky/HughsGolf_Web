@@ -47,7 +47,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261012.11-sandbox'
+VERSION    = '20261013.1-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -126,6 +126,10 @@ _EMAIL_KIND = {'/need-sub': 'Sub Request', '/send-report-pdf': 'PDF Report', '/n
                '/review-player': 'Permission Request', '/board-post': 'League Board', '/board-comment': 'League Board'}
 
 class _AuditSMTP(smtplib.SMTP_SSL):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('timeout', 20)   # a stuck mail server must not hang a request (and whatever lock it holds) forever
+        super().__init__(*args, **kwargs)
+
     def sendmail(self, from_addr, to_addrs, msg, *args, **kwargs):
         result = super().sendmail(from_addr, to_addrs, msg, *args, **kwargs)
         try:
@@ -1417,7 +1421,10 @@ def send_rainout_text():
     if not test and _is_private_host(request.host):
         return jsonify({'ok': False, 'error': 'Open the app from its public address (not the home-network address) so the confirm link works on players\' phones.'}), 400
     simulated = ('sandbox' in VERSION.lower()) and not test
-    sent, failed = [], []
+    sent, failed, todo = [], [], []
+    # 1) Prepare under the write lock and COMMIT before any email goes out: sending takes seconds (and can hang), and the email audit
+    #    writes to the same database from its own connection. Holding the lock or an open write transaction during the send made every
+    #    message wait out a 15 s "database is locked" and blocked all other saves.
     with DB_WRITE_LOCK:
         conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
         cur = conn.cursor()
@@ -1439,10 +1446,18 @@ def send_rainout_text():
                 text = ('TEST: ' if test else '') + f"{message} You're the point person for {', '.join(members_of[name])}: please let them know. Tap to confirm and tick off who you told: {base}/r/{token}"
             else:
                 text = ('TEST: ' if test else '') + f"{message} Please tap to confirm - no need to reply: {base}/r/{token}"
-            if simulated or _send_mail([addr], "Hugh's Golf", text):
-                sent.append(name)
-            else:
-                failed.append({'player': name, 'reason': 'send failed'})
+            todo.append((name, addr, text))
+        conn.commit(); conn.close()
+    # 2) Send with no lock and no open transaction.
+    for name, addr, text in todo:
+        if simulated or _send_mail([addr], "Hugh's Golf", text):
+            sent.append(name)
+        else:
+            failed.append({'player': name, 'reason': 'send failed'})
+    # 3) Log the result (short lock).
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
         _log_row(cur, 'send_rainout_text', f'{actor} sent a {"TEST " if test else ""}{"point-person " if kind else ""}rainout text for {date} to {len(sent)} of {len(players)}' + (' (sandbox: not actually sent)' if simulated else ''),
                  f'message={message} failed={[f["player"] for f in failed]}')
         conn.commit(); conn.close()
