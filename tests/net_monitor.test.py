@@ -35,6 +35,15 @@ assert 'Nothing bad recorded' in nm.diagnose(nm.summarize(series('router', [5.0]
 # percentile helper
 assert nm.pct([1, 2, 3, 4, 100], 95) == 100 and nm.pct([], 95) is None
 
+# no `ping` on this computer: a clear message instead of a run that reports a dead network
+nm.shutil.which = lambda x: None
+try:
+    nm.run(argparse.Namespace(sat=None, interval=1, slow_every=1, speed=False, dir=tempfile.mkdtemp()))
+    raise AssertionError('should have exited')
+except SystemExit as e:
+    assert 'no `ping` command' in str(e)
+nm.shutil.which = lambda x: '/sbin/ping'
+
 # simulated run: fake probes, stop after 3 rounds, then read the CSV with report
 d = tempfile.mkdtemp(); calls = {'sleep': 0}
 nm.ping_once = lambda host, timeout_s=2: None if host == '192.168.1.50' else 7.5
