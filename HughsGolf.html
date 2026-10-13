@@ -2833,7 +2833,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261013.2';
+const APP_VERSION = '20261013.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3146,6 +3146,32 @@ function refreshEntryLegend() {
 let SQL;
 let sqlReady = false;
 let savedFileHandle = null; // remembered across page loads via IndexedDB
+/* fetch-wrapper:start */
+// Network blips: a failed call used to show only "Failed to fetch", with no way to tell WHICH request. Now it names it, e.g.
+// "Failed to fetch (POST /run-sql)", keeps a short list in window.__fetchFailures, and quietly retries a safe GET (or HEAD) once
+// after 0.7 s. Writes (POST etc.) are never retried, so nothing can be saved twice. Aborts and server error codes are untouched.
+(function () {
+  if (window.__fetchWrapped || typeof window.fetch !== 'function') return;
+  window.__fetchWrapped = true; window.__fetchFailures = [];
+  const orig = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    const method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+    const url = String(typeof input === 'string' ? input : ((input && input.url) || '')).split('?')[0].replace(/^https?:\/\/[^/]+/, '');
+    const attempt = () => orig(input, init);
+    const note = (e, tries) => {
+      try { e.message = `${e.message} (${method} ${url})`; } catch (x) {}
+      window.__fetchFailures.push({ at: new Date().toISOString(), method, url, tries });
+      if (window.__fetchFailures.length > 30) window.__fetchFailures.shift();
+      return e;
+    };
+    return attempt().catch(err => {
+      if (!err || err.name !== 'TypeError') throw err;                      // aborted, etc.
+      if (method !== 'GET' && method !== 'HEAD') throw note(err, 1);        // never retry a write
+      return new Promise(r => setTimeout(r, 700)).then(attempt).catch(e2 => { throw note(e2, 2); });
+    });
+  };
+})();
+/* fetch-wrapper:end */
 let SAVE_TOKEN = '';
 let SERVER_DB_MODIFIED_MS = null;
 let READONLY_DB_REFRESH_PROMISE = null;
@@ -3991,6 +4017,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261013.3', 'October 13, 2026', [
+    ['adminsummary', 'Admins: when a call to the server fails, the red bar now says which one (for example "Failed to fetch (GET /whos-on)"), and a failed read is retried once automatically.', '', 0],
+    ['bugfix', 'Failed to fetch gave no clue which request failed', 'The page showed only "Failed to fetch". It now names the request, keeps the last 30 failures (window.__fetchFailures) and retries a failed GET once after 0.7 s so a short network blip is not shown at all. Saves are never retried, so nothing can be written twice. PR #106.', 1],
   ]);
   ensureVersion('20261013.2', 'October 13, 2026', [
     ['adminsummary', 'Admins: opening the app no longer sends a batch of "add column" requests that the server rejects every time.', '', 0],
