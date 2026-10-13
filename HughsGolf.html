@@ -2833,7 +2833,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261012.11';
+const APP_VERSION = '20261013.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3993,6 +3993,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261013.1', 'October 13, 2026', [
+    ['adminsummary', 'Admins: sending a rainout text no longer freezes the server for other saves.', '', 0],
+    ['bugfix', 'Server hung while a rainout text was being sent', 'The rainout send held the database write lock and an open write transaction while it emailed each player. The email log writes to the same database, so every message waited out a 15 second "database is locked", blocking all other saves, and the mail connection had no time limit. The send now prepares and commits first, emails with nothing held, then logs; all mail connections time out after 20 seconds. PR #104.', 1],
   ]);
   ensureVersion('20261012.11', 'October 12, 2026', [
     ['summary', 'The League ▸ Changelog tab is now called Change History.', '', 0],

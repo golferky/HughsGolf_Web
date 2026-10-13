@@ -27,7 +27,19 @@ assert post({**body, 'date': ''}).status_code == 400
 r = post(body, base_url='http://192.168.1.176:8446'); assert r.status_code == 400 and 'public address' in r.get_json()['error']
 
 sent_to = []
-app._send_mail = lambda addrs, subj, text: (sent_to.append((addrs[0], text)) or True)
+# The mail goes out with NO write lock held and NO open write transaction (the email audit writes to the same database from its own
+# connection; holding either made each text wait out a 15 s "database is locked" and blocked every other save).
+import sqlite3 as _sq
+def _fake_send(addrs, subj, text):
+    assert not app.DB_WRITE_LOCK._is_owned(), 'mail sent while holding the DB write lock'
+    c2 = _sq.connect(app.DB_PATH, timeout=0.3)
+    try:
+        c2.execute("INSERT INTO LogTable (log_time, level, method, source, text, details, created_at) VALUES ('t','INFO','probe','x','probe','','t')"); c2.commit()   # raises if another write is open
+    finally:
+        c2.close()
+    sent_to.append((addrs[0], text)); return True
+app._send_mail = _fake_send
+assert app._AuditSMTP.__init__.__code__.co_consts.count('timeout') >= 1, 'SMTP connections have a timeout'
 # sandbox: players are never really texted, but the result says who would get it
 assert 'sandbox' in app.VERSION.lower()
 j = post(body).get_json()
