@@ -2841,7 +2841,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261014.1';
+const APP_VERSION = '20261014.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4034,6 +4034,11 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261014.2', 'October 14, 2026', [
+    ['adminsummary', 'Admins: you can now start a new season yourself (Admin → New Season → Start a new season), without SQL. A season that has not started yet can be edited freely.', '', 0],
+    ['admin', 'Start a new season from Admin', 'Pick the year and the season to copy: the settings and (optionally) the teams are copied and the dates move forward whole weeks. A new season with no scores, matches or payments can also be removed again if it was created by mistake. Creating and removing are logged. PR #111.', 1],
+    ['admin', 'League Settings are editable until the season starts', 'They used to stay locked until the post-season date passed, which also locked a season that had just been created. Now the General, Handicaps and Money fields are locked only from the season\'s Start Date until its post-season is over. The save uses the same rule as the screen. PR #111.', 2],
   ]);
   ensureVersion('20261014.1', 'October 14, 2026', [
     ['adminsummary', 'Admins: New Season Setup is now its own page under Admin (Admin → New Season) instead of a section in Help, and it explains how to handle an odd number of teams.', '', 0],
@@ -11659,8 +11664,9 @@ function newSeasonSetupHtml() {
           <p style="margin:0 0 10px">Steps to get the league ready for a new season. Complete these in order before the first round.</p>
           <ol style="margin:0 0 12px;padding-left:20px;line-height:2.1">
             <li><strong>Backup the database</strong> — always start with a fresh backup from Admin &gt; Backups before making any changes.</li>
-            <li><strong>Update League Settings</strong> — go to Admin &gt; Table Maintenance and update the Season Settings and League Settings for the new season. Set the new Season year, dues amount (Cost), Course, Day, Format, and any other fields that have changed.</li>
-            <li><strong>Update the player roster</strong> — in Admin &gt; Table Maintenance &gt; Players, add any new players and mark departed players inactive. Confirm admin roles are correct.</li>
+            <li><strong>Create the new season</strong> — use the Start a new season box at the top of this page. It copies last season's settings and teams and moves the dates forward.</li>
+            <li><strong>Review League Settings</strong> — go to Admin &gt; Table Maintenance &gt; League Settings, choose the new season and check the dates, dues amount (Cost), Course, # Teams, Format and anything else that changed. Everything is editable until the season's start date.</li>
+            <li><strong>Update the player roster and teams</strong> — in Admin &gt; Table Maintenance &gt; Players, add any new players and mark departed players inactive; in Teams, add or remove players for the new season (team changes are locked once the season starts). Confirm admin roles are correct.</li>
             <li><strong>Set handicap seeds</strong> — for new players, set a starting handicap seed. Returning players carry their handicaps forward automatically.</li>
             <li><strong>Build the season schedule</strong> — add all round dates to the Schedule table, including Front/Back 9 assignments for each week. Double-check for holidays or course closures.</li>
             <li><strong>Collect dues</strong> — once the roster is set, start collecting season dues. Mark each player paid in the Payments tab as they pay in.</li>
@@ -11673,7 +11679,77 @@ function newSeasonSetupHtml() {
 }
 function loadNewSeasonSetup() {
   const el = document.getElementById('newSeasonBody');
-  if (el) el.innerHTML = newSeasonSetupHtml();
+  if (el) el.innerHTML = newSeasonFormHtml() + newSeasonSetupHtml();
+}
+
+// ── Admin ▸ New Season: create the next season from last season's settings (no SQL needed) ──
+function newSeasonIsAdmin() { return currentUser?.role === 'admin' || currentUser?.role === 'developer'; }
+function seasonRemovable(year) {
+  const lo = year * 10000 + 101, hi = (year + 1) * 10000 + 101;
+  const n = sql => (query(sql, [lo, hi])[0]?.n) || 0;
+  return n(`SELECT COUNT(*) AS n FROM Scores WHERE Date >= ? AND Date < ?`) + n(`SELECT COUNT(*) AS n FROM Matches WHERE Date >= ? AND Date < ?`)
+       + n(`SELECT COUNT(*) AS n FROM Payments WHERE Date >= ? AND Date < ?`) === 0;
+}
+function newSeasonFormHtml() {
+  const seasons = query(`SELECT Season FROM SeasonSettings WHERE League="Hugh's" ORDER BY Season DESC`).map(r => r.Season);
+  if (!seasons.length) return '';
+  const next = seasons[0] + 1;
+  const opts = seasons.map(y => `<option value="${y}">${y}</option>`).join('');
+  const removable = seasons.length > 1 ? seasons.filter(y => seasonRemovable(y)) : [];
+  return `
+    <div style="border:1px solid #c8e0c0;border-radius:8px;background:#f7faf4;padding:14px 16px;margin-bottom:16px">
+      <div style="font-weight:700;color:#1b4d2e;margin-bottom:6px">Start a new season</div>
+      <div style="font-size:13px;color:#444;margin-bottom:10px">Creates the new season from an earlier one: its settings are copied and its dates move forward whole weeks (check them afterwards in Admin → Table Maintenance → League Settings). Everything stays editable until the season's start date.</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:end;margin-bottom:10px">
+        <label style="font-size:12px;color:#666;font-weight:600">New season<br><input id="newSeasonYear" type="number" value="${next}" min="2000" max="2100" style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px;width:90px"></label>
+        <label style="font-size:12px;color:#666;font-weight:600">Copy settings from<br><select id="newSeasonFrom" style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px">${opts}</select></label>
+        <label style="font-size:13px;cursor:pointer"><input type="checkbox" id="newSeasonCopyTeams" checked> Copy that season's teams</label>
+        <button onclick="createNewSeason()" style="padding:8px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer">Create season</button>
+      </div>
+      <div style="font-size:12px;color:#8a5a00">The app treats the newest season as the current one, so as soon as it is created Play, Standings and Money show the new, empty season (older seasons stay under the Season dropdowns). Make a backup first (Admin → Backups).</div>
+      ${removable.length ? `<div style="font-size:12px;color:#666;margin-top:10px">Created one by mistake? A season with no scores, matches or payments can be removed: ${removable.map(y => `<button onclick="removeNewSeason(${y})" style="margin-left:4px;padding:2px 8px;border:1px solid #ffcccc;border-radius:4px;background:#fff5f5;cursor:pointer;font-size:11px">Remove ${y}</button>`).join('')}</div>` : ''}
+    </div>`;
+}
+function newSeasonRefresh() {
+  ['lsSeason', 'teamsSeason'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });   // rebuilt with the new list
+  loadNewSeasonSetup();
+}
+function createNewSeason() {
+  if (!newSeasonIsAdmin()) { alert('Only admins can start a new season.'); return; }
+  const year = parseInt(document.getElementById('newSeasonYear')?.value), from = parseInt(document.getElementById('newSeasonFrom')?.value);
+  const copyTeams = !!document.getElementById('newSeasonCopyTeams')?.checked;
+  if (!(year >= 2000 && year <= 2100)) { alert('Enter the season year, for example 2027.'); return; }
+  if (query(`SELECT 1 FROM SeasonSettings WHERE League="Hugh's" AND Season=?`, [year]).length) { alert(`Season ${year} already exists.`); return; }
+  const src = query(`SELECT * FROM SeasonSettings WHERE League="Hugh's" AND Season=?`, [from])[0];
+  if (!src) { alert('Pick the season to copy the settings from.'); return; }
+  const weeks = (year - from) * 52;
+  if (!confirm(`Create the ${year} season from ${from}?\n\n• Settings are copied; dates move ${weeks >= 0 ? 'forward' : 'back'} ${Math.abs(weeks)} weeks (please check them).\n${copyTeams ? `• ${from}'s teams are copied.\n` : ''}\nThe app will treat ${year} as the current season right away: Play, Standings and Money start empty. ${from} stays under the Season dropdowns.\n\nHave you made a backup (Admin → Backups)?`)) return;
+  const have = new Set(query(`PRAGMA table_info(SeasonSettings)`).map(r => r.name));
+  const row = {};
+  Object.keys(src).forEach(c => { if (have.has(c)) row[c] = src[c]; });
+  row.Season = year;
+  ['StartDate', 'EndDate', 'PostSeasonDt'].forEach(c => { if (psMdyToInt(src[c])) row[c] = psAddDaysMdy(src[c], weeks * 7); });
+  if ('PSWeek2Dt' in row) row.PSWeek2Dt = null;       // a Week 2 rainout date belongs to the old season
+  if ('Rainouts' in row) row.Rainouts = 0;
+  if ('Byes' in row) row.Byes = 0;
+  const cols = Object.keys(row);
+  serverRun(`INSERT INTO SeasonSettings (${cols.map(c => `"${c}"`).join(',')}) VALUES (${cols.map(() => '?').join(',')})`, cols.map(c => row[c]));
+  if (copyTeams) serverRun(`INSERT INTO Teams (League,Year,Player,Team,Grade,"Group",CTP,EOY) SELECT League, ?, Player, Team, Grade, "Group", CTP, EOY FROM Teams WHERE League="Hugh's" AND Year=?`, [year, from]);
+  auditDbChange('season_created', 'SeasonSettings', String(year), `${currentUser?.name || 'unknown'} created season ${year} from ${from}${copyTeams ? ' with its teams' : ''}`, null, { Season: year, CopiedFrom: from, Teams: copyTeams ? 'copied' : 'not copied' }, 'Admin New Season');
+  saveDBToServer();
+  newSeasonRefresh();
+  alert(`Season ${year} created.\n\nNext: open Admin → Table Maintenance → League Settings, choose ${year}, and check the dates, dues and # Teams. Then refresh the page (Cmd+R / Ctrl+R) so every screen picks up the new season.`);
+}
+function removeNewSeason(year) {
+  if (!newSeasonIsAdmin()) { alert('Only admins can remove a season.'); return; }
+  if (!seasonRemovable(year)) { alert(`Season ${year} already has scores, matches or payments, so it cannot be removed here.`); return; }
+  if (query(`SELECT COUNT(*) AS n FROM SeasonSettings WHERE League="Hugh's"`)[0]?.n <= 1) { alert('The only season cannot be removed.'); return; }
+  if (!confirm(`Remove the empty ${year} season and its team list?\n\nThis only works for a season with no scores, matches or payments.`)) return;
+  serverRun(`DELETE FROM Teams WHERE League="Hugh's" AND Year=?`, [year]);
+  serverRun(`DELETE FROM SeasonSettings WHERE League="Hugh's" AND Season=?`, [year]);
+  auditDbChange('season_removed', 'SeasonSettings', String(year), `${currentUser?.name || 'unknown'} removed the empty season ${year}`, { Season: year }, null, 'Admin New Season');
+  saveDBToServer();
+  newSeasonRefresh();
 }
 
 // ── Admin ▸ Backlog: BACKLOG.md (uploaded by deploy_qnap.sh) shown as sections of open / completed items ──
@@ -20271,6 +20347,15 @@ function lsCarryYesNo(v) {
   const t = String(v ?? '').trim().toUpperCase();
   return (t === '' || t === 'N' || t === 'NO' || t === '0' || t === 'FALSE') ? 'N' : 'Y';
 }
+// A season's General / Handicaps / base Money settings are locked from its Start Date until its post-season ends. Before it starts
+// (a season that was just created) everything can be edited, and once it is over everything unlocks again.
+function lsSeasonLocked(ss, todayInt) {
+  const start = psMdyToInt(ss?.StartDate), post = psMdyToInt(ss?.PostSeasonDt);
+  if (!start) return false;                          // no start date yet: still being set up
+  const t = todayInt || (() => { const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); })();
+  if (t < start) return false;                       // not started yet
+  return post ? t <= post : true;                    // started: locked until the post-season date has passed (no date: stays locked)
+}
 function loadLeagueSettings() {
   const sel = document.getElementById('lsSeason');
   if (!sel.options.length) {
@@ -20291,15 +20376,8 @@ function loadLeagueSettings() {
 
   window._lsOriginal = lp;
 
-  // Check if post-season has ended
-  const today = new Date();
-  const todayInt = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
-  let postSeasonInt = 99999999; // default to "not ended" if unparseable
-  if (lp.PostSeasonDt) {
-    const psd = new Date(lp.PostSeasonDt);
-    if (!isNaN(psd)) postSeasonInt = psd.getFullYear()*10000 + (psd.getMonth()+1)*100 + psd.getDate();
-  }
-  const seasonEnded = todayInt > postSeasonInt;
+  // "seasonEnded" here means: nothing is locked (the season has not started yet, or its post-season is over)
+  const seasonEnded = !lsSeasonLocked(lp);
 
   const saveBtn = document.querySelector('#adminLeaguesettings button[onclick="saveLeagueSettings()"]');
   const warningEl = document.getElementById('lsWarning');
@@ -20383,11 +20461,7 @@ function saveLeagueSettings() {
   if (!orig) return;
 
   // Determine if season is still active (same logic as loadLeagueSettings)
-  const lp2 = window._lsOriginal;
-  let _postSeasonInt2 = 0;
-  if (lp2.PostSeasonDt) { const d = new Date(lp2.PostSeasonDt); if (!isNaN(d)) _postSeasonInt2 = d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); }
-  const today2 = new Date(); const todayInt2 = today2.getFullYear()*10000+(today2.getMonth()+1)*100+today2.getDate();
-  const seasonStillActive = todayInt2 <= _postSeasonInt2;
+  const seasonStillActive = lsSeasonLocked(window._lsOriginal);
 
   const newValues = {};
   const labels = {};
