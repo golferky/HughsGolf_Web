@@ -13,10 +13,10 @@ function run({ seasonEnded = true, columns }) {
   const inputs = { Cost: '45', Carryover: '', ChampPlaces: '2', 'EOY Skins': '20', Format: '2 Man', Name: "Hugh's" };
   const c = vm.createContext({ calls, alerts, LS_FIELDS, LS_MID_SEASON_OK: MID, console,
     document: { getElementById: () => ({ value: '2026' }), querySelector: sel => { const m = sel.match(/data-lscol="([^"]+)"/); return m && m[1] in inputs ? { value: inputs[m[1]] } : null; } },
-    window: { _lsOriginal: { PostSeasonDt: seasonEnded ? '9/29/2026' : '12/31/2099' } }, Date, isNaN, Set, Object,
+    window: { _lsOriginal: { StartDate: '3/1/2026', PostSeasonDt: seasonEnded ? '9/29/2026' : '12/31/2099' } }, Date, isNaN, Set, Object, parseInt, String,
     confirmChanges: () => true, query: sql => /PRAGMA table_info\(SeasonSettings\)/.test(sql) ? columns.map(name => ({ name })) : [],
     serverRun: (sql, args) => { calls.push({ sql, args }); }, saveDBToServer() {}, loadLeagueSettings() {}, alert: m => alerts.push(m) });
-  vm.runInContext(extract('saveLeagueSettings'), c); c.saveLeagueSettings();
+  ['psMdyToInt', 'lsSeasonLocked', 'saveLeagueSettings'].forEach(f => vm.runInContext(extract(f), c)); c.saveLeagueSettings();
   return { calls, alerts };
 }
 const season = r => r.calls.find(x => /UPDATE SeasonSettings/.test(x.sql));

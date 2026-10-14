@@ -8,9 +8,10 @@ assert(/id="adminBtnNewseason"/.test(src) && /id="adminNewseason"/.test(src) && 
 assert(/if \(section==='newseason'\)\s+loadNewSeasonSetup\(\)/.test(src));
 assert(/'backlog','newseason','expenses'/.test(src), 'button highlight list includes it');
 const el = { innerHTML: '' };
-const ctx = vm.createContext({ document: { getElementById: id => id === 'newSeasonBody' ? el : null } });
+const ctx = vm.createContext({ newSeasonFormHtml: () => '<form>', document: { getElementById: id => id === 'newSeasonBody' ? el : null } });
 ['newSeasonSetupHtml', 'loadNewSeasonSetup'].forEach(f => vm.runInContext(extract(f), ctx));
 ctx.loadNewSeasonSetup();
-['Backup the database', 'Update League Settings', 'Update the player roster', 'Set handicap seeds', 'Build the season schedule', 'Collect dues', 'Verify app access', 'Test score entry', 'Odd number of teams'].forEach(t => assert(el.innerHTML.includes(t), t));
-assert((el.innerHTML.match(/<li>/g) || []).length === 8, 'eight steps');
+assert(el.innerHTML.startsWith('<form>'), 'the start-a-season box comes first');
+['Backup the database', 'Create the new season', 'Review League Settings', 'Update the player roster', 'Set handicap seeds', 'Build the season schedule', 'Collect dues', 'Verify app access', 'Test score entry', 'Odd number of teams'].forEach(t => assert(el.innerHTML.includes(t), t));
+assert((el.innerHTML.match(/<li>/g) || []).length === 9, 'nine steps');
 console.log('ok');
