@@ -1424,6 +1424,7 @@
       <button onclick="showAdminSection('proposals')" id="adminBtnProposals" class="admin-btn">📋 Proposals</button>
       <button onclick="showAdminSection('changelog')" id="adminBtnChangelog" class="admin-btn">📝 Changelog</button>
       <button onclick="showAdminSection('backlog')" id="adminBtnBacklog" class="admin-btn">🗒️ Backlog</button>
+      <button onclick="showAdminSection('newseason')" id="adminBtnNewseason" class="admin-btn">🌱 New Season</button>
       <button onclick="showAdminSection('expenses')" id="adminBtnExpenses" class="admin-btn">💰 Expenses</button>
       <button onclick="showAdminSection('awards')" id="adminBtnAwards" class="admin-btn">🏆 Award Prizes</button>
       <button onclick="showAdminSection('balance')" id="adminBtnBalance" class="admin-btn">📒 Balance Sheet</button>
@@ -1891,6 +1892,13 @@
           <button onclick="document.getElementById('proposalModal').style.display='none'" style="padding:9px 20px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:13px">Cancel</button>
           <button onclick="saveProposal()" style="padding:9px 20px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Save</button>
         </div>
+      </div>
+    </div>
+
+    <div id="adminNewseason" style="display:none">
+      <div class="card">
+        <div class="card-header">🌱 New Season Setup</div>
+        <div id="newSeasonBody" style="padding:16px;font-family:'DM Sans',sans-serif"></div>
       </div>
     </div>
 
@@ -2833,7 +2841,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261013.5';
+const APP_VERSION = '20261014.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4026,6 +4034,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261014.1', 'October 14, 2026', [
+    ['adminsummary', 'Admins: New Season Setup is now its own page under Admin (Admin → New Season) instead of a section in Help, and it explains how to handle an odd number of teams.', '', 0],
+    ['admin', 'Admin ▸ New Season', 'The setup checklist moved from Help to a new Admin → New Season button (admins and developers only), so the steps are where the work happens. Same steps, in order, plus a note for an odd number of teams: set # Teams to the next even number and schedule the missing team as an ordinary matchup, leave it out of Players and Teams, and the real team that week gets a sweep (3 points). PR #110.', 1],
   ]);
   ensureVersion('20261013.5', 'October 13, 2026', [
     ['summary', 'The app loads faster for everyone, especially away from home: the page, the database engine and the database are now sent compressed.', '', 0],
@@ -5941,20 +5953,6 @@ async function loadHelpTab() {
             <li><strong>Announce winners</strong> — share final standings and prize winners with the group.</li>
           </ol>
           <p style="margin:0;color:#666;font-size:13px">💡 Always create a backup before any bulk post-season data changes. Once prizes are paid out and dues settled, you're ready to set up the new season.</p>
-        `, true),
-        helpAccordionItem('help_newseason', '🌱', 'New Season Setup', `
-          <p style="margin:0 0 10px">Steps to get the league ready for a new season. Complete these in order before the first round.</p>
-          <ol style="margin:0 0 12px;padding-left:20px;line-height:2.1">
-            <li><strong>Backup the database</strong> — always start with a fresh backup from Admin &gt; Backups before making any changes.</li>
-            <li><strong>Update League Settings</strong> — go to Admin &gt; Table Maintenance and update the Season Settings and League Settings for the new season. Set the new Season year, dues amount (Cost), Course, Day, Format, and any other fields that have changed.</li>
-            <li><strong>Update the player roster</strong> — in Admin &gt; Table Maintenance &gt; Players, add any new players and mark departed players inactive. Confirm admin roles are correct.</li>
-            <li><strong>Set handicap seeds</strong> — for new players, set a starting handicap seed. Returning players carry their handicaps forward automatically.</li>
-            <li><strong>Build the season schedule</strong> — add all round dates to the Schedule table, including Front/Back 9 assignments for each week. Double-check for holidays or course closures.</li>
-            <li><strong>Collect dues</strong> — once the roster is set, start collecting season dues. Mark each player paid in the Payments tab as they pay in.</li>
-            <li><strong>Verify app access</strong> — check Login Activity after the first week to confirm all players can log in. Follow up with anyone who hasn't.</li>
-            <li><strong>Test score entry</strong> — enter a test score for the first round and verify handicaps, standings, and skins calculate correctly before opening to all players.</li>
-          </ol>
-          <p style="margin:0;color:#666;font-size:13px">💡 Contact the developer if you need help updating League Settings or the Schedule table for the new season.</p>
         `, true),
       ].join('') : ''}
   `;
@@ -11639,7 +11637,7 @@ function loadSchedule() {
 }
 
 // ── ADMIN TAB ──
-const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals','awards','balance','backlog'];
+const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals','awards','balance','backlog','newseason'];
 const ADMIN_GROUPS = {
   tables: ['players','teams','subs','leaguesettings'],
   logging: ['loginactivity','serverlog','pageviews','whoson','emaillog']
@@ -11653,6 +11651,29 @@ function adminGroupForSection(section) {
   if (ADMIN_GROUPS.tables.includes(section)) return 'tables';
   if (ADMIN_GROUPS.logging.includes(section)) return 'logging';
   return section;
+}
+
+// ── Admin ▸ New Season: the setup checklist (it used to be a Help section) ──
+function newSeasonSetupHtml() {
+  return `
+          <p style="margin:0 0 10px">Steps to get the league ready for a new season. Complete these in order before the first round.</p>
+          <ol style="margin:0 0 12px;padding-left:20px;line-height:2.1">
+            <li><strong>Backup the database</strong> — always start with a fresh backup from Admin &gt; Backups before making any changes.</li>
+            <li><strong>Update League Settings</strong> — go to Admin &gt; Table Maintenance and update the Season Settings and League Settings for the new season. Set the new Season year, dues amount (Cost), Course, Day, Format, and any other fields that have changed.</li>
+            <li><strong>Update the player roster</strong> — in Admin &gt; Table Maintenance &gt; Players, add any new players and mark departed players inactive. Confirm admin roles are correct.</li>
+            <li><strong>Set handicap seeds</strong> — for new players, set a starting handicap seed. Returning players carry their handicaps forward automatically.</li>
+            <li><strong>Build the season schedule</strong> — add all round dates to the Schedule table, including Front/Back 9 assignments for each week. Double-check for holidays or course closures.</li>
+            <li><strong>Collect dues</strong> — once the roster is set, start collecting season dues. Mark each player paid in the Payments tab as they pay in.</li>
+            <li><strong>Verify app access</strong> — check Login Activity after the first week to confirm all players can log in. Follow up with anyone who hasn't.</li>
+            <li><strong>Test score entry</strong> — enter a test score for the first round and verify handicaps, standings, and skins calculate correctly before opening to all players.</li>
+          </ol>
+          <p style="margin:0 0 10px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:8px 12px;font-size:13px;color:#5d4037">⛳ <strong>Odd number of teams?</strong> Set # Teams to the next even number and schedule the missing team as an ordinary matchup (for example 5v12). Leave that team out of Players and Teams: the real team that week is credited with a sweep (3 points) and nothing is recorded for the empty team.</p>
+          <p style="margin:0;color:#666;font-size:13px">💡 Contact the developer if you need help updating League Settings or the Schedule table for the new season.</p>
+        `;
+}
+function loadNewSeasonSetup() {
+  const el = document.getElementById('newSeasonBody');
+  if (el) el.innerHTML = newSeasonSetupHtml();
 }
 
 // ── Admin ▸ Backlog: BACKLOG.md (uploaded by deploy_qnap.sh) shown as sections of open / completed items ──
@@ -11732,7 +11753,7 @@ function showAdminSection(section) {
     const btn = document.getElementById(`adminGroup${g}`);
     if (btn) btn.className = 'admin-btn' + (group === g.toLowerCase() || (g === 'Sql' && section === 'sql') ? ' active-admin-btn' : '');
   });
-  ['pdfs','rainout','sync','gallus','backups','changelog','backlog','expenses','compare','proposals'].forEach(s => {
+  ['pdfs','rainout','sync','gallus','backups','changelog','backlog','newseason','expenses','compare','proposals'].forEach(s => {
     const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
     if (btn) btn.className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
@@ -11756,6 +11777,7 @@ function showAdminSection(section) {
   if (section==='pdfs') { populatePdfControls(); loadPdfEmailHistory(); }
   if (section==='changelog') loadAdminChangelog();
   if (section==='backlog')   loadBacklog();
+  if (section==='newseason') loadNewSeasonSetup();
   if (section==='proposals') loadProposalsAdmin();
   if (section==='expenses')  loadExpenses();
   if (section==='compare')   loadCompareSection();
