@@ -8,7 +8,7 @@ assert(/id="adminBtnNewseason"/.test(src) && /id="adminNewseason"/.test(src) && 
 assert(/if \(section==='newseason'\)\s+loadNewSeasonSetup\(\)/.test(src));
 assert(/'backlog','newseason','expenses'/.test(src), 'button highlight list includes it');
 const el = { innerHTML: '' };
-const ctx = vm.createContext({ newSeasonFormHtml: () => '<form>', document: { getElementById: id => id === 'newSeasonBody' ? el : null } });
+const ctx = vm.createContext({ newSeasonFormHtml: () => '<form>', scheduleBuildFormHtml: () => '', document: { getElementById: id => id === 'newSeasonBody' ? el : null } });
 ['newSeasonSetupHtml', 'loadNewSeasonSetup'].forEach(f => vm.runInContext(extract(f), ctx));
 ctx.loadNewSeasonSetup();
 assert(el.innerHTML.startsWith('<form>'), 'the start-a-season box comes first');
