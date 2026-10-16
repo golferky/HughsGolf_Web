@@ -1,6 +1,6 @@
 # Hugh's Golf — Backlog
 
-Last updated: 2026-10-11
+Last updated: 2026-10-16
 
 ---
 
@@ -20,6 +20,10 @@ Last updated: 2026-10-11
     Note: the server also hands this token to any browser via /save-token, so it's a light speed bump, not real security. Real protection = tie writes to a logged-in admin session on the server (future enhancement).
   - Add any outside developers as collaborators (Settings → Collaborators) so they can read docs/SETUP.md.
   - Nothing else changes: deploy_qnap.sh uses Gary's own SSH login; the QNAP never pulls from GitHub.
+
+- [ ] **Keep private settings off the database file** *(tabled Oct 16, 2026)* — Move the email password, DuckDNS token and Anthropic key to a server-only store (a private file on the QNAP, not in the database or git). League Settings then shows only Set / Not set with a Change button, and never sends the value back to the browser. The server copies existing values across at startup and clears them from the database.
+  - After it ships, replace the old values with new ones (new Gmail app password, DuckDNS token, Anthropic key).
+  - Also review how the website password is checked, and whether the database and test-database downloads should require a login.
 
 ---
 
