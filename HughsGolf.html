@@ -4037,7 +4037,7 @@ function ensureAppChangelogTable() {
   ]);
   ensureVersion('20261016.1', 'October 16, 2026', [
     ['adminsummary', 'Admins: Admin → New Season → Set up new season now does everything in one click: settings, teams and the whole weekly schedule, copied from the season you pick.', '', 0],
-    ['admin', 'Set up new season builds the schedule too', 'It copies the old season\'s played weeks (its rainouts are not repeated) as weekly dates from the new Start Date, with the same pairings and the Front/Back 9, sets the End Date to the last week and the post-season the week after (as it was). Holidays can be skipped. A Rebuild the weekly schedule box is there for changes later, and Remove also removes the schedule of an empty season. Logged. PR #112.', 1],
+    ['admin', 'Set up new season builds the schedule too', 'The season starts on the 2nd league day of April (Day of Week in League Settings). It copies the old season\'s played weeks (its rainouts are not repeated) as weekly dates from that Start Date, with the same pairings and the Front/Back 9, sets the End Date to the last week and the post-season the week after (as it was). Holidays can be skipped. A Rebuild the weekly schedule box is there for changes later, and Remove also removes the schedule of an empty season. Logged. PR #112.', 1],
   ]);
   ensureVersion('20261014.2', 'October 14, 2026', [
     ['adminsummary', 'Admins: you can now start a new season yourself (Admin → New Season → Start a new season), without SQL. A season that has not started yet can be edited freely.', '', 0],
@@ -11703,7 +11703,7 @@ function newSeasonFormHtml() {
   return `
     <div style="border:1px solid #c8e0c0;border-radius:8px;background:#f7faf4;padding:14px 16px;margin-bottom:16px">
       <div style="font-weight:700;color:#1b4d2e;margin-bottom:6px">Set up a new season</div>
-      <div style="font-size:13px;color:#444;margin-bottom:10px">One click sets the new season up just like the one you copy: the settings, the teams and the whole weekly schedule (same pairings and Front/Back 9, weeks starting on the same weekday). Then adjust anything you like (teams, players, dates) in League Settings, Teams and Rain Out. Everything stays editable until the season's start date.</div>
+      <div style="font-size:13px;color:#444;margin-bottom:10px">One click sets the new season up just like the one you copy: the settings, the teams and the whole weekly schedule (same pairings and Front/Back 9), starting on the 2nd league day (from League Settings) of April. Then adjust anything you like (teams, players, dates) in League Settings, Teams and Rain Out. Everything stays editable until the season's start date.</div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:end;margin-bottom:10px">
         <label style="font-size:12px;color:#666;font-weight:600">New season<br><input id="newSeasonYear" type="number" value="${next}" min="2000" max="2100" style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px;width:90px"></label>
         <label style="font-size:12px;color:#666;font-weight:600">Copy settings from<br><select id="newSeasonFrom" style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px">${opts}</select></label>
@@ -11829,6 +11829,14 @@ function newSeasonRefresh() {
   ['lsSeason', 'teamsSeason'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });   // rebuilt with the new list
   loadNewSeasonSetup();
 }
+// The league starts on the 2nd league day (League Settings > Day of Week, Tuesday if it is not set) in April.
+function secondLeagueDayOfApril(year, dayName) {
+  const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  let want = names.indexOf(String(dayName || 'Tuesday').trim().toLowerCase());
+  if (want < 0) want = 2;                                          // not a day name: Tuesday
+  const dow = new Date(Date.UTC(year, 3, 1)).getUTCDay();          // 0 = Sunday ... 6 = Saturday
+  return `4/${1 + ((want - dow + 7) % 7) + 7}/${year}`;
+}
 function createNewSeason() {
   if (!newSeasonIsAdmin()) { alert('Only admins can start a new season.'); return; }
   const year = parseInt(document.getElementById('newSeasonYear')?.value), from = parseInt(document.getElementById('newSeasonFrom')?.value);
@@ -11837,12 +11845,15 @@ function createNewSeason() {
   if (query(`SELECT 1 FROM SeasonSettings WHERE League="Hugh's" AND Season=?`, [year]).length) { alert(`Season ${year} already exists.`); return; }
   const src = query(`SELECT * FROM SeasonSettings WHERE League="Hugh's" AND Season=?`, [from])[0];
   if (!src) { alert('Pick the season to copy the settings from.'); return; }
-  const weeks = (year - from) * 52;
   const have = new Set(query(`PRAGMA table_info(SeasonSettings)`).map(r => r.name));
   const row = {};
   Object.keys(src).forEach(c => { if (have.has(c)) row[c] = src[c]; });
   row.Season = year;
-  ['StartDate', 'EndDate', 'PostSeasonDt'].forEach(c => { if (psMdyToInt(src[c])) row[c] = psAddDaysMdy(src[c], weeks * 7); });
+  row.StartDate = secondLeagueDayOfApril(year, getLeagueSetting('DayOfWeek', '') || getLeagueSetting('DayofWeek', 'Tuesday'));
+  // Other dates move by however far the start moved (a whole number of weeks, so they stay on the same weekday).
+  const dayN = n => Date.UTC(Math.floor(n / 10000), Math.floor(n / 100) % 100 - 1, n % 100);
+  const startShiftDays = psMdyToInt(src.StartDate) ? Math.round((dayN(psMdyToInt(row.StartDate)) - dayN(psMdyToInt(src.StartDate))) / 86400000) : (year - from) * 364;
+  ['EndDate', 'PostSeasonDt'].forEach(c => { if (psMdyToInt(src[c])) row[c] = psAddDaysMdy(src[c], startShiftDays); });
   if ('PSWeek2Dt' in row) row.PSWeek2Dt = null;       // a Week 2 rainout date belongs to the old season
   if ('Rainouts' in row) row.Rainouts = 0;
   if ('Byes' in row) row.Byes = 0;
@@ -11851,12 +11862,11 @@ function createNewSeason() {
   if (plan.error) { alert(plan.error + '\n\nNothing was created.'); return; }
   const lastOld = query(`SELECT MAX(Date) AS d FROM Schedule WHERE League="Hugh's" AND (Status IS NULL OR Status='') AND Date >= '${from}0101' AND Date < '${from + 1}0101'`)[0]?.d;
   const oldPs = psMdyToInt(src.PostSeasonDt);
-  const dayMs = n => Date.UTC(Math.floor(n / 10000), Math.floor(n / 100) % 100 - 1, n % 100);
-  const psOneWeekAfter = lastOld && oldPs && Math.round((dayMs(oldPs) - dayMs(parseInt(lastOld))) / 86400000) === 7;
+  const psOneWeekAfter = lastOld && oldPs && Math.round((dayN(oldPs) - dayN(parseInt(lastOld))) / 86400000) === 7;
   row.EndDate = plan.endMdy;                          // the season ends on its last scheduled week
   if (psOneWeekAfter) row.PostSeasonDt = psAddDaysMdy(plan.endMdy, 7);   // post-season the week after the last regular week, as it was
   const first = plan.rows[0].date, last = plan.rows[plan.rows.length - 1].date;
-  if (!confirm(`Set up ${year} like ${from}?\n\n• Settings are copied (dates move ${Math.abs(weeks)} weeks ${weeks >= 0 ? 'forward' : 'back'}).\n${copyTeams ? `• ${from}'s teams are copied.\n` : ''}• Schedule: ${plan.rows.length} weeks, ${fmtDate(first)} to ${fmtDate(last)}${plan.skipped.length ? ` (${plan.skipped.length} skipped)` : ''}, ${plan.usedSource ? `pairings copied from ${from}` : 'a fresh round robin'}.\n• Post-season starts ${row.PostSeasonDt || 'when you set it'}.\n\nThe app will treat ${year} as the current season right away: Play, Standings and Money start empty. ${from} stays under the Season dropdowns.\n\nHave you made a backup (Admin → Backups)?`)) return;
+  if (!confirm(`Set up ${year} like ${from}?\n\n• Settings are copied; the season starts on the 2nd ${getLeagueSetting('DayOfWeek', '') || getLeagueSetting('DayofWeek', 'Tuesday')} of April, ${fmtDate(plan.rows[0].date)}.\n${copyTeams ? `• ${from}'s teams are copied.\n` : ''}• Schedule: ${plan.rows.length} weeks, ${fmtDate(first)} to ${fmtDate(last)}${plan.skipped.length ? ` (${plan.skipped.length} skipped)` : ''}, ${plan.usedSource ? `pairings copied from ${from}` : 'a fresh round robin'}.\n• Post-season starts ${row.PostSeasonDt || 'when you set it'}.\n\nThe app will treat ${year} as the current season right away: Play, Standings and Money start empty. ${from} stays under the Season dropdowns.\n\nHave you made a backup (Admin → Backups)?`)) return;
   const cols = Object.keys(row);
   serverRun(`INSERT INTO SeasonSettings (${cols.map(c => `"${c}"`).join(',')}) VALUES (${cols.map(() => '?').join(',')})`, cols.map(c => row[c]));
   if (copyTeams) serverRun(`INSERT INTO Teams (League,Year,Player,Team,Grade,"Group",CTP,EOY) SELECT League, ?, Player, Team, Grade, "Group", CTP, EOY FROM Teams WHERE League="Hugh's" AND Year=?`, [year, from]);
