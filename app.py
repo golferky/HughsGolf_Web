@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261014.2-sandbox'
+VERSION    = '20261016.1-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -3219,6 +3219,9 @@ def ensure_schema():
                         cur.execute(f'UPDATE LeagueSettings SET "{col}"=? WHERE League="Hugh\'s" AND ("{col}" IS NULL OR "{col}"="")', (r[0],))
                         if cur.rowcount:
                             print(f'[{now_local():%H:%M:%S}] Schema check: copied {col} from LeagueParms to LeagueSettings')
+            if 'StartWeek' not in ls_cols:                  # which league day of April a new season starts on (1st/2nd/3rd/4th/Last)
+                cur.execute("ALTER TABLE LeagueSettings ADD COLUMN StartWeek TEXT DEFAULT '2nd'")
+                print(f'[{now_local():%H:%M:%S}] Schema check: added LeagueSettings.StartWeek')
         elif lp_cols and 'AnthropicApiKey' not in lp_cols:
             cur.execute("ALTER TABLE LeagueParms ADD COLUMN AnthropicApiKey TEXT")
             print(f'[{now_local():%H:%M:%S}] Schema check: added missing LeagueParms.AnthropicApiKey column')

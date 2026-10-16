@@ -2841,7 +2841,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261014.2';
+const APP_VERSION = '20261016.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3952,6 +3952,7 @@ function ensureAppChangelogTable() {
   ensureCol('SeasonSettings', 'StandPlace2', 'REAL DEFAULT 100');
   ensureCol('SeasonSettings', 'StandPlace3', 'REAL DEFAULT 90');
   ensureCol('SeasonSettings', 'Byes', 'INTEGER DEFAULT 0');          // in LS_MID_SEASON_OK, so it must exist
+  ensureCol('LeagueSettings', 'StartWeek', "TEXT DEFAULT '2nd'");   // which league day of April the season starts on (1st/2nd/3rd/4th/Last)
   // Backfill from LeagueParms if available and StandPlace1 is still null
   try {
     const lpRows = query(`SELECT Season, Place1, Place2, Place3 FROM LeagueParms WHERE Name="Hugh's"`);
@@ -4034,6 +4035,11 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261016.1', 'October 16, 2026', [
+    ['adminsummary', 'Admins: Admin → New Season → Set up new season now does everything in one click: settings, teams and the whole weekly schedule, copied from the season you pick.', '', 0],
+    ['admin', 'Start Week setting', 'League Settings > General has a new Start Week (1st, 2nd, 3rd, 4th or Last): a new season starts on that league day of April (Day of Week), the 2nd by default. PR #112.', 2],
+    ['admin', 'Set up new season builds the schedule too', 'The season starts on the first / 2nd / last league day of April, as set by Start Week and Day of Week in League Settings. It copies the old season\'s played weeks (its rainouts are not repeated) as weekly dates from that Start Date, with the same pairings and the Front/Back 9, sets the End Date to the last week and the post-season the week after (as it was). Holidays can be skipped. A Rebuild the weekly schedule box is there for changes later, and Remove also removes the schedule of an empty season. Logged. PR #112.', 1],
   ]);
   ensureVersion('20261014.2', 'October 14, 2026', [
     ['adminsummary', 'Admins: you can now start a new season yourself (Admin → New Season → Start a new season), without SQL. A season that has not started yet can be edited freely.', '', 0],
@@ -11664,11 +11670,11 @@ function newSeasonSetupHtml() {
           <p style="margin:0 0 10px">Steps to get the league ready for a new season. Complete these in order before the first round.</p>
           <ol style="margin:0 0 12px;padding-left:20px;line-height:2.1">
             <li><strong>Backup the database</strong> — always start with a fresh backup from Admin &gt; Backups before making any changes.</li>
-            <li><strong>Create the new season</strong> — use the Start a new season box at the top of this page. It copies last season's settings and teams and moves the dates forward.</li>
+            <li><strong>Set up the new season</strong> — use the Set up a new season box at the top of this page. One click copies last season's settings and teams and builds the whole weekly schedule.</li>
             <li><strong>Review League Settings</strong> — go to Admin &gt; Table Maintenance &gt; League Settings, choose the new season and check the dates, dues amount (Cost), Course, # Teams, Format and anything else that changed. Everything is editable until the season's start date.</li>
             <li><strong>Update the player roster and teams</strong> — in Admin &gt; Table Maintenance &gt; Players, add any new players and mark departed players inactive; in Teams, add or remove players for the new season (team changes are locked once the season starts). Confirm admin roles are correct.</li>
             <li><strong>Set handicap seeds</strong> — for new players, set a starting handicap seed. Returning players carry their handicaps forward automatically.</li>
-            <li><strong>Build the season schedule</strong> — add all round dates to the Schedule table, including Front/Back 9 assignments for each week. Double-check for holidays or course closures.</li>
+            <li><strong>Check the season schedule</strong> — look it over in Play &rarr; Schedule. For a holiday or closure use Admin &rarr; Rain Out, or rebuild it with the Rebuild the weekly schedule box if you changed the Start Date or the number of teams.</li>
             <li><strong>Collect dues</strong> — once the roster is set, start collecting season dues. Mark each player paid in the Payments tab as they pay in.</li>
             <li><strong>Verify app access</strong> — check Login Activity after the first week to confirm all players can log in. Follow up with anyone who hasn't.</li>
             <li><strong>Test score entry</strong> — enter a test score for the first round and verify handicaps, standings, and skins calculate correctly before opening to all players.</li>
@@ -11679,7 +11685,7 @@ function newSeasonSetupHtml() {
 }
 function loadNewSeasonSetup() {
   const el = document.getElementById('newSeasonBody');
-  if (el) el.innerHTML = newSeasonFormHtml() + newSeasonSetupHtml();
+  if (el) el.innerHTML = newSeasonFormHtml() + scheduleBuildFormHtml() + newSeasonSetupHtml();
 }
 
 // ── Admin ▸ New Season: create the next season from last season's settings (no SQL needed) ──
@@ -11698,54 +11704,195 @@ function newSeasonFormHtml() {
   const removable = seasons.length > 1 ? seasons.filter(y => seasonRemovable(y)) : [];
   return `
     <div style="border:1px solid #c8e0c0;border-radius:8px;background:#f7faf4;padding:14px 16px;margin-bottom:16px">
-      <div style="font-weight:700;color:#1b4d2e;margin-bottom:6px">Start a new season</div>
-      <div style="font-size:13px;color:#444;margin-bottom:10px">Creates the new season from an earlier one: its settings are copied and its dates move forward whole weeks (check them afterwards in Admin → Table Maintenance → League Settings). Everything stays editable until the season's start date.</div>
+      <div style="font-weight:700;color:#1b4d2e;margin-bottom:6px">Set up a new season</div>
+      <div style="font-size:13px;color:#444;margin-bottom:10px">One click sets the new season up just like the one you copy: the settings, the teams and the whole weekly schedule (same pairings and Front/Back 9), starting on the league day of April set by Day of Week and Start Week in League Settings. Then adjust anything you like (teams, players, dates) in League Settings, Teams and Rain Out. Everything stays editable until the season's start date.</div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:end;margin-bottom:10px">
         <label style="font-size:12px;color:#666;font-weight:600">New season<br><input id="newSeasonYear" type="number" value="${next}" min="2000" max="2100" style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px;width:90px"></label>
         <label style="font-size:12px;color:#666;font-weight:600">Copy settings from<br><select id="newSeasonFrom" style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px">${opts}</select></label>
         <label style="font-size:13px;cursor:pointer"><input type="checkbox" id="newSeasonCopyTeams" checked> Copy that season's teams</label>
-        <button onclick="createNewSeason()" style="padding:8px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer">Create season</button>
+        <label style="font-size:12px;color:#666;font-weight:600">Skip these dates (optional)<br><input id="newSeasonSkip" placeholder="e.g. 5/25/2027, 7/6/2027" style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px;width:200px"></label>
+        <button onclick="createNewSeason()" style="padding:8px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer">Set up new season</button>
       </div>
       <div style="font-size:12px;color:#8a5a00">The app treats the newest season as the current one, so as soon as it is created Play, Standings and Money show the new, empty season (older seasons stay under the Season dropdowns). Make a backup first (Admin → Backups).</div>
       ${removable.length ? `<div style="font-size:12px;color:#666;margin-top:10px">Created one by mistake? A season with no scores, matches or payments can be removed: ${removable.map(y => `<button onclick="removeNewSeason(${y})" style="margin-left:4px;padding:2px 8px;border:1px solid #ffcccc;border-radius:4px;background:#fff5f5;cursor:pointer;font-size:11px">Remove ${y}</button>`).join('')}</div>` : ''}
     </div>`;
 }
+// ── Admin ▸ New Season: build the weekly schedule (dates + who plays whom) without SQL ──
+// One Schedule row per week: Date (YYYYMMDD text), columns "1".."24" hold the matchups ("3v8"), FrontBack, Status.
+function scheduleSkipDates(text) {
+  const bad = [], set = new Set();
+  String(text || '').split(/[\s,;]+/).filter(Boolean).forEach(tok => {
+    const n = psMdyToInt(tok);
+    if (n && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(tok)) set.add(String(n)); else bad.push(tok);
+  });
+  return { set, bad };
+}
+// Weekly dates from the start: until the end date, or (when count is given) until there are that many playing weeks.
+function scheduleWeekDates(startMdy, endMdy, skipSet, count) {
+  const end = psMdyToInt(endMdy) || 99999999, dates = [], skipped = [];
+  if (!psMdyToInt(startMdy) || (!count && !psMdyToInt(endMdy))) return { dates, skipped };
+  let d = startMdy;
+  for (let i = 0; i < 90 && (count ? dates.length < count : psMdyToInt(d) <= end); i++, d = psAddDaysMdy(d, 7)) {
+    const k = String(psMdyToInt(d));
+    (skipSet && skipSet.has(k) ? skipped : dates).push(k);
+  }
+  return { dates, skipped };
+}
+// Round robin by the circle method for an even number of teams: n-1 weeks, every team meets every other team once.
+function scheduleRoundRobin(n) {
+  const t = Array.from({ length: n }, (_, i) => i + 1), weeks = [];
+  for (let w = 0; w < n - 1; w++) {
+    const m = [];
+    for (let i = 0; i < n / 2; i++) { const a = t[i], b = t[n - 1 - i]; m.push(`${Math.min(a, b)}v${Math.max(a, b)}`); }
+    weeks.push(m);
+    t.splice(1, 0, t.pop());                         // keep team 1 fixed, rotate the rest
+  }
+  return weeks;
+}
+function mdyOf(d) { return `${parseInt(String(d).substring(4, 6))}/${parseInt(String(d).substring(6, 8))}/${String(d).substring(0, 4)}`; }
+function scheduleFrontBackFor(dateStr, startMdy, start9) {
+  const startMonth = parseInt(String(startMdy).split('/')[0]) || 4, month = parseInt(String(dateStr).substring(4, 6));
+  const first = start9 === 'B' ? 'Back' : 'Front';
+  return ((month - startMonth) % 2 === 0) ? first : (first === 'Front' ? 'Back' : 'Front');   // same rule getScheduledFrontBack uses
+}
+// The weeks' pairings of an earlier season (its played / not-rained-out weeks, in date order), or null if it does not fit n teams.
+function scheduleSourceWeeks(fromSeason, n) {
+  const cols = Array.from({ length: 24 }, (_, i) => `"${i + 1}"`).join(',');
+  const rows = query(`SELECT Date AS sDate, ${cols}, Status FROM Schedule WHERE League="Hugh's" AND Date >= '${fromSeason}0101' AND Date < '${fromSeason + 1}0101' ORDER BY Date`);
+  const weeks = rows.filter(r => !r.Status).map(r => {
+    const m = []; for (let i = 1; i <= 24; i++) { const v = r[String(i)]; if (v && String(v).includes('v')) m.push(String(v)); }
+    return m;
+  });
+  const ok = weeks.length >= n - 1 && weeks.every(m => m.length === n / 2 && m.every(x => { const [a, b] = x.split('v').map(Number); return a >= 1 && b >= 1 && a <= n && b <= n && a !== b; }));
+  return ok ? weeks : null;
+}
+// With an earlier season to copy, the number of weeks is that season's number of played weeks (its rainouts are not repeated) and
+// they run weekly from the Start Date; otherwise the weeks fill the Start Date to End Date range. ssIn lets a season that is
+// about to be created be planned before its row exists.
+function scheduleBuildPlan(season, fromSeason, skipText, ssIn) {
+  const ss = ssIn || getSeasonSettings(season), n = parseInt(ss.Teams);
+  if (!ss || !ss.Season) return { error: `Season ${season} does not exist yet. Create it above first.` };
+  if (!(n >= 2) || n % 2) return { error: `# Teams is ${ss.Teams || 'not set'}. The schedule needs an even number of teams (for an odd number add an empty team, see the tip below) - set it in League Settings first.` };
+  if (!psMdyToInt(ss.StartDate)) return { error: 'Set the season Start Date in League Settings first (month/day/year).' };
+  const skip = scheduleSkipDates(skipText);
+  if (skip.bad.length) return { error: `These skip dates are not month/day/year: ${skip.bad.join(', ')}` };
+  const src = fromSeason ? scheduleSourceWeeks(fromSeason, n) : null, rr = scheduleRoundRobin(n);
+  if (!src && !psMdyToInt(ss.EndDate)) return { error: 'Set the season End Date in League Settings first (month/day/year).' };
+  const { dates, skipped } = scheduleWeekDates(ss.StartDate, ss.EndDate, skip.set, src ? src.length : 0);
+  if (!dates.length) return { error: 'There are no weekly dates between the Start Date and End Date.' };
+  const weeks = dates.map((d, i) => src ? src[i % src.length] : rr[i % rr.length]);
+  const rows = dates.map((d, i) => ({ date: d, matchups: weeks[i], fb: scheduleFrontBackFor(d, ss.StartDate, ss.Start9) }));
+  return { rows, skipped, teams: n, usedSource: !!src, fromSeason: src ? fromSeason : null, endMdy: mdyOf(dates[dates.length - 1]) };
+}
+function scheduleBuildFormHtml() {
+  const seasons = query(`SELECT Season FROM SeasonSettings WHERE League="Hugh's" ORDER BY Season DESC`).map(r => r.Season);
+  if (!seasons.length) return '';
+  const withRows = new Set(query(`SELECT DISTINCT substr(Date,1,4) AS y FROM Schedule WHERE League="Hugh's"`).map(r => parseInt(r.y)));
+  const prior = seasons.filter(y => withRows.has(y));
+  const inp = 'padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px';
+  return `
+    <div style="border:1px solid #c8e0c0;border-radius:8px;background:#f7faf4;padding:14px 16px;margin-bottom:16px">
+      <div style="font-weight:700;color:#1b4d2e;margin-bottom:6px">Rebuild the weekly schedule</div>
+      <div style="font-size:13px;color:#444;margin-bottom:10px">Makes one row for each week from the season's Start Date to its End Date (set in League Settings), with who plays whom and the Front/Back 9. It copies the pairings from an earlier season when the number of teams matches, otherwise it makes a fresh round robin. Starting a new season already does this for you; use this box only to rebuild the schedule after changing something (a Start Date, the number of teams, holidays to skip).</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:end;margin-bottom:10px">
+        <label style="font-size:12px;color:#666;font-weight:600">Build for<br><select id="schedSeason" style="${inp}">${seasons.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label>
+        <label style="font-size:12px;color:#666;font-weight:600">Copy pairings from<br><select id="schedFrom" style="${inp}"><option value="">Fresh round robin</option>${prior.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label>
+        <label style="font-size:12px;color:#666;font-weight:600">Skip these dates (holidays, month/day/year)<br><input id="schedSkip" placeholder="e.g. 5/25/2027, 7/6/2027" style="${inp};width:260px"></label>
+        <button onclick="buildNewSeasonSchedule()" style="padding:8px 16px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer">Build schedule</button>
+      </div>
+      <div style="font-size:12px;color:#666">Skipped dates are left out; the weeks after them are not moved. A season that already has a schedule can only be rebuilt while it has no scores, matches or payments.</div>
+    </div>`;
+}
+function scheduleInsertRows(rows) {
+  rows.forEach(r => {
+    const vals = Array.from({ length: 24 }, (_, i) => r.matchups[i] || null);
+    serverRun(`INSERT INTO Schedule (League,Date,"1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24",FrontBack,Status) VALUES ("Hugh's",?,${vals.map(() => '?').join(',')},?,NULL)`, [r.date, ...vals, r.fb]);
+  });
+}
+function buildNewSeasonSchedule() {
+  if (!newSeasonIsAdmin()) { alert('Only admins can build a schedule.'); return; }
+  const season = parseInt(document.getElementById('schedSeason')?.value), from = parseInt(document.getElementById('schedFrom')?.value) || null;
+  const plan = scheduleBuildPlan(season, from, document.getElementById('schedSkip')?.value || '');
+  if (plan.error) { alert(plan.error); return; }
+  const existing = query(`SELECT COUNT(*) AS n FROM Schedule WHERE League="Hugh's" AND Date >= '${season}0101' AND Date < '${season + 1}0101'`)[0]?.n || 0;
+  if (existing && !seasonRemovable(season)) { alert(`Season ${season} already has a schedule and has scores, matches or payments, so it cannot be rebuilt here. Use Admin → Rain Out to move dates.`); return; }
+  const f = d => fmtDate(d), first = plan.rows[0].date, last = plan.rows[plan.rows.length - 1].date;
+  if (!confirm(`Build the ${season} schedule?\n\n• ${plan.rows.length} weeks, ${f(first)} to ${f(last)}${plan.skipped.length ? ` (${plan.skipped.length} date${plan.skipped.length > 1 ? 's' : ''} skipped)` : ''}\n• ${plan.teams} teams, ${plan.usedSource ? `pairings copied from ${plan.fromSeason}` : 'fresh round robin'}\n• The season End Date becomes ${f(last)}${existing ? `\n• The ${existing} existing weeks are replaced` : ''}\n\nHave you made a backup (Admin → Backups)?`)) return;
+  if (existing) serverRun(`DELETE FROM Schedule WHERE League="Hugh's" AND Date >= '${season}0101' AND Date < '${season + 1}0101'`);
+  scheduleInsertRows(plan.rows);
+  serverRun(`UPDATE SeasonSettings SET EndDate=? WHERE League="Hugh's" AND Season=?`, [plan.endMdy, season]);
+  auditDbChange('schedule_built', 'Schedule', String(season), `${currentUser?.name || 'unknown'} built the ${season} schedule: ${plan.rows.length} weeks, ${plan.usedSource ? 'pairings from ' + plan.fromSeason : 'round robin'}`, null, { Season: season, Weeks: plan.rows.length, First: first, Last: last }, 'Admin New Season');
+  saveDBToServer();
+  newSeasonRefresh();
+  alert(`The ${season} schedule is built (${plan.rows.length} weeks). Check it in Play → Schedule, then refresh the page (Cmd+R / Ctrl+R).`);
+}
+
 function newSeasonRefresh() {
   ['lsSeason', 'teamsSeason'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });   // rebuilt with the new list
   loadNewSeasonSetup();
 }
+// The season starts on the 1st / 2nd / 3rd / 4th / last league day (League Settings > Day of Week) of April; which one is the
+// Start Week setting (2nd when it is not set).
+function leagueSeasonStart(year, dayName, which) {
+  const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  let want = names.indexOf(String(dayName || 'Tuesday').trim().toLowerCase());
+  if (want < 0) want = 2;                                          // not a day name: Tuesday
+  const dow = new Date(Date.UTC(year, 3, 1)).getUTCDay();          // 0 = Sunday ... 6 = Saturday
+  const first = 1 + ((want - dow + 7) % 7);                        // the first such day in April (April has 30 days)
+  const w = String(which || '2nd').trim().toLowerCase();
+  let day;
+  if (w === 'last') { day = first; while (day + 7 <= 30) day += 7; }
+  else { const n = parseInt(w); day = first + 7 * ((n >= 1 && n <= 4 ? n : 2) - 1); }
+  return `4/${day}/${year}`;
+}
+function leagueStartWeekLabel() { return getLeagueSetting('StartWeek', '2nd') || '2nd'; }
+function leagueDayLabel() { return getLeagueSetting('DayOfWeek', '') || getLeagueSetting('DayofWeek', 'Tuesday') || 'Tuesday'; }
 function createNewSeason() {
   if (!newSeasonIsAdmin()) { alert('Only admins can start a new season.'); return; }
   const year = parseInt(document.getElementById('newSeasonYear')?.value), from = parseInt(document.getElementById('newSeasonFrom')?.value);
-  const copyTeams = !!document.getElementById('newSeasonCopyTeams')?.checked;
+  const copyTeams = !!document.getElementById('newSeasonCopyTeams')?.checked, skipText = document.getElementById('newSeasonSkip')?.value || '';
   if (!(year >= 2000 && year <= 2100)) { alert('Enter the season year, for example 2027.'); return; }
   if (query(`SELECT 1 FROM SeasonSettings WHERE League="Hugh's" AND Season=?`, [year]).length) { alert(`Season ${year} already exists.`); return; }
   const src = query(`SELECT * FROM SeasonSettings WHERE League="Hugh's" AND Season=?`, [from])[0];
   if (!src) { alert('Pick the season to copy the settings from.'); return; }
-  const weeks = (year - from) * 52;
-  if (!confirm(`Create the ${year} season from ${from}?\n\n• Settings are copied; dates move ${weeks >= 0 ? 'forward' : 'back'} ${Math.abs(weeks)} weeks (please check them).\n${copyTeams ? `• ${from}'s teams are copied.\n` : ''}\nThe app will treat ${year} as the current season right away: Play, Standings and Money start empty. ${from} stays under the Season dropdowns.\n\nHave you made a backup (Admin → Backups)?`)) return;
   const have = new Set(query(`PRAGMA table_info(SeasonSettings)`).map(r => r.name));
   const row = {};
   Object.keys(src).forEach(c => { if (have.has(c)) row[c] = src[c]; });
   row.Season = year;
-  ['StartDate', 'EndDate', 'PostSeasonDt'].forEach(c => { if (psMdyToInt(src[c])) row[c] = psAddDaysMdy(src[c], weeks * 7); });
+  row.StartDate = leagueSeasonStart(year, leagueDayLabel(), leagueStartWeekLabel());
+  // Other dates move by however far the start moved (a whole number of weeks, so they stay on the same weekday).
+  const dayN = n => Date.UTC(Math.floor(n / 10000), Math.floor(n / 100) % 100 - 1, n % 100);
+  const startShiftDays = psMdyToInt(src.StartDate) ? Math.round((dayN(psMdyToInt(row.StartDate)) - dayN(psMdyToInt(src.StartDate))) / 86400000) : (year - from) * 364;
+  ['EndDate', 'PostSeasonDt'].forEach(c => { if (psMdyToInt(src[c])) row[c] = psAddDaysMdy(src[c], startShiftDays); });
   if ('PSWeek2Dt' in row) row.PSWeek2Dt = null;       // a Week 2 rainout date belongs to the old season
   if ('Rainouts' in row) row.Rainouts = 0;
   if ('Byes' in row) row.Byes = 0;
+  // The weekly schedule: the old season's played weeks (its rainouts are not repeated), weekly from the new Start Date.
+  const plan = scheduleBuildPlan(year, from, skipText, row);
+  if (plan.error) { alert(plan.error + '\n\nNothing was created.'); return; }
+  const lastOld = query(`SELECT MAX(Date) AS d FROM Schedule WHERE League="Hugh's" AND (Status IS NULL OR Status='') AND Date >= '${from}0101' AND Date < '${from + 1}0101'`)[0]?.d;
+  const oldPs = psMdyToInt(src.PostSeasonDt);
+  const psOneWeekAfter = lastOld && oldPs && Math.round((dayN(oldPs) - dayN(parseInt(lastOld))) / 86400000) === 7;
+  row.EndDate = plan.endMdy;                          // the season ends on its last scheduled week
+  if (psOneWeekAfter) row.PostSeasonDt = psAddDaysMdy(plan.endMdy, 7);   // post-season the week after the last regular week, as it was
+  const first = plan.rows[0].date, last = plan.rows[plan.rows.length - 1].date;
+  if (!confirm(`Set up ${year} like ${from}?\n\n• Settings are copied; the season starts on the ${leagueStartWeekLabel().toLowerCase()} ${leagueDayLabel()} of April, ${fmtDate(plan.rows[0].date)} (League Settings: Day of Week and Start Week).\n${copyTeams ? `• ${from}'s teams are copied.\n` : ''}• Schedule: ${plan.rows.length} weeks, ${fmtDate(first)} to ${fmtDate(last)}${plan.skipped.length ? ` (${plan.skipped.length} skipped)` : ''}, ${plan.usedSource ? `pairings copied from ${from}` : 'a fresh round robin'}.\n• Post-season starts ${row.PostSeasonDt || 'when you set it'}.\n\nThe app will treat ${year} as the current season right away: Play, Standings and Money start empty. ${from} stays under the Season dropdowns.\n\nHave you made a backup (Admin → Backups)?`)) return;
   const cols = Object.keys(row);
   serverRun(`INSERT INTO SeasonSettings (${cols.map(c => `"${c}"`).join(',')}) VALUES (${cols.map(() => '?').join(',')})`, cols.map(c => row[c]));
   if (copyTeams) serverRun(`INSERT INTO Teams (League,Year,Player,Team,Grade,"Group",CTP,EOY) SELECT League, ?, Player, Team, Grade, "Group", CTP, EOY FROM Teams WHERE League="Hugh's" AND Year=?`, [year, from]);
-  auditDbChange('season_created', 'SeasonSettings', String(year), `${currentUser?.name || 'unknown'} created season ${year} from ${from}${copyTeams ? ' with its teams' : ''}`, null, { Season: year, CopiedFrom: from, Teams: copyTeams ? 'copied' : 'not copied' }, 'Admin New Season');
+  scheduleInsertRows(plan.rows);
+  auditDbChange('season_created', 'SeasonSettings', String(year), `${currentUser?.name || 'unknown'} created season ${year} from ${from}${copyTeams ? ' with its teams' : ''} and ${plan.rows.length} schedule weeks`, null, { Season: year, CopiedFrom: from, Teams: copyTeams ? 'copied' : 'not copied', ScheduleWeeks: plan.rows.length, First: first, Last: last }, 'Admin New Season');
   saveDBToServer();
   newSeasonRefresh();
-  alert(`Season ${year} created.\n\nNext: open Admin → Table Maintenance → League Settings, choose ${year}, and check the dates, dues and # Teams. Then refresh the page (Cmd+R / Ctrl+R) so every screen picks up the new season.`);
+  alert(`Season ${year} is set up (settings, ${copyTeams ? 'teams, ' : ''}${plan.rows.length}-week schedule).\n\nNext: refresh the page (Cmd+R / Ctrl+R) so every screen picks up the new season, then adjust teams, players or dates as needed.`);
 }
 function removeNewSeason(year) {
   if (!newSeasonIsAdmin()) { alert('Only admins can remove a season.'); return; }
   if (!seasonRemovable(year)) { alert(`Season ${year} already has scores, matches or payments, so it cannot be removed here.`); return; }
   if (query(`SELECT COUNT(*) AS n FROM SeasonSettings WHERE League="Hugh's"`)[0]?.n <= 1) { alert('The only season cannot be removed.'); return; }
-  if (!confirm(`Remove the empty ${year} season and its team list?\n\nThis only works for a season with no scores, matches or payments.`)) return;
+  if (!confirm(`Remove the empty ${year} season, its team list and its schedule?\n\nThis only works for a season with no scores, matches or payments.`)) return;
   serverRun(`DELETE FROM Teams WHERE League="Hugh's" AND Year=?`, [year]);
+  serverRun(`DELETE FROM Schedule WHERE League="Hugh's" AND Date >= '${year}0101' AND Date < '${year + 1}0101'`);
   serverRun(`DELETE FROM SeasonSettings WHERE League="Hugh's" AND Season=?`, [year]);
   auditDbChange('season_removed', 'SeasonSettings', String(year), `${currentUser?.name || 'unknown'} removed the empty season ${year}`, { Season: year }, null, 'Admin New Season');
   saveDBToServer();
@@ -20299,6 +20446,7 @@ const LS_FIELDS = {
     ['Name','League Name'],
     ['Format','Format', ['2 Man Head to Head','Best Ball','Scramble','Stroke Play']],
     ['DayOfWeek','Day of Week', ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']],
+    ['StartWeek','Start Week (April)', ['1st','2nd','3rd','4th','Last']],      // which league day in April the season starts: new seasons are set up with it
     ['Course','Course'],
     ['Holes','Holes', ['9','18']],
     ['Start9','Start 9', [['F','Front (F)'],['B','Back (B)']]],
@@ -20482,7 +20630,7 @@ function saveLeagueSettings() {
   if (!confirmChanges(`Update League Settings for season ${season}?`, oldDiff, newDiff)) return;
 
   // Split updates: seasonal fields → SeasonSettings, global fields → LeagueSettings
-  const GLOBAL_KEYS = new Set(['Format','DayOfWeek','DayofWeek','Holes','Method','SplitSeason',
+  const GLOBAL_KEYS = new Set(['Format','DayOfWeek','DayofWeek','StartWeek','Holes','Method','SplitSeason',
     'Par3Max','Par4Max','Par5Max','HdcpScores','HdcpFormat','CarryLastYears','MaxHdcp','SkinFmt',
     'Email','EmailPassword','WebsitePassword','Name','LeagueName']);
   const seasonCols = {}, globalCols = {};
