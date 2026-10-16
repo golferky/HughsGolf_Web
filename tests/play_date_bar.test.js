@@ -87,6 +87,23 @@ const path = require('path');
   assert.deepStrictEqual(await p.evaluate(() => [window.__calls.slice(), window._playDate, document.getElementById('playDateSel').value]), [['refresh:matches'], '20270420', '20270420']);
   await p.click('#playDateBtn'); assert.strictEqual((await ui()).open, 'block'); await p.keyboard.press('Escape'); assert.strictEqual((await ui()).open, 'none', 'Esc closes');
   await p.click('#playDateBtn'); await p.mouse.click(5, 400); assert.strictEqual((await ui()).open, 'none', 'a click elsewhere closes');
+  // the per-tab date boxes are not shown any more (they stay in the page: the tabs' logic reads them)
+  assert.deepStrictEqual(await p.evaluate(() => ['entryDate', 'standAsOf', 'matchesDate', 'skinsDate', 'hdcpAsOfDate', 'stablefordDate'].map(id => { const e = document.getElementById(id); return [!!e, e && getComputedStyle(e.closest('.filter-group')).display]; })), Array(6).fill([true, 'none']));
+  // Standings and Handicaps: Current (latest) at the top of the list; picking it clears the shared date and the tab's own select
+  await p.evaluate(() => { window._playDate = '20260915'; document.getElementById('standAsOf').value = '20260915'; window.__calls = []; refreshTab = t => window.__calls.push('refresh:' + t); __active('standings'); });
+  let st = await p.evaluate(() => ({ first: document.getElementById('playDateSel').options[0].textContent, btn: document.getElementById('playDateBtn').textContent.trim() })); assert.strictEqual(st.first, 'Current (latest)'); assert.strictEqual(st.btn, '09/15/2026  ▾');
+  await p.click('#playDateBtn'); assert.strictEqual(await p.evaluate(() => document.querySelector('#playDatePanel [role=option]').textContent.trim()), 'Current (latest)');
+  await p.click('#playDatePanel [role=option]:has-text("Current (latest)")');
+  assert.deepStrictEqual(await p.evaluate(() => [window.__calls.slice(), window._playDate, document.getElementById('standAsOf').value, document.getElementById('playDateBtn').textContent.trim(), document.getElementById('playDateSel').value]), [['refresh:standings'], null, '', 'Current (latest)  ▾', '']);
+  await p.evaluate(() => { document.getElementById('hdcpAsOfDate').innerHTML = '<option value="">Current</option><option value="20260915">9/15</option>'; document.getElementById('hdcpAsOfDate').value = ''; window.__calls = []; __active('handicaps'); });
+  assert.strictEqual(await p.evaluate(() => document.getElementById('playDateBtn').textContent.trim()), 'Current (latest)  ▾', 'Handicaps open on Current');
+  await p.evaluate(() => { onPlayDatePicked('20260915'); }); assert.deepStrictEqual(await p.evaluate(() => [window._playDate, window.__calls.slice()]), ['20260915', ['refresh:handicaps']]);
+  await p.evaluate(() => { window.__calls = []; onPlayDatePicked(''); }); assert.deepStrictEqual(await p.evaluate(() => [window._playDate, document.getElementById('hdcpAsOfDate').value, window.__calls.slice()]), [null, '', ['refresh:handicaps']]);
+  // another tab with no date chosen yet opens on the latest round that has scores
+  await p.evaluate(() => { db.run(`CREATE TABLE IF NOT EXISTS Scores (League TEXT, Date TEXT); INSERT INTO Scores VALUES ('Hugh''s','20260922')`); window._playDate = null; window.__changed2 = 0;
+    const m = document.getElementById('matchesDate'); m.innerHTML = '<option value="">-</option><option value="20260922">9/22</option><option value="20260915">9/15</option>'; m.value = ''; m.addEventListener('change', () => window.__changed2++); __active('matches'); });
+  await p.waitForTimeout(100);
+  assert.deepStrictEqual(await p.evaluate(() => [window._playDate, document.getElementById('matchesDate').value, document.getElementById('playDateBtn').textContent.trim(), window.__changed2]), ['20260922', '20260922', '09/22/2026  ▾', 1], 'defaults to the latest played round and tells the tab');
   assert.deepStrictEqual(errs, [], errs.join('; '));
   await b.close(); console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });
