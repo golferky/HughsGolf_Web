@@ -562,6 +562,8 @@
   #helpQuillEditor .ql-editor li { margin-bottom: 3px; }
   #helpQuillEditor .ql-editor blockquote { margin: 4px 0 8px 0; border-left: 3px solid #ccc; padding-left: 12px; color: #555; }
 
+/* the Round date bar chooses the date for the Play tabs: each tab's own date box stays in the page (its logic reads it) but is not shown */
+.filter-group.pd-own { display: none; }
 </style>
 </head>
 <body>
@@ -914,7 +916,7 @@
           <option value="individual">Individual</option>
         </select>
       </div>
-      <div class="filter-group">
+      <div class="filter-group pd-own">
         <label>As of Date</label>
         <select id="standAsOf">
           <option value="">Current</option>
@@ -947,7 +949,7 @@
         <label>Season</label>
         <select id="stablefordSeason" onchange="populateStablefordDateDropdown()"></select>
       </div>
-      <div class="filter-group">
+      <div class="filter-group pd-own">
         <label>Week</label>
         <select id="stablefordDate"></select>
       </div>
@@ -998,7 +1000,7 @@
     <!-- SCORE ENTRY -->
     <div class="controls" style="justify-content:space-between;align-items:flex-end">
       <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-        <div class="filter-group">
+        <div class="filter-group pd-own">
           <label>Date</label>
           <select id="entryDate"></select>
         </div>
@@ -1098,7 +1100,7 @@
           <label>Season</label>
           <select id="matchesSeason" onchange="populateMatchesDateDropdown()"></select>
         </div>
-        <div class="filter-group">
+        <div class="filter-group pd-own">
           <label>Week</label>
           <select id="matchesDate"></select>
         </div>
@@ -1118,7 +1120,7 @@
         <label>Season</label>
         <select id="skinsSeason" onchange="populateSkinsDateDropdown()"></select>
       </div>
-      <div class="filter-group">
+      <div class="filter-group pd-own">
         <label>Week</label>
         <select id="skinsDate"></select>
       </div>
@@ -1175,7 +1177,7 @@
         <label>Search</label>
         <input type="text" id="hdcpSearch" placeholder="Filter player...">
       </div>
-      <div class="filter-group">
+      <div class="filter-group pd-own">
         <label>As Of</label>
         <select id="hdcpAsOfDate" onchange="loadHandicaps()"></select>
       </div>
@@ -2845,7 +2847,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261016.2';
+const APP_VERSION = '20261016.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4039,6 +4041,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261016.3', 'October 16, 2026', [
+    ['summary', 'The Round date at the top of the Play tabs now chooses the date for every tab; the separate date boxes on each tab are gone.', '', 0],
+    ['enhancement', 'One date control for the Play tabs', 'The Date / Week / As of boxes on Scores, Standings, Matches, Skins/CTPs, Handicaps and Stableford are no longer shown (they are still there behind the scenes). Standings and Handicaps get a Current (latest) choice at the top of the Round date list, and when no date has been chosen yet the other tabs open on the latest round that has scores. PR #115.', 1],
   ]);
   ensureVersion('20261016.2', 'October 16, 2026', [
     ['summary', 'The Round date list is now grouped by season: each season opens and closes, so one year\'s dates no longer bury the rest.', '', 0],
@@ -6041,7 +6047,8 @@ function playDateDefaultSeason(opts, selected, todayStr) {
 function playDateRenderPanel() {
   const panel = document.getElementById('playDatePanel'); if (!panel) return;
   const opts = window._pdOpts || [], want = window._pdWant || '', open = window._pdOpen || new Set();
-  panel.innerHTML = playDateGroupBySeason(opts).map(g => {
+  const curRow = window._pdCurrent ? `<div role="option" onclick="playDatePick('')" style="padding:8px 12px;cursor:pointer;font-size:13px;font-weight:700;border-bottom:1px solid #e3e8dc;${want === '' ? 'background:#dcebd2' : ''}">Current (latest)</div>` : '';
+  panel.innerHTML = curRow + playDateGroupBySeason(opts).map(g => {
     const isOpen = open.has(g.year);
     return `<div><div role="button" onclick="playDateToggleSeason('${g.year}')" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 12px;background:#f2f6ee;border-bottom:1px solid #e3e8dc;font-weight:700;color:var(--green);cursor:pointer;position:sticky;top:0"><span>${isOpen ? '▼' : '▶'} ${g.year}</span><span style="font-weight:400;color:#777;font-size:11px">${g.items.length} date${g.items.length === 1 ? '' : 's'}</span></div>`
       + (isOpen ? g.items.map(o => `<div role="option" onclick="playDatePick('${o.date}')" style="padding:7px 12px 7px 26px;cursor:pointer;font-size:13px;${o.date === want ? 'background:#dcebd2;font-weight:700' : ''}" onmouseover="this.style.background='#eef5e8'" onmouseout="this.style.background='${o.date === want ? '#dcebd2' : ''}'">${window._pdLabel(o)}</div>`).join('') : '') + '</div>';
@@ -6067,7 +6074,7 @@ function playDateToggleSeason(year) {
 function playDatePick(date) {
   playDateClosePanel();
   const sel = document.getElementById('playDateSel'); if (sel && Array.from(sel.options).some(o => o.value === String(date))) sel.value = date;
-  onPlayDatePicked(String(date));
+  onPlayDatePicked(String(date));          // '' is Current (Standings and Handicaps only)
 }
 document.addEventListener('click', e => {
   const panel = document.getElementById('playDatePanel');
@@ -6092,12 +6099,19 @@ function syncPlayDateBar() {
   const own = String(document.getElementById(ownId)?.value || '');
   const has = d => opts.some(o => o.date === String(d));
   const picked = has(window._playDate) ? String(window._playDate) : '';
-  const want = tab === 'standings' ? (picked || (has(own) ? own : '')) : (has(own) ? own : picked);   // Standings maps a date to the nearest earlier round, so keep showing the date that was picked
+  let want = tab === 'standings' ? (picked || (has(own) ? own : '')) : (has(own) ? own : picked);   // Standings maps a date to the nearest earlier round, so keep showing the date that was picked
+  const currentTab = tab === 'standings' || tab === 'handicaps';                                   // these two can also show "Current" (the latest values)
+  if (!want && !currentTab) {                                                                       // nothing chosen yet: the latest round that has scores
+    const lastPlayed = String(query(`SELECT MAX(Date) AS d FROM Scores WHERE League="Hugh's"`)[0]?.d || '');
+    const cand = (opts.find(o => o.date <= lastPlayed) || {}).date;
+    const ownEl = document.getElementById(ownId);
+    if (cand && ownEl && Array.from(ownEl.options).some(o => String(o.value) === cand)) { want = cand; window._playDate = cand; ownEl.value = cand; setTimeout(() => ownEl.dispatchEvent(new Event('change', { bubbles: true })), 0); }
+  }
   const hint = document.getElementById('playDateHint'); if (hint) hint.textContent = tab === 'standings' ? 'Standings after the last round on or before this date' : 'One date for Scores, Standings, Matches, Skins/CTPs, Handicaps and Stableford';
-  sel.innerHTML = (want ? '' : '<option value="">— choose a date —</option>') + opts.map(o => `<option value="${o.date}">${label(o)}</option>`).join('');
+  sel.innerHTML = (currentTab ? '<option value="">Current (latest)</option>' : (want ? '' : '<option value="">— choose a date —</option>')) + opts.map(o => `<option value="${o.date}">${label(o)}</option>`).join('');
   sel.value = want;
-  window._pdOpts = opts; window._pdWant = want; window._pdLabel = label;
-  const btn = document.getElementById('playDateBtn'); if (btn) btn.textContent = (want ? label(opts.find(o => o.date === want) || { date: want }) : '— choose a date —') + '  ▾';
+  window._pdOpts = opts; window._pdWant = want; window._pdLabel = label; window._pdCurrent = currentTab;
+  const btn = document.getElementById('playDateBtn'); if (btn) btn.textContent = (want ? label(opts.find(o => o.date === want) || { date: want }) : (currentTab ? 'Current (latest)' : '— choose a date —')) + '  ▾';
   const panel = document.getElementById('playDatePanel'); if (panel && panel.style.display !== 'none') playDateRenderPanel();
 }
 // Opening Scores after the Round date was changed elsewhere puts Score Entry on that date. A post-season Week 2 date opens the single
@@ -6112,8 +6126,12 @@ function playDateApplyEntry() {
   return true;
 }
 function onPlayDatePicked(value) {
-  const v = String(value || ''); if (!/^\d{8}$/.test(v)) return;
-  const tab = document.querySelector('.tab.active')?.dataset.tab;
+  const v = String(value || ''), tab = document.querySelector('.tab.active')?.dataset.tab;
+  if (v === '' && (tab === 'standings' || tab === 'handicaps')) {            // "Current (latest)": no shared date, the tab shows its latest values
+    window._playDate = null; const own = document.getElementById(PLAY_DATE_TAB_SELECT[tab]); if (own) own.value = '';
+    refreshTab(tab); syncPlayDateBar(); return;
+  }
+  if (!/^\d{8}$/.test(v)) return;
   if (tab === 'scorecard') {
     const entry = document.getElementById('entryDate'), d = playDateEntryDate(v, playDatePsList());
     if (!entry || !Array.from(entry.options).some(o => String(o.value) === d)) { alert('Score Entry does not have that date.'); syncPlayDateBar(); return; }
