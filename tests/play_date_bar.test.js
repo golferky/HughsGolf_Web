@@ -67,6 +67,26 @@ const path = require('path');
   await p.evaluate(() => { window._playDate = '20260929'; window.confirm = () => true; playDateApplyEntry(); });
   assert.deepStrictEqual(await entryState2(), ['20260929', 1, '20260929', false], 'unsaved + accepted: switches');
   await p.evaluate(() => { window._playDate = '20990101'; document.getElementById('entryDate').value = '20260922'; window.__changed = 0; playDateApplyEntry(); }); assert.deepStrictEqual((await entryState2())[0], '20260922', 'a date Score Entry does not have is ignored');
+  await p.evaluate(() => { const o = document.getElementById('loginOverlay'); if (o) o.style.display = 'none'; });
+  // collapsible by season: 2027 dates added; the list shows the picked date's season open and the others folded
+  await p.evaluate(() => { db.run(`INSERT INTO Schedule VALUES ('Hugh''s','20270413'),('Hugh''s','20270420')`); window._playDate = '20260915'; document.getElementById('matchesDate').innerHTML = '<option value="20260915">9/15</option>'; document.getElementById('matchesDate').value = '20260915'; window.__calls = []; __active('matches'); });
+  const ui = () => p.evaluate(() => ({ btn: document.getElementById('playDateBtn').textContent.trim(), open: getComputedStyle(document.getElementById('playDatePanel')).display, expanded: document.getElementById('playDateBtn').getAttribute('aria-expanded'),
+    heads: [...document.querySelectorAll('#playDatePanel [role=button]')].map(e => [...e.children].map(c => c.textContent.trim()).join(' | ')), opts: [...document.querySelectorAll('#playDatePanel [role=option]')].map(e => e.textContent.trim()) }));
+  let u = await ui(); assert.strictEqual(u.btn, '09/15/2026  ▾'); assert.strictEqual(u.open, 'none'); assert.strictEqual(u.expanded, 'false');
+  await p.click('#playDateBtn'); u = await ui();
+  assert.strictEqual(u.open, 'block'); assert.strictEqual(u.expanded, 'true');
+  assert.deepStrictEqual(u.heads, ['▶ 2027 | 2 dates', '▼ 2026 | 4 dates'], u.heads.join('|'));
+  assert.deepStrictEqual(u.opts, ['10/06/2026 — Post Season Wk 2', '09/29/2026 — Post Season Wk 1', '09/22/2026', '09/15/2026']);
+  assert(u.opts.includes('09/15/2026') && !u.opts.includes('04/13/2027'), 'only the picked season is open');
+  await p.click('#playDatePanel [role=button]:has-text("2027")'); u = await ui();
+  assert(u.opts.includes('04/13/2027') && u.opts.includes('04/20/2027') && u.opts.includes('09/15/2026'), 'both open'); assert.strictEqual(u.heads[0].startsWith('▼ 2027'), true, u.heads[0]);
+  await p.click('#playDatePanel [role=button]:has-text("2026")'); u = await ui(); assert(!u.opts.includes('09/15/2026') && u.opts.includes('04/13/2027'), 'a season folds shut');
+  // the real refresh puts Matches on the picked date, so the stub does too
+  await p.evaluate(() => { window.__calls = []; refreshTab = tb => { window.__calls.push('refresh:' + tb); const m = document.getElementById('matchesDate'); m.innerHTML = `<option value="${window._playDate}">x</option>`; m.value = window._playDate; }; }); await p.click('[role=option]:has-text("04/20/2027")'); u = await ui();
+  assert.strictEqual(u.open, 'none', 'picking closes the list'); assert.strictEqual(u.btn, '04/20/2027  ▾');
+  assert.deepStrictEqual(await p.evaluate(() => [window.__calls.slice(), window._playDate, document.getElementById('playDateSel').value]), [['refresh:matches'], '20270420', '20270420']);
+  await p.click('#playDateBtn'); assert.strictEqual((await ui()).open, 'block'); await p.keyboard.press('Escape'); assert.strictEqual((await ui()).open, 'none', 'Esc closes');
+  await p.click('#playDateBtn'); await p.mouse.click(5, 400); assert.strictEqual((await ui()).open, 'none', 'a click elsewhere closes');
   assert.deepStrictEqual(errs, [], errs.join('; '));
   await b.close(); console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });

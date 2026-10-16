@@ -743,8 +743,12 @@
     </div>
   </div>
   <div id="playDateBar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 16px;background:#fff;border-bottom:1px solid #e0d8c8;font-size:13px">
-    <label for="playDateSel" style="font-weight:700;color:var(--green)">📅 Round date</label>
-    <select id="playDateSel" onchange="onPlayDatePicked(this.value)" style="padding:5px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;min-width:190px"></select>
+    <label for="playDateBtn" style="font-weight:700;color:var(--green)">📅 Round date</label>
+    <select id="playDateSel" onchange="onPlayDatePicked(this.value)" style="display:none" aria-hidden="true" tabindex="-1"></select>
+    <span style="position:relative;display:inline-block">
+      <button type="button" id="playDateBtn" onclick="playDateTogglePanel()" aria-haspopup="listbox" aria-expanded="false" style="padding:5px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px;min-width:190px;text-align:left;background:#fff;cursor:pointer;font-family:inherit">— choose a date — ▾</button>
+      <div id="playDatePanel" role="listbox" style="display:none;position:absolute;left:0;top:100%;margin-top:4px;z-index:60;background:#fff;border:1px solid #ccc;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.18);min-width:250px;max-height:60vh;overflow-y:auto"></div>
+    </span>
     <span id="playDateHint" style="color:#888;font-size:11px">One date for Scores, Standings, Matches, Skins/CTPs, Handicaps and Stableford</span>
   </div>
 </div>
@@ -2841,7 +2845,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261016.1';
+const APP_VERSION = '20261016.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4035,6 +4039,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261016.2', 'October 16, 2026', [
+    ['summary', 'The Round date list is now grouped by season: each season opens and closes, so one year\'s dates no longer bury the rest.', '', 0],
+    ['enhancement', 'Round date: collapsible by season', 'Click a season to open or close its dates; the season of the picked date (or the latest date up to today) starts open, and picking a date closes the list. Esc or a click outside also closes it. PR #114.', 1],
   ]);
   ensureVersion('20261016.1', 'October 16, 2026', [
     ['adminsummary', 'Admins: Admin → New Season → Set up new season now does everything in one click: settings, teams and the whole weekly schedule, copied from the season you pick.', '', 0],
@@ -6018,6 +6026,55 @@ function playDateBuildOptions(scheduleDates, psList) {
   (psList || []).forEach(p => { if (p.week1) out[String(p.week1)] = { date: String(p.week1), ps: 1 }; if (p.week2) out[String(p.week2)] = { date: String(p.week2), ps: 2 }; });
   return Object.values(out).sort((a, b) => b.date.localeCompare(a.date));
 }
+// The Round date list is grouped by season (the year of the date) and each season folds open and shut. The picked date's season, or else
+// the season of the latest date up to today, starts open. The hidden select #playDateSel still holds the options and the value.
+function playDateGroupBySeason(opts) {
+  const groups = [];
+  (opts || []).forEach(o => { const y = String(o.date).substring(0, 4); let g = groups[groups.length - 1]; if (!g || g.year !== y) { g = { year: y, items: [] }; groups.push(g); } g.items.push(o); });
+  return groups;
+}
+function playDateDefaultSeason(opts, selected, todayStr) {
+  if (selected) return String(selected).substring(0, 4);
+  const upToToday = (opts || []).filter(o => o.date <= todayStr).map(o => o.date).sort().pop();       // opts are newest first
+  return String(upToToday || (opts && opts[0] && opts[0].date) || '').substring(0, 4);
+}
+function playDateRenderPanel() {
+  const panel = document.getElementById('playDatePanel'); if (!panel) return;
+  const opts = window._pdOpts || [], want = window._pdWant || '', open = window._pdOpen || new Set();
+  panel.innerHTML = playDateGroupBySeason(opts).map(g => {
+    const isOpen = open.has(g.year);
+    return `<div><div role="button" onclick="playDateToggleSeason('${g.year}')" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 12px;background:#f2f6ee;border-bottom:1px solid #e3e8dc;font-weight:700;color:var(--green);cursor:pointer;position:sticky;top:0"><span>${isOpen ? '▼' : '▶'} ${g.year}</span><span style="font-weight:400;color:#777;font-size:11px">${g.items.length} date${g.items.length === 1 ? '' : 's'}</span></div>`
+      + (isOpen ? g.items.map(o => `<div role="option" onclick="playDatePick('${o.date}')" style="padding:7px 12px 7px 26px;cursor:pointer;font-size:13px;${o.date === want ? 'background:#dcebd2;font-weight:700' : ''}" onmouseover="this.style.background='#eef5e8'" onmouseout="this.style.background='${o.date === want ? '#dcebd2' : ''}'">${window._pdLabel(o)}</div>`).join('') : '') + '</div>';
+  }).join('');
+}
+function playDateTogglePanel() {
+  const panel = document.getElementById('playDatePanel'), btn = document.getElementById('playDateBtn'); if (!panel) return;
+  if (panel.style.display !== 'none') { playDateClosePanel(); return; }
+  const t = new Date(), today = String(t.getFullYear() * 10000 + (t.getMonth() + 1) * 100 + t.getDate());
+  window._pdOpen = new Set([playDateDefaultSeason(window._pdOpts, window._pdWant, today)]);
+  playDateRenderPanel(); panel.style.display = 'block'; if (btn) btn.setAttribute('aria-expanded', 'true');
+  setTimeout(() => { const cur = panel.querySelector('[role=option][style*="font-weight:700"]'); if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' }); }, 0);
+}
+function playDateClosePanel() {
+  const panel = document.getElementById('playDatePanel'), btn = document.getElementById('playDateBtn');
+  if (panel) panel.style.display = 'none'; if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+function playDateToggleSeason(year) {
+  const open = window._pdOpen || (window._pdOpen = new Set()), panel = document.getElementById('playDatePanel'), top = panel ? panel.scrollTop : 0;
+  if (open.has(year)) open.delete(year); else open.add(year);
+  playDateRenderPanel(); if (panel) panel.scrollTop = top;
+}
+function playDatePick(date) {
+  playDateClosePanel();
+  const sel = document.getElementById('playDateSel'); if (sel && Array.from(sel.options).some(o => o.value === String(date))) sel.value = date;
+  onPlayDatePicked(String(date));
+}
+document.addEventListener('click', e => {
+  const panel = document.getElementById('playDatePanel');
+  if (!panel || panel.style.display === 'none' || !e.target.isConnected) return;       // a click on a season header redraws the list: that node is already gone, so it is not an outside click
+  if (!e.target.closest('#playDatePanel, #playDateBtn')) playDateClosePanel();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') playDateClosePanel(); });
 function playDateEntryDate(date, psList) {   // Score Entry has one post-season entry, dated Week 1
   const p = (psList || []).find(x => String(x.week2) === String(date));
   return p ? String(p.week1) : String(date);
@@ -6039,6 +6096,9 @@ function syncPlayDateBar() {
   const hint = document.getElementById('playDateHint'); if (hint) hint.textContent = tab === 'standings' ? 'Standings after the last round on or before this date' : 'One date for Scores, Standings, Matches, Skins/CTPs, Handicaps and Stableford';
   sel.innerHTML = (want ? '' : '<option value="">— choose a date —</option>') + opts.map(o => `<option value="${o.date}">${label(o)}</option>`).join('');
   sel.value = want;
+  window._pdOpts = opts; window._pdWant = want; window._pdLabel = label;
+  const btn = document.getElementById('playDateBtn'); if (btn) btn.textContent = (want ? label(opts.find(o => o.date === want) || { date: want }) : '— choose a date —') + '  ▾';
+  const panel = document.getElementById('playDatePanel'); if (panel && panel.style.display !== 'none') playDateRenderPanel();
 }
 // Opening Scores after the Round date was changed elsewhere puts Score Entry on that date. A post-season Week 2 date opens the single
 // post-season entry. If the scorecard has unsaved changes it asks first; declining keeps the entry date and the shared date follows it.
