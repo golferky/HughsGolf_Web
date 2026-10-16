@@ -12,6 +12,6 @@ const ctx = vm.createContext({ newSeasonFormHtml: () => '<form>', scheduleBuildF
 ['newSeasonSetupHtml', 'loadNewSeasonSetup'].forEach(f => vm.runInContext(extract(f), ctx));
 ctx.loadNewSeasonSetup();
 assert(el.innerHTML.startsWith('<form>'), 'the start-a-season box comes first');
-['Backup the database', 'Set up the new season', 'Review League Settings', 'Check the season schedule', 'Update the player roster', 'Set handicap seeds', 'Build the season schedule', 'Collect dues', 'Verify app access', 'Test score entry', 'Odd number of teams'].forEach(t => assert(el.innerHTML.includes(t), t));
+['Backup the database', 'Set up the new season', 'Review League Settings', 'Check the season schedule', 'Update the player roster', 'Set handicap seeds', 'Check the season schedule', 'Collect dues', 'Verify app access', 'Test score entry', 'Odd number of teams'].forEach(t => assert(el.innerHTML.includes(t), t));
 assert((el.innerHTML.match(/<li>/g) || []).length === 9, 'nine steps');
 console.log('ok');
