@@ -563,6 +563,8 @@
   #helpQuillEditor .ql-editor blockquote { margin: 4px 0 8px 0; border-left: 3px solid #ccc; padding-left: 12px; color: #555; }
 
 /* the Round date bar chooses the date for the Play tabs: each tab's own date box stays in the page (its logic reads it) but is not shown */
+#playersTable tbody tr.player-row { cursor: pointer; }
+#playersTable tbody tr.player-row:hover { background: #f3f8ef; }
 .filter-group.pd-own { display: none; }
 </style>
 </head>
@@ -1564,6 +1566,7 @@
       <div style="overflow-x:auto;max-height:600px;overflow-y:auto">
         <table id="playersTable" style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr>
+            <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Actions</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Player</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">First</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Last</th>
@@ -1575,7 +1578,6 @@
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Plays</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Role</th>
             <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:left">Last Login</th>
-            <th style="position:sticky;top:0;z-index:5;background:var(--green);color:var(--gold);padding:8px 12px;text-align:center">Actions</th>
           </tr></thead>
           <tbody id="playersBody"></tbody>
         </table>
@@ -2847,7 +2849,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261016.3';
+const APP_VERSION = '20261016.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4041,6 +4043,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261016.4', 'October 16, 2026', [
+    ['adminsummary', 'Admins: click anywhere on a player\'s row (Admin → Table Maintenance → Players) to edit them, and the Edit / Delete buttons are now the first column instead of the far right.', '', 0],
+    ['admin', 'Players: whole row opens the editor; buttons moved left', 'The name still opens the player\'s scores; buttons and links in the row work as before. PR #116.', 1],
   ]);
   ensureVersion('20261016.3', 'October 16, 2026', [
     ['summary', 'The Round date at the top of the Play tabs now chooses the date for every tab; the separate date boxes on each tab are gone.', '', 0],
@@ -20372,9 +20378,15 @@ function loadAdminPlayers() {
   }).forEach(r => {
     const tr = document.createElement('tr');
     tr.style.borderBottom = '1px solid #f0ebe0';
+    tr.className = 'player-row'; tr.title = 'Click to edit';
+    tr.onclick = ev => playerRowClick(ev, r.Player);
     const lastLogin = lastLoginMap[r.Player];
     tr.innerHTML = `
-      <td style="padding:7px 12px;font-weight:600;cursor:pointer;color:var(--green)" onclick="showPlayerScores('${(r.Player||'').replace(/'/g,"\\'")}')">
+      <td style="padding:7px 12px;text-align:center;white-space:nowrap">
+        <button onclick="editPlayer('${(r.Player||'').replace(/'/g,"\\'")}')" style="padding:3px 10px;border:1px solid #ddd;border-radius:4px;background:white;cursor:pointer;font-size:11px;margin-right:4px">Edit</button>
+        <button onclick="deletePlayer('${(r.Player||'').replace(/'/g,"\\'")}')" style="padding:3px 10px;border:1px solid #ffcccc;border-radius:4px;background:#fff5f5;cursor:pointer;font-size:11px;color:#c62828">Delete</button>
+      </td>
+      <td style="padding:7px 12px;font-weight:600;cursor:pointer;color:var(--green)" title="Show this player's scores" onclick="event.stopPropagation();showPlayerScores('${(r.Player||'').replace(/'/g,"\\'")}')">
         ${r.Player||''}
         ${teamMap[r.Player]?`<span style="font-size:10px;color:var(--gray);margin-left:6px">${teamMap[r.Player]}</span>`:''}
       </td>
@@ -20388,15 +20400,19 @@ function loadAdminPlayers() {
       <td style="padding:7px 12px;white-space:nowrap">${participationCellHtml(r, validTestOwners)}</td>
       <td style="padding:7px 12px;white-space:nowrap">${playerRoleCellHtml(r.Officer)}</td>
       <td style="padding:7px 12px;font-size:11px;color:${lastLogin?'#333':'#bbb'}">${lastLogin ? formatUtcSqlTimestamp(lastLogin) : 'Never'}</td>
-      <td style="padding:7px 12px;text-align:center">
-        <button onclick="editPlayer('${(r.Player||'').replace(/'/g,"\\'")}')" style="padding:3px 10px;border:1px solid #ddd;border-radius:4px;background:white;cursor:pointer;font-size:11px;margin-right:4px">Edit</button>
-        <button onclick="deletePlayer('${(r.Player||'').replace(/'/g,"\\'")}')" style="padding:3px 10px;border:1px solid #ffcccc;border-radius:4px;background:#fff5f5;cursor:pointer;font-size:11px;color:#c62828">Delete</button>
-      </td>`;
+</td>`;
     tbody.appendChild(tr);
   });
   makeSortable('playersTable');
 }
 
+// Admin ▸ Players: clicking anywhere on a row opens the editor. The name still opens the player's scores, and the buttons, links and
+// form controls in a row keep doing their own thing; dragging to select text does not open it.
+function playerRowClick(ev, name) {
+  if (ev.target.closest('button, a, input, select, textarea, label')) return;
+  const sel = window.getSelection && window.getSelection(); if (sel && String(sel).length) return;
+  editPlayer(name);
+}
 function openPlayerModal(name) {
   window._playerModalOriginal = null; // new player, no diff needed
   document.getElementById('playerModalId').value = name || '';
