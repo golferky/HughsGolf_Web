@@ -6,10 +6,12 @@ spec = importlib.util.spec_from_file_location('hg_app', os.path.join(here, '..',
 app = importlib.util.module_from_spec(spec); spec.loader.exec_module(app)
 app.DB_PATH = os.path.join(tempfile.mkdtemp(), 'HughsGolf.db')
 c = sqlite3.connect(app.DB_PATH)
-c.executescript("CREATE TABLE Players (Player TEXT, Officer TEXT); CREATE TABLE Payments (League TEXT, Player TEXT, Date TEXT, \"Desc\" TEXT, Detail TEXT, Earned REAL, DatePaid TEXT, Comment TEXT); CREATE TABLE SeasonSettings (League TEXT, Season INTEGER); CREATE TABLE LogTable (log_time TEXT, level TEXT, method TEXT, source TEXT, text TEXT, details TEXT, created_at TEXT);")
+c.executescript("CREATE TABLE Players (Player TEXT, Officer TEXT); CREATE TABLE Payments (League TEXT, Player TEXT, Date TEXT, \"Desc\" TEXT, Detail TEXT, Earned REAL, DatePaid TEXT, Comment TEXT); CREATE TABLE SeasonSettings (League TEXT, Season INTEGER); CREATE TABLE LeagueSettings (League TEXT PRIMARY KEY, DayofWeek TEXT); INSERT INTO LeagueSettings VALUES (\"Hugh's\", 'Tuesday'); CREATE TABLE LogTable (log_time TEXT, level TEXT, method TEXT, source TEXT, text TEXT, details TEXT, created_at TEXT);")
 c.commit(); c.close()
 cols = lambda t: {r[1] for r in sqlite3.connect(app.DB_PATH).execute(f"PRAGMA table_info({t})")}
 app.ensure_schema()
+assert 'StartWeek' in cols('LeagueSettings'), cols('LeagueSettings')
+assert sqlite3.connect(app.DB_PATH).execute("SELECT StartWeek FROM LeagueSettings").fetchone()[0] == '2nd', 'existing rows start on the 2nd'
 assert {'ChampPlaces', 'StandPlace1', 'StandPlace2', 'StandPlace3', 'Byes'} <= cols('SeasonSettings'), cols('SeasonSettings')
 assert {'Version', 'ReleaseDate', 'Category', 'Item', 'Notes', 'AddedBy', 'AddedAt'} <= cols('AppChangelog'), cols('AppChangelog')
 d = sqlite3.connect(app.DB_PATH).execute("SELECT sql FROM sqlite_master WHERE name='SeasonSettings'").fetchone()[0]

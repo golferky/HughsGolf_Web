@@ -3219,6 +3219,9 @@ def ensure_schema():
                         cur.execute(f'UPDATE LeagueSettings SET "{col}"=? WHERE League="Hugh\'s" AND ("{col}" IS NULL OR "{col}"="")', (r[0],))
                         if cur.rowcount:
                             print(f'[{now_local():%H:%M:%S}] Schema check: copied {col} from LeagueParms to LeagueSettings')
+            if 'StartWeek' not in ls_cols:                  # which league day of April a new season starts on (1st/2nd/3rd/4th/Last)
+                cur.execute("ALTER TABLE LeagueSettings ADD COLUMN StartWeek TEXT DEFAULT '2nd'")
+                print(f'[{now_local():%H:%M:%S}] Schema check: added LeagueSettings.StartWeek')
         elif lp_cols and 'AnthropicApiKey' not in lp_cols:
             cur.execute("ALTER TABLE LeagueParms ADD COLUMN AnthropicApiKey TEXT")
             print(f'[{now_local():%H:%M:%S}] Schema check: added missing LeagueParms.AnthropicApiKey column')
