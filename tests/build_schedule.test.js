@@ -2,7 +2,7 @@
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const src = fs.readFileSync(__dirname + '/../HughsGolf.html', 'utf8');
 function extract(name) { const i = src.indexOf('function ' + name + '('); assert(i >= 0, name); let d = 0, j = src.indexOf('{', i); for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; if (src[k] === '}' && --d === 0) return src.slice(i, k + 1); } }
-const FUNCS = ['psMdyToInt', 'psAddDaysMdy', 'scheduleSkipDates', 'scheduleWeekDates', 'scheduleRoundRobin', 'scheduleFrontBackFor', 'scheduleSourceWeeks', 'scheduleBuildPlan', 'scheduleBuildFormHtml', 'buildNewSeasonSchedule', 'newSeasonIsAdmin', 'seasonRemovable'];
+const FUNCS = ['psMdyToInt', 'psAddDaysMdy', 'scheduleSkipDates', 'scheduleWeekDates', 'scheduleRoundRobin', 'scheduleFrontBackFor', 'scheduleSourceWeeks', 'scheduleBuildPlan', 'scheduleBuildFormHtml', 'scheduleInsertRows', 'mdyOf', 'buildNewSeasonSchedule', 'newSeasonIsAdmin', 'seasonRemovable'];
 function world({ ss = { Season: 2027, Teams: 12, StartDate: '4/6/2027', EndDate: '6/15/2027', Start9: 'F' }, sourceRows = [], scheduleCount = 0, scoresIn = false, confirmOk = true, role = 'admin' } = {}) {
   const calls = [], alerts = [], audits = [], els = { schedSeason: { value: '2027' }, schedFrom: { value: '2026' }, schedSkip: { value: '' } };
   const c = vm.createContext({ calls, alerts, audits, parseInt, String, isNaN, Date, Object, Set, Math, Array, JSON, RegExp, currentUser: { name: 'Pat', role },
@@ -46,14 +46,22 @@ const srcRows = rr12.map((m, i) => ({ sDate: '2026040' + i, ...cols(m), Status: 
 srcRows.push({ sDate: '20260901', ...cols(['1v2']), Status: 'Rainout' });                  // a rained-out week is not a pattern week
 const w1 = world({ sourceRows: srcRows }); plan = J(w1.c.scheduleBuildPlan(2027, 2026, ''));
 assert.strictEqual(plan.usedSource, true); assert.strictEqual(plan.fromSeason, 2026); assert.deepStrictEqual(plan.rows[0].matchups, rr12[0]); assert.deepStrictEqual(plan.rows[10].matchups, rr12[10]);
-assert.strictEqual(J(world({ sourceRows: srcRows, ss: { Season: 2027, Teams: 12, StartDate: '4/6/2027', EndDate: '9/14/2027', Start9: 'F' } }).c.scheduleBuildPlan(2027, 2026, '')).rows[11].matchups[0], rr12[0][0], 'wraps after the last source week');
+// with a source the number of weeks is that season's played weeks, whatever the End Date says (rainouts are not repeated)
+const longer = J(world({ sourceRows: srcRows, ss: { Season: 2027, Teams: 12, StartDate: '4/6/2027', EndDate: '12/14/2027', Start9: 'F' } }).c.scheduleBuildPlan(2027, 2026, ''));
+assert.strictEqual(longer.rows.length, 11, 'weeks come from the source, not the End Date'); assert.strictEqual(longer.endMdy, '6/15/2027');
+const skipped = J(w1.c.scheduleBuildPlan(2027, 2026, '4/13/2027'));
+assert.strictEqual(skipped.rows.length, 11); assert.strictEqual(skipped.rows[1].date, '20270420'); assert.strictEqual(skipped.rows[10].date, '20270622', 'a skipped week lengthens the season, it does not shorten it');
+assert.deepStrictEqual(skipped.skipped, ['20270413']);
+// a source without an End Date is fine; a fresh round robin needs one
+assert.strictEqual(J(world({ sourceRows: srcRows, ss: { Season: 2027, Teams: 12, StartDate: '4/6/2027', Start9: 'F' } }).c.scheduleBuildPlan(2027, 2026, '')).rows.length, 11);
+assert(/End Date/.test(world({ ss: { Season: 2027, Teams: 12, StartDate: '4/6/2027' } }).c.scheduleBuildPlan(2027, null, '').error));
 // a source that does not fit the team count falls back to a round robin
 plan = J(world({ sourceRows: srcRows, ss: { Season: 2027, Teams: 10, StartDate: '4/6/2027', EndDate: '6/15/2027', Start9: 'F' } }).c.scheduleBuildPlan(2027, 2026, ''));
 assert.strictEqual(plan.usedSource, false); assert.strictEqual(plan.rows[0].matchups.length, 5);
 // errors
 assert(/does not exist/.test(world().c.scheduleBuildPlan(2030, null, '').error));
 assert(/even number/.test(world({ ss: { Season: 2027, Teams: 11, StartDate: '4/6/2027', EndDate: '6/15/2027' } }).c.scheduleBuildPlan(2027, null, '').error));
-assert(/Start Date and End Date/.test(world({ ss: { Season: 2027, Teams: 12, StartDate: '', EndDate: '' } }).c.scheduleBuildPlan(2027, null, '').error));
+assert(/Start Date/.test(world({ ss: { Season: 2027, Teams: 12, StartDate: '', EndDate: '' } }).c.scheduleBuildPlan(2027, null, '').error));
 assert(/not month\/day\/year/.test(world().c.scheduleBuildPlan(2027, null, 'tomorrow').error));
 // action: writes one row per week, updates the End Date, logs
 let w = world(); w.c.buildNewSeasonSchedule();

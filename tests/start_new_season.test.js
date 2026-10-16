@@ -17,12 +17,18 @@ assert.strictEqual(locked({ StartDate: '3/1/2027' }, 20270601), true, 'started w
 assert.strictEqual(locked(null, 20270601), false);
 
 // ── create / remove ──
-function world({ seasons = [2026], scoresIn = [], exists = false, confirmOk = true } = {}) {
-  const calls = [], alerts = [], audits = [], els = { newSeasonYear: { value: '2027' }, newSeasonFrom: { value: '2026' }, newSeasonCopyTeams: { checked: true }, lsSeason: { innerHTML: 'x' }, teamsSeason: { innerHTML: 'x' } };
-  const src2026 = { League: "Hugh's", Season: 2026, Cost: 45, Course: 'Club', Start9: 'F', StartDate: '4/7/2026', EndDate: '9/22/2026', PostSeasonDt: '9/29/2026', PSWeek2Dt: '10/13/2026', Rainouts: 2, Byes: 1, Teams: 12, Extra: 'not a column' };
-  const c = vm.createContext({ calls, alerts, audits, parseInt, String, isNaN, Date, Object, Set, JSON, Math, currentUser: { name: 'Pat', role: 'admin' },
+function world({ seasons = [2026], scoresIn = [], exists = false, confirmOk = true, lastOld, ps } = {}) {
+  const opts = { lastOld };
+  const calls = [], alerts = [], audits = [], els = { newSeasonSkip: { value: '' }, newSeasonYear: { value: '2027' }, newSeasonFrom: { value: '2026' }, newSeasonCopyTeams: { checked: true }, lsSeason: { innerHTML: 'x' }, teamsSeason: { innerHTML: 'x' } };
+  const rr = (n) => { const t = Array.from({ length: n }, (_, i) => i + 1), w = []; for (let k = 0; k < n - 1; k++) { w.push(Array.from({ length: n / 2 }, (_, i) => `${Math.min(t[i], t[n - 1 - i])}v${Math.max(t[i], t[n - 1 - i])}`)); t.splice(1, 0, t.pop()); } return w; };
+  const dstr = i => { const d = new Date(Date.UTC(2026, 3, 7 + i * 7)); return String(d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate()); };
+  const schedRows = rr(12).concat(rr(12)).map((m, i) => ({ sDate: dstr(i), ...Object.fromEntries(m.map((v, j) => [String(j + 1), v])), Status: null }));
+  const src2026 = { League: "Hugh's", Season: 2026, Cost: 45, Course: 'Club', Start9: 'F', StartDate: '4/7/2026', EndDate: '9/15/2026', PostSeasonDt: ps || '9/8/2026', PSWeek2Dt: '10/13/2026', Rainouts: 2, Byes: 1, Teams: 12, Extra: 'not a column' };
+  const c = vm.createContext({ calls, alerts, audits, parseInt, String, isNaN, Date, Object, Set, JSON, Math, Array, RegExp, fmtDate: d => d, currentUser: { name: 'Pat', role: 'admin' },
     document: { getElementById: id => els[id] || null }, alert: m => alerts.push(m), confirm: m => { c.lastConfirm = m; return confirmOk; },
     query: (sql, args) => {
+      if (/FROM Schedule WHERE League="Hugh's" AND \(Status IS NULL/.test(sql)) return [{ d: opts.lastOld || '20260901' }];
+      if (/FROM Schedule WHERE League="Hugh's" AND Date >= '2026/.test(sql)) return schedRows;
       if (/PRAGMA table_info\(SeasonSettings\)/.test(sql)) return Object.keys(src2026).filter(k => k !== 'Extra').map(name => ({ name }));
       if (/SELECT 1 FROM SeasonSettings/.test(sql)) return exists ? [{ 1: 1 }] : [];
       if (/SELECT \* FROM SeasonSettings/.test(sql)) return args[0] === 2026 ? [src2026] : [];
@@ -32,7 +38,7 @@ function world({ seasons = [2026], scoresIn = [], exists = false, confirmOk = tr
       return [];
     },
     serverRun: (sql, args) => calls.push({ sql, args }), auditDbChange: (...a) => audits.push(a), saveDBToServer() {}, loadNewSeasonSetup() {} });
-  ['psMdyToInt', 'psAddDaysMdy', 'newSeasonIsAdmin', 'seasonRemovable', 'newSeasonRefresh', 'createNewSeason', 'removeNewSeason', 'newSeasonFormHtml'].forEach(f => vm.runInContext(extract(f), c));
+  ['psMdyToInt', 'psAddDaysMdy', 'newSeasonIsAdmin', 'seasonRemovable', 'newSeasonRefresh', 'createNewSeason', 'removeNewSeason', 'newSeasonFormHtml', 'scheduleSkipDates', 'scheduleWeekDates', 'scheduleRoundRobin', 'mdyOf', 'scheduleFrontBackFor', 'scheduleSourceWeeks', 'scheduleBuildPlan', 'scheduleInsertRows'].forEach(f => vm.runInContext(extract(f), c));
   return { c, calls, alerts, audits, els };
 }
 let w = world(); w.c.createNewSeason();
@@ -40,10 +46,13 @@ const ins = w.calls.find(x => /INSERT INTO SeasonSettings/.test(x.sql)), teams =
 assert(ins && teams, 'season row and teams copied');
 const row = {}; ins.sql.match(/\(([^)]*)\) VALUES/)[1].split(',').forEach((c, i) => row[c.replace(/"/g, '')] = ins.args[i]);
 assert.strictEqual(row.Season, 2027); assert.strictEqual(row.Cost, 45); assert.strictEqual(row.Teams, 12); assert(!('Extra' in row), 'only real columns');
-assert.strictEqual(row.StartDate, '4/6/2027', 'dates move forward 52 weeks (same weekday)'); assert.strictEqual(row.EndDate, '9/21/2027'); assert.strictEqual(row.PostSeasonDt, '9/28/2027');
+assert.strictEqual(row.StartDate, '4/6/2027', 'dates move forward 52 weeks (same weekday)');
+assert.strictEqual(row.EndDate, '8/31/2027', 'the season ends on its last scheduled week (22 weeks from 4/6), not on last year\'s end date'); assert.strictEqual(row.PostSeasonDt, '9/7/2027', 'post-season the week after the last regular week, as in 2026');
+const sched = w.calls.filter(x => /INSERT INTO Schedule/.test(x.sql)); assert.strictEqual(sched.length, 22, 'the whole schedule is built in the same step'); assert.strictEqual(sched[0].args[0], '20270406'); assert.strictEqual(sched[21].args[0], '20270831'); assert.strictEqual(sched[0].args[1], '1v12', 'pairings copied from 2026'); assert.strictEqual(sched[0].args[25], 'Front');
 assert.strictEqual(row.PSWeek2Dt, null); assert.strictEqual(row.Rainouts, 0); assert.strictEqual(row.Byes, 0);
 assert.strictEqual(JSON.stringify(teams.args), '[2027,2026]');
 assert(w.audits.length === 1 && w.audits[0][0] === 'season_created');
+assert(/22 weeks/.test(w.c.lastConfirm) && /pairings copied from 2026/.test(w.c.lastConfirm), 'the confirmation says what will be built');
 assert(/3.*refresh|Refresh/i.test(w.alerts.join(' ')) || /refresh the page/.test(w.alerts.join(' ')), 'tells the admin what to do next');
 assert(/current season right away/.test(w.c.lastConfirm) && /backup/.test(w.c.lastConfirm), 'warns about the switch and the backup');
 assert.strictEqual(w.els.lsSeason.innerHTML, '', 'season dropdowns are rebuilt');
@@ -53,9 +62,12 @@ w = world({ confirmOk: false }); w.c.createNewSeason(); assert(!w.calls.length, 
 w = world(); w.els.newSeasonYear.value = 'abc'; w.c.createNewSeason(); assert(!w.calls.length);
 w = world(); w.c.currentUser.role = 'player'; w.c.createNewSeason(); assert(!w.calls.length && /Only admins/.test(w.alerts[0]));
 
+w = world({ ps: '9/15/2026' }); w.c.createNewSeason();   // 2026's post-season was two weeks after the last played week: dates simply move 52 weeks
+const ins2 = w.calls.find(x => /INSERT INTO SeasonSettings/.test(x.sql)), row2 = {}; ins2.sql.match(/\(([^)]*)\) VALUES/)[1].split(',').forEach((c, i) => row2[c.replace(/"/g, '')] = ins2.args[i]);
+assert.strictEqual(row2.PostSeasonDt, '9/14/2027'); assert.strictEqual(row2.EndDate, '8/31/2027');
 // remove: only an empty season, never the only one
 w = world({ seasons: [2027, 2026], scoresIn: [2026] }); w.c.removeNewSeason(2027);
-assert(w.calls.length === 2 && /DELETE FROM Teams/.test(w.calls[0].sql) && /DELETE FROM SeasonSettings/.test(w.calls[1].sql) && w.audits[0][0] === 'season_removed');
+assert(w.calls.length === 3 && /DELETE FROM Teams/.test(w.calls[0].sql) && /DELETE FROM Schedule/.test(w.calls[1].sql) && /DELETE FROM SeasonSettings/.test(w.calls[2].sql) && w.audits[0][0] === 'season_removed');
 w = world({ seasons: [2027, 2026], scoresIn: [2026] }); w.c.removeNewSeason(2026); assert(!w.calls.length && /cannot be removed/.test(w.alerts[0]), 'a season with scores is kept');
 w = world({ seasons: [2026] }); w.c.removeNewSeason(2026); assert(!w.calls.length && /only season/.test(w.alerts[0]));
 // the form offers Remove only for empty seasons, and defaults to the next year
