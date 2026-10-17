@@ -2867,7 +2867,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.3';
+const APP_VERSION = '20261018.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4105,6 +4105,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.4', 'October 18, 2026', [
+    ['bugfix', 'Carriers: Send test failed for carriers with a number-only phone', 'Send test stopped with "s.replace is not a function" when a player\'s phone was saved as a plain number rather than text. Phones, and any other value shown in a popup, are now handled either way. PR #124.', 1],
   ]);
   ensureVersion('20261018.3', 'October 18, 2026', [
     ['enhancement', 'Carriers: test texts can be sent from the sandbox', 'The Send test popup now lists everyone on a carrier who has a cell number, in the sandbox too, and before anything goes out it asks you to confirm the player\'s name and number. It also says why when nobody can be tested (no one on that carrier, or no cell number saved). PR #124.', 1],
@@ -15156,7 +15159,7 @@ function toggleLogDetail(id) {
 }
 
 function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function escapeAttr(s) {
