@@ -1,6 +1,6 @@
 # Hugh's Golf — Backlog
 
-Last updated: 2026-10-16
+Last updated: 2026-10-18
 
 ---
 
@@ -21,6 +21,7 @@ Last updated: 2026-10-16
   - Add any outside developers as collaborators (Settings → Collaborators) so they can read docs/SETUP.md.
   - Nothing else changes: deploy_qnap.sh uses Gary's own SSH login; the QNAP never pulls from GitHub.
 
+- [ ] **Texting service instead of carrier gateways (if they keep dying)** — Today a text is an email to the carrier's gateway; Admin → Table Maintenance → Carriers tracks which carriers still deliver (validated / unvalidated / unavailable, re-test yearly). If several end up unavailable, send texts through a service such as Twilio instead: one function to swap (`sms_address` / `delivery_plan`), needs an account, a registered number and server-only credentials (see the next item).
 - [ ] **Keep private settings off the database file** *(tabled Oct 16, 2026)* — Move the email password, DuckDNS token and Anthropic key to a server-only store (a private file on the QNAP, not in the database or git). League Settings then shows only Set / Not set with a Change button, and never sends the value back to the browser. The server copies existing values across at startup and clears them from the database.
   - After it ships, replace the old values with new ones (new Gmail app password, DuckDNS token, Anthropic key).
   - Also review how the website password is checked, and whether the database and test-database downloads should require a login.

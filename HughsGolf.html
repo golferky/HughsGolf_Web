@@ -1447,6 +1447,7 @@
       <button onclick="showAdminSection('teams')" id="adminBtnTeams" class="admin-subbtn">⛳ Teams</button>
       <button onclick="showAdminSection('subs')" id="adminBtnSubs" class="admin-subbtn">🔄 Subs</button>
       <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-subbtn">⚙️ League Settings</button>
+      <button onclick="showAdminSection('carriers')" id="adminBtnCarriers" class="admin-subbtn">📶 Carriers</button>
     </div>
 
     <div id="adminSubnavLogging" class="admin-subnav">
@@ -1899,6 +1900,19 @@
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button onclick="document.getElementById('proposalModal').style.display='none'" style="padding:9px 20px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:13px">Cancel</button>
           <button onclick="saveProposal()" style="padding:9px 20px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="adminCarriers" style="display:none">
+      <div class="card">
+        <div class="card-header">📶 Carriers — which phone carriers can be texted</div>
+        <div style="padding:16px">
+          <div style="font-size:13px;color:#555;margin-bottom:12px">A text goes out as an email to the carrier's gateway, which accepts it even if the carrier no longer delivers it. So each carrier has a status you set after testing it:
+            <b style="color:#2e7d32">validated</b> (a test text arrived; good for a year), <b style="color:#e65100">unvalidated</b> (not tested yet: urgent messages go by text <i>and</i> email) and <b style="color:#c62828">unavailable</b> (the carrier ended it: email only).
+            Use <b>Send test</b>, ask the person whether it arrived, then <b>Mark validated</b>.</div>
+          <div id="carriersBody">Loading…</div>
+          <div style="margin-top:12px"><button onclick="carrierAdd()" style="padding:7px 14px;border:1px solid #1b5e20;border-radius:6px;background:white;color:#1b5e20;font-weight:600;cursor:pointer">+ Add a carrier</button></div>
         </div>
       </div>
     </div>
@@ -2853,7 +2867,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261017.6';
+const APP_VERSION = '20261018.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4091,6 +4105,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.1', 'October 18, 2026', [
+    ['summary', 'Texts now follow what has been tested: Admin → Table Maintenance → Carriers shows which carriers really deliver, and rainouts and sub requests use that to decide between text, email, or both.', '', 0],
+    ['enhancement', 'Carriers: tested text gateways', 'Each carrier has a status (validated, unvalidated, unavailable), a validated date (a validation counts for a year), a note and its gateway, all editable in Admin → Table Maintenance → Carriers, with Send test and Mark validated. Rainouts and sub requests: a validated carrier gets the text (an email only if it is rejected), an untested carrier gets the text and an email, an unavailable carrier gets an email. Short notices go by text with an email fallback; payout notices go by email, with a "check your email" text for validated carriers. Players who chose email only are never texted. Carriers you add show up in My Profile and the player editor. PR #123.', 1],
   ]);
   ensureVersion('20261017.6', 'October 17, 2026', [
     ['summary', 'Popups can now be moved: drag one by its title area to see what is behind it.', '', 0],
@@ -11814,9 +11832,9 @@ function loadSchedule() {
 }
 
 // ── ADMIN TAB ──
-const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals','awards','balance','backlog','newseason'];
+const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals','awards','balance','backlog','newseason','carriers'];
 const ADMIN_GROUPS = {
-  tables: ['players','teams','subs','leaguesettings'],
+  tables: ['players','teams','subs','leaguesettings','carriers'],
   logging: ['loginactivity','serverlog','pageviews','whoson','emaillog']
 };
 
@@ -12167,6 +12185,7 @@ function showAdminSection(section) {
   if (section==='changelog') loadAdminChangelog();
   if (section==='backlog')   loadBacklog();
   if (section==='newseason') loadNewSeasonSetup();
+  if (section==='carriers') loadCarriersAdmin();
   if (section==='proposals') loadProposalsAdmin();
   if (section==='expenses')  loadExpenses();
   if (section==='compare')   loadCompareSection();
@@ -19333,6 +19352,131 @@ function refreshSelfPhoto(playerName) {
   const rm = document.getElementById('selfPhotoRemove'); if (rm) rm.style.display = playerPhotoMap()[playerName] ? '' : 'none';
 }
 
+// ── Admin ▸ Table Maintenance ▸ Carriers: which carriers can be texted (see CarrierGateways on the server) ─────────────────────────
+const CARRIER_RETEST_DAYS = 365;
+const CARRIER_FALLBACK = ['AT&T', 'Verizon', 'T-Mobile', 'Sprint', 'Boost', 'Cricket', 'Metro', 'US Cellular'];
+function carrierCanonical(name) {
+  const raw = String(name || '').trim(), key = raw.toLowerCase();
+  const map = { att: 'AT&T', 'at&t': 'AT&T', verizon: 'Verizon', sprint: 'Sprint', tmobile: 'T-Mobile', 't-mobile': 'T-Mobile', boost: 'Boost', cbw: 'CBW', cricket: 'Cricket', metro: 'Metro', uscellular: 'US Cellular' };
+  return map[key.replace(/\s+/g, '')] || map[key] || raw;
+}
+function carrierRows() {
+  try { return query(`SELECT Carrier, Gateway, Status, ValidatedAt, ValidatedBy, Note, Active FROM CarrierGateways ORDER BY Carrier`); } catch (e) { return []; }
+}
+function carrierState(row, todayMs) {                // what the app uses for sending: an old validation counts as unvalidated
+  let status = ['validated', 'unvalidated', 'unavailable'].includes(row.Status) ? row.Status : 'unvalidated', retestDue = false;
+  if (String(row.Active || 'Y').toUpperCase() === 'N') status = 'unavailable';
+  if (status === 'validated') {
+    const t = Date.parse(String(row.ValidatedAt || '').slice(0, 10) + 'T00:00:00Z'), now = todayMs || Date.now();
+    retestDue = !(t > 0) || (now - t) / 86400000 > CARRIER_RETEST_DAYS;
+    if (retestDue) status = 'unvalidated';
+  }
+  return { status, retestDue };
+}
+function carrierChoices() {                          // the carriers a player or admin can pick (active ones, then Other)
+  const names = carrierRows().filter(r => String(r.Active || 'Y').toUpperCase() !== 'N').map(r => r.Carrier);
+  return (names.length ? names : CARRIER_FALLBACK).concat(['Other']);
+}
+function fillCarrierSelect(id, current) {            // the admin's player editor
+  const sel = document.getElementById(id); if (!sel) return;
+  sel.innerHTML = '<option value="">None</option>' + carrierChoices().map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c === 'Other' ? 'Other (no SMS gateway)' : c)}</option>`).join('');
+  if (current !== undefined) sel.value = current;
+}
+function carrierMirror(row) {                        // keep this browser's copy in step with what the server saved
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS CarrierGateways (Carrier TEXT PRIMARY KEY, Gateway TEXT NOT NULL, Status TEXT NOT NULL DEFAULT 'unvalidated', ValidatedAt TEXT, ValidatedBy TEXT, Note TEXT, Active TEXT NOT NULL DEFAULT 'Y')`);
+    db.run(`INSERT OR REPLACE INTO CarrierGateways (Carrier, Gateway, Status, ValidatedAt, ValidatedBy, Note, Active) VALUES (?,?,?,?,?,?,?)`, [row.Carrier, row.Gateway, row.Status, row.ValidatedAt, row.ValidatedBy, row.Note, row.Active]);
+  } catch (e) {}
+}
+async function carrierCall(path, body) {
+  const me = currentUser?.name || '';
+  const resp = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin: me, sessionToken: playerSessionToken(me), ...body }) });
+  return resp.json().catch(() => ({ ok: false, error: 'No answer from the server.' }));
+}
+async function carrierAdminAction(action, carrier, extra = {}) {
+  const j = await carrierCall('/carrier-admin', { action, carrier, ...extra });
+  if (!j.ok) { alert(j.error || 'Could not save.'); return false; }
+  carrierMirror(j.row); if (j.modifiedMs) { SERVER_DB_MODIFIED_MS = j.modifiedMs; SERVER_DB_MODIFIED = j.modifiedMs / 1000; }
+  loadCarriersAdmin(); return true;
+}
+function carrierCandidates(name) {                   // players with a cell number on this carrier
+  let rows = []; try { rows = query(`SELECT Player, Phone, CellCarrier FROM Players WHERE COALESCE(TRIM(Phone),'') != '' AND COALESCE(TRIM(CellCarrier),'') != '' ORDER BY Player`); } catch (e) {}
+  return rows.filter(r => carrierCanonical(r.CellCarrier).toLowerCase() === String(name).toLowerCase());
+}
+function loadCarriersAdmin() {
+  const body = document.getElementById('carriersBody'); if (!body) return;
+  const rows = carrierRows();
+  if (!rows.length) { body.innerHTML = '<div style="color:#c62828;font-size:13px">No carrier list yet. It is created when the server starts; refresh the page after the new version is running.</div>'; return; }
+  const counts = {}; try { query(`SELECT CellCarrier AS c, COUNT(*) AS n FROM Players WHERE COALESCE(TRIM(CellCarrier),'') != '' AND COALESCE(IsTest,'N') != 'Y' GROUP BY CellCarrier`).forEach(r => { const k = carrierCanonical(r.c).toLowerCase(); counts[k] = (counts[k] || 0) + r.n; }); } catch (e) {}
+  const badge = { validated: ['#e8f5e9', '#2e7d32', 'Validated'], unvalidated: ['#fff3e0', '#e65100', 'Unvalidated'], unavailable: ['#ffebee', '#c62828', 'Unavailable'] };
+  const btn = (act, c, label, color) => `<button data-c="${escapeHtml(c)}" onclick="carrierClick(this,'${act}')" style="padding:3px 9px;border:1px solid ${color || '#ccc'};border-radius:4px;background:white;color:${color || '#333'};font-size:11px;cursor:pointer;margin:1px">${label}</button>`;
+  body.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#f2f6ee;text-align:left">
+      <th style="padding:7px 10px">Carrier</th><th style="padding:7px 10px">Gateway</th><th style="padding:7px 10px">Status</th><th style="padding:7px 10px">Validated</th><th style="padding:7px 10px;text-align:center">Players</th><th style="padding:7px 10px">Note</th><th style="padding:7px 10px">Actions</th></tr></thead><tbody>`
+    + rows.map(r => {
+      const st = carrierState(r), b = badge[st.status];
+      const when = r.ValidatedAt ? `${escapeHtml(String(r.ValidatedAt).slice(0, 10))}${r.ValidatedBy ? ' by ' + escapeHtml(r.ValidatedBy) : ''}` : '—';
+      return `<tr style="border-top:1px solid #eee${String(r.Active || 'Y').toUpperCase() === 'N' ? ';opacity:.6' : ''}">
+        <td style="padding:7px 10px;font-weight:600">${escapeHtml(r.Carrier)}${String(r.Active || 'Y').toUpperCase() === 'N' ? ' <span style="font-weight:400;color:#999;font-size:11px">(off)</span>' : ''}</td>
+        <td style="padding:7px 10px;font-family:monospace;font-size:12px">${escapeHtml(r.Gateway)}</td>
+        <td style="padding:7px 10px"><span style="background:${b[0]};color:${b[1]};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${b[2]}</span>${st.retestDue ? ' <span style="color:#e65100;font-size:11px;font-weight:700">re-test due</span>' : ''}</td>
+        <td style="padding:7px 10px;font-size:12px;color:#555">${when}</td>
+        <td style="padding:7px 10px;text-align:center">${counts[String(r.Carrier).toLowerCase()] || 0}</td>
+        <td style="padding:7px 10px;font-size:12px;color:#555">${escapeHtml(r.Note || '')}</td>
+        <td style="padding:7px 10px;white-space:nowrap">${btn('test', r.Carrier, 'Send test', '#1565c0')}${btn('validate', r.Carrier, 'Mark validated', '#2e7d32')}${btn('unavailable', r.Carrier, 'Mark unavailable', '#c62828')}${btn('edit', r.Carrier, 'Edit')}</td></tr>`;
+    }).join('') + '</tbody></table></div>';
+}
+async function carrierClick(el, action) {
+  const name = el.dataset.c, row = carrierRows().find(r => r.Carrier === name); if (!row) return;
+  if (action === 'validate') {
+    const note = prompt(`Mark ${name} validated?\n\nOnly do this after somebody on ${name} told you a test text arrived.\n\nNote (optional):`, row.Note || ''); if (note === null) return;
+    await carrierAdminAction('validate', name, { note });
+  } else if (action === 'unavailable') {
+    const note = prompt(`Mark ${name} unavailable?\n\nUrgent messages to ${name} customers will go by email only. Why (for the record)?`, row.Note || 'carrier ended email-to-text'); if (note === null) return;
+    await carrierAdminAction('unavailable', name, { note });
+  } else if (action === 'edit') {
+    const gateway = prompt(`Gateway for ${name} (for example txt.example.com):`, row.Gateway); if (gateway === null) return;
+    const note = prompt(`Note for ${name}:`, row.Note || ''); if (note === null) return;
+    const off = confirm(`Keep ${name} switched ON?\n\nOK = on. Cancel = switch it off (hidden from the carrier lists, treated as unavailable).`);
+    await carrierAdminAction('save', name, { gateway: gateway.trim(), note, active: off ? 'Y' : 'N' });
+  } else if (action === 'test') carrierTestPopup(name);
+}
+async function carrierAdd() {
+  const name = prompt('Name of the new carrier (for example Mint Mobile):'); if (!name || !name.trim()) return;
+  const gateway = prompt(`Text gateway for ${name.trim()} (for example tmomail.net):`); if (!gateway || !gateway.trim()) return;
+  await carrierAdminAction('add', name.trim(), { gateway: gateway.trim() });
+}
+function carrierTestPopup(name) {
+  const me = currentUser?.name || '', people = carrierCandidates(name).filter(p => !isSandboxHost() || p.Player === me);
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `<div style="background:white;border-radius:12px;padding:24px;max-width:420px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="font-size:18px;font-weight:700;color:#1b5e20;margin-bottom:10px">Send a test text through ${escapeHtml(name)}</div>
+    ${people.length ? `<label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">WHO ON ${escapeHtml(name.toUpperCase())}?</label>
+      <select id="carrierTestWho" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">${people.map(p => `<option value="${escapeHtml(p.Player)}">${escapeHtml(p.Player)} (${escapeHtml(p.Phone)})</option>`).join('')}</select>`
+      : `<div style="font-size:13px;color:#c62828">Nobody in the player file has a cell number on ${escapeHtml(name)}. Add a volunteer's number and carrier to a player first.</div>`}
+    <div id="carrierTestMsg" style="font-size:13px;color:#555;margin:12px 0;min-height:18px">${isSandboxHost() ? 'In the sandbox a test can only go to your own number; test other people on the live site.' : ''}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button id="carrierTestClose" style="padding:8px 14px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Close</button>
+      ${people.length ? '<button id="carrierTestSend" style="padding:8px 14px;border:none;border-radius:6px;background:#1565c0;color:white;font-weight:600;cursor:pointer">Send test text</button>' : ''}
+      <button id="carrierTestOk" style="display:none;padding:8px 14px;border:none;border-radius:6px;background:#2e7d32;color:white;font-weight:600;cursor:pointer">It arrived — mark validated</button>
+    </div></div>`;
+  document.body.appendChild(overlay);
+  const msg = (t, bad) => { const m = document.getElementById('carrierTestMsg'); m.textContent = t; m.style.color = bad ? '#c62828' : '#555'; };
+  document.getElementById('carrierTestClose').onclick = () => overlay.remove();
+  const send = document.getElementById('carrierTestSend');
+  if (send) send.onclick = async () => {
+    const who = document.getElementById('carrierTestWho').value;
+    if (!confirm(`Send a real test text to ${who} through ${name}?`)) return;
+    send.disabled = true; msg('Sending…');
+    const j = await carrierCall('/carrier-test', { carrier: name, player: who });
+    send.disabled = false;
+    if (!j.ok) { msg(j.error || 'The test did not go out.', true); return; }
+    msg(`Sent to ${j.to}. Ask ${who} whether it arrived (it can take a minute). Only when it did, click the green button; if nothing comes, close this and mark the carrier unavailable.`);
+    document.getElementById('carrierTestOk').style.display = '';
+  };
+  document.getElementById('carrierTestOk').onclick = async () => { const who = document.getElementById('carrierTestWho')?.value || ''; if (await carrierAdminAction('validate', name, { note: who ? `${who} got a test text` : '' })) overlay.remove(); };
+}
+
 // "My Profile" (click your name at the top): a player edits their own contact details and preferences. The server checks the player's
 // login session before it changes anything, and it only accepts these fields (never role, handicap, teams or whether they play).
 const PROFILE_CARRIERS = ['AT&T', 'T-Mobile', 'Verizon', 'Sprint', 'Cricket', 'Boost', 'US Cellular', 'Metro', 'Other'];
@@ -19436,7 +19580,7 @@ function showPlayerSelfEditModal(playerName) {
       <div style="margin-bottom:12px"><label style="${lab}">EMAIL</label><input id="selfEmail" type="email" value="${esc2(p.Email)}" style="${field}"></div>
       <div style="margin-bottom:12px"><label style="${lab}">CELL PHONE</label><input id="selfPhone" type="tel" value="${esc2(p.Phone)}" style="${field}"></div>
       <div style="margin-bottom:16px"><label style="${lab}">CARRIER (for text messages)</label>
-        <select id="selfCarrier" style="${field}"><option value="">None</option>${PROFILE_CARRIERS.map(c => `<option value="${esc2(c)}" ${p.CellCarrier === c ? 'selected' : ''}>${esc2(c)}</option>`).join('')}</select></div>
+        <select id="selfCarrier" style="${field}"><option value="">None</option>${carrierChoices().map(c => `<option value="${esc2(c)}" ${p.CellCarrier === c ? 'selected' : ''}>${esc2(c)}</option>`).join('')}</select></div>
       <div style="margin-bottom:16px"><label style="${lab}">SEND ME LEAGUE STATS</label>
         <label style="display:block;font-size:13px;margin-bottom:4px;cursor:pointer"><input type="checkbox" id="selfEmailStats" ${p.EmailStats === 'Y' ? 'checked' : ''}> By email</label>
         <label style="display:block;font-size:13px;cursor:pointer"><input type="checkbox" id="selfTextStats" ${p.TextStats === 'Y' ? 'checked' : ''}> By text</label></div>
@@ -20610,6 +20754,7 @@ function openPlayerModal(name) {
   document.getElementById('pmLastName').value = '';
   document.getElementById('pmEmail').value = '';
   document.getElementById('pmPhone').value = '';
+  fillCarrierSelect('pmCarrier');
   document.getElementById('pmCarrier').value = '';
   document.getElementById('pmEmailStats').checked = true;
   document.getElementById('pmTextStats').checked = false;
@@ -20631,6 +20776,8 @@ function openPlayerModal(name) {
 function normalizeCarrier(val) {
   if (!val) return '';
   const v = val.trim().toLowerCase();
+  const listed = carrierChoices().find(c => c.toLowerCase() === v);          // a carrier added in Admin > Carriers keeps its own name
+  if (listed) return listed;
   const map = {
     'att': 'AT&T', 'at&t': 'AT&T',
     'tmobile': 'T-Mobile', 't-mobile': 'T-Mobile',
@@ -20684,6 +20831,7 @@ function editPlayer(name) {
   document.getElementById('pmLastName').value = r.LastName||'';
   document.getElementById('pmEmail').value = r.Email||'';
   document.getElementById('pmPhone').value = r.Phone||'';
+  fillCarrierSelect('pmCarrier');
   document.getElementById('pmCarrier').value = normalizeCarrier(r.CellCarrier);
   document.getElementById('pmEmailStats').checked = r.EmailStats==='Y';
   document.getElementById('pmTextStats').checked = r.TextStats==='Y';

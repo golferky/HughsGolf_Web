@@ -15,6 +15,7 @@ INSERT INTO Players VALUES ('Cell One','502-555-0101','verizon','',''), ('Mail O
 """)
 c.commit(); c.close()
 app.ensure_schema()
+c = sqlite3.connect(app.DB_PATH); c.execute("UPDATE CarrierGateways SET Status='validated', ValidatedAt=?, ValidatedBy='test' WHERE Carrier IN ('AT&T','Verizon')", (app.now_local().strftime('%Y-%m-%d'),)); c.commit(); c.close()   # tested carriers: a rainout goes out as a text only
 cl = app.app.test_client(); H = {'X-Save-Token': app.SAVE_TOKEN, 'X-Actor': 'Boss Admin', 'X-Actor-Role': 'admin'}
 PUB = {'base_url': 'https://hughsgolf.example.org'}
 body = {'players': ['Cell One', 'Mail Only', 'Prefers Email', 'No Contact', 'Fallback', 'Ghost'], 'message': 'Rain out tonight', 'date': '20261013'}
