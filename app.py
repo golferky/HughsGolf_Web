@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261017.1-sandbox'
+VERSION    = '20261017.2-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1688,6 +1688,98 @@ def sub_preferences():
             + opt('none', '🚫 Do not contact me')
             + '<button type="submit">Save</button></form>')
     return _PREF_PAGE.replace('%BODY%', body)
+
+
+# ── My Profile: a player edits their own contact details and preferences ──────────────────────────────────────────────────
+# The player's login session (Players.ActiveSession) must match the session sent with the request, and only these fields can change.
+_PROFILE_CARRIERS = {'', 'AT&T', 'T-Mobile', 'Verizon', 'Sprint', 'Cricket', 'Boost', 'US Cellular', 'Metro', 'Other'}
+
+def _clean_profile_phone(raw):
+    """'' stays '', ten digits (a leading 1 is dropped) become 513-205-9457, anything else is None (not a usable cell number)."""
+    import re as _re
+    digits = _re.sub(r'\D', '', str(raw or ''))
+    if len(digits) == 11 and digits[0] == '1':
+        digits = digits[1:]
+    if not digits:
+        return ''
+    return f'{digits[:3]}-{digits[3:6]}-{digits[6:]}' if len(digits) == 10 else None
+
+@app.route('/update-my-profile', methods=['POST'])
+def update_my_profile():
+    import re as _re, hmac as _hmac
+    body = request.get_json(silent=True) or {}
+    player = str(body.get('player') or '').strip()
+    token = str(body.get('sessionToken') or '').strip()
+    if not player or not token:
+        return jsonify({'ok': False, 'error': 'Please sign in again, then try once more.'}), 403
+    changes = {}
+    if 'email' in body:
+        email = str(body.get('email') or '').strip()
+        if email and (len(email) > 120 or not _re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email)):
+            return jsonify({'ok': False, 'error': 'That email address does not look right.'}), 400
+        changes['Email'] = email
+    if 'phone' in body:
+        phone = _clean_profile_phone(body.get('phone'))
+        if phone is None:
+            return jsonify({'ok': False, 'error': 'Enter your cell phone as 10 digits, for example 859-555-0123.'}), 400
+        changes['Phone'] = phone
+    if 'carrier' in body:
+        carrier = str(body.get('carrier') or '').strip()
+        if carrier not in _PROFILE_CARRIERS:
+            return jsonify({'ok': False, 'error': 'Pick a carrier from the list.'}), 400
+        changes['CellCarrier'] = carrier
+    for key, col in (('emailStats', 'EmailStats'), ('textStats', 'TextStats')):
+        if key in body:
+            v = str(body.get(key) or '').upper()
+            if v not in ('Y', 'N'):
+                return jsonify({'ok': False, 'error': 'Bad stats choice.'}), 400
+            changes[col] = v
+    contact = str(body.get('contact') or '').strip()
+    if contact not in ('', 'email', 'text', 'both', 'none'):
+        return jsonify({'ok': False, 'error': 'Bad contact choice.'}), 400
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        try:
+            cur = conn.cursor()
+            cols = _table_cols(cur, 'Players')
+            row = None
+            if 'ActiveSession' in cols:
+                cur.execute('SELECT ActiveSession FROM Players WHERE Player=?', (player,))
+                row = cur.fetchone()
+            if not row or not row[0] or not _hmac.compare_digest(str(row[0]), token):
+                return jsonify({'ok': False, 'error': 'Please sign in again, then try once more.'}), 403
+            cur.execute('SELECT Email, Phone, CellCarrier FROM Players WHERE Player=?', (player,))
+            cur_email, cur_phone, cur_carrier = cur.fetchone()
+            email_now = changes.get('Email', cur_email or '')
+            phone_now = changes.get('Phone', cur_phone or '')
+            carrier_now = changes.get('CellCarrier', cur_carrier or '')
+            if contact in ('email', 'both') and not email_now:
+                return jsonify({'ok': False, 'error': 'Add your email address to be contacted by email.'}), 400
+            if contact in ('text', 'both') and not (phone_now and carrier_now):
+                return jsonify({'ok': False, 'error': 'Add your cell phone and carrier to be contacted by text.'}), 400
+            if contact:
+                now = now_local().strftime('%Y-%m-%d %H:%M')
+                if contact == 'none':
+                    changes.update({'ContactOK': 'N', 'ContactMethod': '', 'BlockSubs': 'Y', 'ConsentAt': now})
+                else:
+                    changes.update({'ContactOK': 'Y', 'ContactMethod': contact, 'BlockSubs': 'N', 'ConsentAt': now})
+            changes = {c: v for c, v in changes.items() if c in cols}
+            before = {}
+            if changes:
+                cur.execute('SELECT ' + ', '.join(f'"{c}"' for c in changes) + ' FROM Players WHERE Player=?', (player,))
+                before = dict(zip(changes, cur.fetchone()))
+            changed = [c for c, v in changes.items() if str(before.get(c) or '') != str(v or '') and c != 'ConsentAt']
+            if changes:
+                cur.execute('UPDATE Players SET ' + ', '.join(f'"{c}"=?' for c in changes) + ' WHERE Player=?', (*changes.values(), player))
+            if changed:
+                _log_row(cur, 'profile_update', f'{player} updated their profile ({", ".join(changed)})', f'ip={_audit_ip()}')
+            conn.commit()
+            shown = [c for c in ('Email', 'Phone', 'CellCarrier', 'EmailStats', 'TextStats', 'ContactOK', 'ContactMethod', 'BlockSubs') if c in cols]
+            cur.execute('SELECT ' + ', '.join(f'"{c}"' for c in shown) + ' FROM Players WHERE Player=?', (player,))
+            saved = dict(zip(shown, cur.fetchone()))
+        finally:
+            conn.close()
+    return jsonify({'ok': True, 'player': saved, 'changed': changed, 'modifiedMs': db_modified_ms()})
 
 
 @app.route('/need-sub', methods=['POST'])
