@@ -2853,7 +2853,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261017.4';
+const APP_VERSION = '20261017.5';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4048,6 +4048,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261017.5', 'October 17, 2026', [
+    ['admin', 'Photo files are named after the player', 'A new photo is saved as gary-scudder_3fa9c1e2b7d4.jpg (the player\'s name plus a random part), so a photo is easy to find in the photos folder on the server. Photos uploaded before this keep their old names until the player uploads again. PR #121.', 1],
   ]);
   ensureVersion('20261017.4', 'October 17, 2026', [
     ['enhancement', 'My Profile: no sub question for regulars', 'Players on a team this season are no longer asked whether we may contact them about subbing; only players who might sub see that question and the line on the profile summary. PR #120.', 1],

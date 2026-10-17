@@ -39,14 +39,19 @@ assert files() == []
 
 # a good upload: file + random key + log
 r = upload(jpeg(400, 400)); j = r.get_json(); assert r.status_code == 200 and j['ok'], j
-k1 = j['photoKey']; assert len(k1) == 24 and all(ch in '0123456789abcdef' for ch in k1) and key_of('Pat Example') == k1 and files() == [k1 + '.jpg']
+k1 = j['photoKey']; import re; assert re.fullmatch(r'pat-example_[0-9a-f]{12}', k1) and key_of('Pat Example') == k1 and files() == [k1 + '.jpg'], k1
 g = cl.get(f'/photos/{k1}.jpg'); assert g.status_code == 200 and g.mimetype == 'image/jpeg' and 'immutable' in g.headers['Cache-Control'] and g.data.startswith(b'\xff\xd8')
 # replacing makes a new key and removes the old file (so a cached old picture is never shown)
-k2 = upload(jpeg(300, 300)).get_json()['photoKey']; assert k2 != k1 and files() == [k2 + '.jpg'] and key_of('Pat Example') == k2
+k2 = upload(jpeg(300, 300)).get_json()['photoKey']; assert k2 != k1 and k2.startswith('pat-example_') and files() == [k2 + '.jpg'] and key_of('Pat Example') == k2
 assert cl.get(f'/photos/{k1}.jpg').status_code == 404
 
+# readable names: accents and odd characters are tidied, an empty name still works, and older 24-hex keys are still served
+for name, want in (('Bob McGolfer', r'bob-mcgolfer_[0-9a-f]{12}'), ('José Núñez-Smith', r'jose-nunez-smith_[0-9a-f]{12}'), ("O'Brien, Pat (Jr.)", r'o-brien-pat-jr_[0-9a-f]{12}'), ('???', r'player_[0-9a-f]{12}'), ('x' * 80, r'x{30}_[0-9a-f]{12}')):
+    assert re.fullmatch(want, app._photo_key_for(name)), (name, app._photo_key_for(name))
+os.makedirs(app.PHOTO_DIR, exist_ok=True); old_key = 'ab' * 12; open(os.path.join(app.PHOTO_DIR, old_key + '.jpg'), 'wb').write(jpeg(100, 100))
+assert cl.get(f'/photos/{old_key}.jpg').status_code == 200, 'photos saved before the rename keep working'; os.remove(os.path.join(app.PHOTO_DIR, old_key + '.jpg'))
 # the photo route only serves keys it made
-for bad in ('../HughsGolf', 'abc', 'g' * 24, '0' * 24):
+for bad in ('../HughsGolf', 'abc', 'g' * 24, '0' * 24, 'pat-example_zzzzzzzzzzzz', 'pat example_' + '0' * 12, '..%2fHughsGolf_' + '0' * 12, 'a' * 40 + '_' + '0' * 12):
     assert cl.get(f'/photos/{bad}.jpg').status_code == 404, bad
 
 # remove: own session; an admin can remove anyone's; a player cannot remove another's
