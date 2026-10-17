@@ -2867,7 +2867,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.1';
+const APP_VERSION = '20261018.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4105,6 +4105,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.2', 'October 18, 2026', [
+    ['bugfix', 'Carriers: clearer message when a test text cannot be sent', 'The Send test popup now says why nobody can be tested: no one on that carrier, someone on it but with no cell number saved, or (in the sandbox) the person is not you. PR #124.', 1],
   ]);
   ensureVersion('20261018.1', 'October 18, 2026', [
     ['summary', 'Texts now follow what has been tested: Admin → Table Maintenance → Carriers shows which carriers really deliver, and rainouts and sub requests use that to decide between text, email, or both.', '', 0],
@@ -19446,15 +19449,19 @@ async function carrierAdd() {
   await carrierAdminAction('add', name.trim(), { gateway: gateway.trim() });
 }
 function carrierTestPopup(name) {
-  const me = currentUser?.name || '', people = carrierCandidates(name).filter(p => !isSandboxHost() || p.Player === me);
+  const me = currentUser?.name || '', withPhone = carrierCandidates(name), people = withPhone.filter(p => !isSandboxHost() || p.Player === me);
+  let onCarrier = 0; try { onCarrier = query(`SELECT CellCarrier FROM Players WHERE COALESCE(TRIM(CellCarrier),'') != '' AND COALESCE(IsTest,'N') != 'Y'`).filter(r => carrierCanonical(r.CellCarrier).toLowerCase() === String(name).toLowerCase()).length; } catch (e) {}
+  const noOne = !onCarrier ? `Nobody in the player file is on ${name} yet. Set a player's carrier to ${name} (and give them a cell number) first.`
+    : !withPhone.length ? `${onCarrier} player${onCarrier === 1 ? ' is' : 's are'} on ${name}, but ${onCarrier === 1 ? 'has' : 'have'} no cell number saved. Add the number to the player first.`
+    : `${withPhone.length} player${withPhone.length === 1 ? ' is' : 's are'} on ${name}, but the sandbox can only text your own number. Run this test on the live site.`;
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
   overlay.innerHTML = `<div style="background:white;border-radius:12px;padding:24px;max-width:420px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
     <div style="font-size:18px;font-weight:700;color:#1b5e20;margin-bottom:10px">Send a test text through ${escapeHtml(name)}</div>
     ${people.length ? `<label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">WHO ON ${escapeHtml(name.toUpperCase())}?</label>
       <select id="carrierTestWho" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">${people.map(p => `<option value="${escapeHtml(p.Player)}">${escapeHtml(p.Player)} (${escapeHtml(p.Phone)})</option>`).join('')}</select>`
-      : `<div style="font-size:13px;color:#c62828">Nobody in the player file has a cell number on ${escapeHtml(name)}. Add a volunteer's number and carrier to a player first.</div>`}
-    <div id="carrierTestMsg" style="font-size:13px;color:#555;margin:12px 0;min-height:18px">${isSandboxHost() ? 'In the sandbox a test can only go to your own number; test other people on the live site.' : ''}</div>
+      : `<div style="font-size:13px;color:#c62828">${escapeHtml(noOne)}</div>`}
+    <div id="carrierTestMsg" style="font-size:13px;color:#555;margin:12px 0;min-height:18px">${isSandboxHost() && people.length ? 'In the sandbox a test can only go to your own number; test other people on the live site.' : ''}</div>
     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
       <button id="carrierTestClose" style="padding:8px 14px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer">Close</button>
       ${people.length ? '<button id="carrierTestSend" style="padding:8px 14px;border:none;border-radius:6px;background:#1565c0;color:white;font-weight:600;cursor:pointer">Send test text</button>' : ''}
