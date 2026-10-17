@@ -2849,7 +2849,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261016.4';
+const APP_VERSION = '20261017.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4043,6 +4043,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261017.1', 'October 17, 2026', [
+    ['summary', 'Picking a Round date from an earlier season now changes the grids on Stableford, Matches and Skins/CTPs; they used to stay on the newest season.', '', 0],
+    ['bugfix', 'Round date from last season did not change Stableford, Matches or Skins/CTPs', 'Those tabs always opened on the newest season (2027), whose week list does not contain a 2026 date, so the grids stayed put. Their Season boxes now follow the year of the Round date (as Standings already did), including the Stableford standings. PR #117.', 1],
   ]);
   ensureVersion('20261016.4', 'October 16, 2026', [
     ['adminsummary', 'Admins: click anywhere on a player\'s row (Admin → Table Maintenance → Players) to edit them, and the Edit / Delete buttons are now the first column instead of the far right.', '', 0],
@@ -6018,6 +6022,12 @@ function playDateRemember(id, value) {
   if (/^\d{8}$/.test(v)) window._playDate = v;
   else if ((id === 'hdcpAsOfDate' || id === 'standAsOf') && v === '') window._playDate = null;
 }
+// The Round date can be in an earlier season than the one a tab opens on (the newest). Put the tab's Season box on the date's year so
+// its week list contains the date and the grids show it.
+function playDateFollowSeason(sel) {
+  const yr = window._playDate ? String(window._playDate).substring(0, 4) : '';
+  if (sel && yr && Array.from(sel.options).some(o => String(o.value) === yr)) sel.value = yr;
+}
 function playDateApply(id) {
   const sel = document.getElementById(id), d = window._playDate;
   if (!sel || !d || !PLAY_DATE_FOLLOWERS.includes(id)) return false;
@@ -6156,7 +6166,7 @@ function refreshTab(tab) {
   if (!db) return;
   if (tab === 'home') loadHome();
   if (tab === 'standings') loadStandings();
-  if (tab === 'stableford') { loadStablefordTab(); loadSfStandings(); }
+  if (tab === 'stableford') { loadStablefordTab(); loadSfStandings(true); }
   if (tab === 'skins') { initSkinsTab(); loadCtpsTab(); }
   if (tab === 'noshows') loadNoShows();
   if (tab === 'handicaps') loadHandicaps();
@@ -7836,6 +7846,7 @@ function initMatchesDate() {
   const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
   seasonSel.value = currentSeason;
+  playDateFollowSeason(seasonSel);
 
   populateMatchesDateDropdown();
   document.getElementById('matchesDate').addEventListener('change', loadMatches);
@@ -8437,6 +8448,7 @@ function loadStablefordTab() {
   const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
   seasonSel.value = currentSeason;
+  playDateFollowSeason(seasonSel);
   populateStablefordDateDropdown();
 }
 
@@ -8715,7 +8727,7 @@ function showSfSubDetail(season, date, team) {
 }
 function closeSfSubDetail() { document.getElementById('sfSubDetailModal').style.display = 'none'; }
 
-function loadSfStandings() {
+function loadSfStandings(followDate) {            // followDate: a change of the Round date; the Season box's own onchange passes nothing
   if (!db) return;
   const league = "Hugh's";
 
@@ -8725,7 +8737,9 @@ function loadSfStandings() {
     const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
     seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
     seasonSel.value = currentSeason;
+    followDate = true;
   }
+  if (followDate === true) playDateFollowSeason(seasonSel);
   const season = seasonSel.value;
 
   // Determine midDate — same query as regular standings
@@ -9038,6 +9052,7 @@ function initSkinsTab() {
   const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
   seasonSel.value = currentSeason;
+  playDateFollowSeason(seasonSel);
   populateSkinsDateDropdown();
 }
 
@@ -9660,6 +9675,7 @@ function loadCtpsTab() {
   const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
   seasonSel.value = currentSeason;
+  playDateFollowSeason(seasonSel);
   populateCtpsDateDropdown();
 }
 
