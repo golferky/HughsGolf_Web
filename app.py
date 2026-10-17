@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261017.6-sandbox'
+VERSION    = '20261018.1-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -154,23 +154,142 @@ class _AuditSMTP(smtplib.SMTP_SSL):
         return result
 
 
+# ── Carrier text gateways: the CarrierGateways table, and how a message is delivered ─────────────────────────────────────────────
+# A text goes out as an email to <10-digit number>@<carrier gateway>. The mail server accepts it whether or not the carrier still delivers it,
+# so each carrier has a status the admin sets after testing it (Admin > Table Maintenance > Carriers):
+#   validated    a test text arrived (counts for CARRIER_RETEST_DAYS_DEFAULT days, then it is treated as unvalidated again)
+#   unvalidated  not tested yet, or the test has expired
+#   unavailable  the carrier took the ability away (or the admin switched it off): email only
+CARRIER_RETEST_DAYS_DEFAULT = 365
+_CARRIER_ALIASES = {'att': 'AT&T', 'at&t': 'AT&T', 'verizon': 'Verizon', 'sprint': 'Sprint', 'tmobile': 'T-Mobile', 't-mobile': 'T-Mobile',
+                    'boost': 'Boost', 'cbw': 'CBW', 'cricket': 'Cricket', 'metro': 'Metro', 'uscellular': 'US Cellular'}
+_CARRIER_SEED = [('AT&T', 'txt.att.net'), ('Verizon', 'vtext.com'), ('T-Mobile', 'tmomail.net'), ('Sprint', 'messaging.sprintpcs.com'),
+                 ('Boost', 'myboostmobile.com'), ('CBW', 'gocbw.com'), ('Cricket', 'sms.cricketwireless.net'), ('Metro', 'mymetropcs.com'),
+                 ('US Cellular', 'email.uscc.net')]
+
+def canonical_carrier(name):
+    raw = str(name or '').strip()
+    key = raw.lower()
+    return _CARRIER_ALIASES.get(key.replace(' ', '')) or _CARRIER_ALIASES.get(key) or raw
+
+def ensure_carrier_table(cur):
+    """Create the CarrierGateways table and add the standard carriers (T-Mobile is known to work; the rest start unvalidated)."""
+    cur.execute("""CREATE TABLE IF NOT EXISTS CarrierGateways (
+        Carrier TEXT PRIMARY KEY, Gateway TEXT NOT NULL, Status TEXT NOT NULL DEFAULT 'unvalidated',
+        ValidatedAt TEXT, ValidatedBy TEXT, Note TEXT, Active TEXT NOT NULL DEFAULT 'Y')""")
+    today = now_local().strftime('%Y-%m-%d')
+    for name, gw in _CARRIER_SEED:
+        cur.execute('INSERT OR IGNORE INTO CarrierGateways (Carrier, Gateway, Status, ValidatedAt, ValidatedBy, Note, Active) VALUES (?,?,?,?,?,?,?)',
+                    (name, gw, 'validated' if name == 'T-Mobile' else 'unvalidated', today if name == 'T-Mobile' else None,
+                     'known to work (set at setup)' if name == 'T-Mobile' else None, '', 'Y'))
+
+def _carrier_retest_days():
+    try:
+        return int(get_league_value('CarrierRetestDays') or CARRIER_RETEST_DAYS_DEFAULT)
+    except Exception:
+        return CARRIER_RETEST_DAYS_DEFAULT
+
+def carrier_info(carrier, cur=None):
+    """What the app knows about a carrier: {'carrier', 'gateway', 'status', 'retest_due'}; status is the one used for sending
+    (a validation older than the re-test period counts as unvalidated; an inactive or unknown carrier as unavailable)."""
+    name = canonical_carrier(carrier)
+    row = None
+    try:
+        own = cur is None
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS) if own else None
+        c = conn.cursor() if own else cur
+        try:
+            c.execute('SELECT Carrier, Gateway, Status, ValidatedAt, Active FROM CarrierGateways WHERE LOWER(Carrier)=LOWER(?)', (name,))
+            row = c.fetchone()
+        finally:
+            if own:
+                conn.close()
+    except Exception:
+        row = None                                            # no table yet (older database): use the built-in list
+    if row:
+        _n, gw, status, vat, active = row
+        status = status if status in ('validated', 'unvalidated', 'unavailable') else 'unvalidated'
+        if str(active or 'Y').upper() == 'N':
+            status = 'unavailable'
+    else:
+        gw = CARRIER_GATEWAYS.get(name.lower().replace(' ', '')) or CARRIER_GATEWAYS.get(name.lower())
+        status, vat = ('validated', now_local().strftime('%Y-%m-%d')) if (gw and name == 'T-Mobile') else ('unvalidated', None)
+        if not gw:
+            status = 'unavailable'
+    retest_due = False
+    if status == 'validated':
+        try:
+            age = (now_local().date() - datetime.datetime.strptime(str(vat)[:10], '%Y-%m-%d').date()).days
+            retest_due = age > _carrier_retest_days()
+        except Exception:
+            retest_due = True
+        if retest_due:
+            status = 'unvalidated'
+    return {'carrier': name, 'gateway': gw or '', 'status': status, 'retest_due': retest_due}
+
 def sms_address(phone, carrier):
-    """Return the email-to-SMS address using the same gateway style as desktop."""
+    """Return the email-to-SMS address for a number on a carrier (from the CarrierGateways table), or (None, reason)."""
     if not phone or not carrier:
         return None, 'Missing phone or carrier'
-
-    raw_carrier = str(carrier).strip().lower()
-    gateway = CARRIER_GATEWAYS.get(raw_carrier.replace(' ', '')) or CARRIER_GATEWAYS.get(raw_carrier)
-    if not gateway:
+    info = carrier_info(carrier)
+    if not info['gateway']:
         return None, f'Unknown carrier: {carrier}'
-
+    if info['status'] == 'unavailable':
+        return None, f'Texting is not available on {info["carrier"]}'
     phone_digits = ''.join(c for c in str(phone) if c.isdigit())
     if len(phone_digits) == 11 and phone_digits.startswith('1'):
         phone_digits = phone_digits[1:]
     if len(phone_digits) != 10:
         return None, 'Invalid phone number format'
+    return f'{phone_digits}@{info["gateway"]}', None
 
-    return f'{phone_digits}@{gateway}', None
+# How a message reaches a player. kind: 'urgent' (rainouts, sub requests), 'simple' (short notices) or 'long' (reports, payout notices).
+#   urgent   validated carrier: text, and an email only if the text is rejected; unvalidated: text AND email; unavailable: email
+#   simple   text, and an email if the text is rejected or the carrier is unavailable
+#   long     email; plus a short "check your email" text for the important ones when the carrier is validated
+# A player who asked for email only is never texted; one who asked for text only is not emailed unless the text cannot be sent.
+def delivery_plan(kind, phone, carrier, email, contact_method='', important=False):
+    cm = str(contact_method or '').strip().lower()
+    addr, why = (None, 'prefers email') if cm == 'email' else sms_address(phone, carrier)
+    status = carrier_info(carrier)['status'] if addr else 'unavailable'
+    plan = {'text': addr, 'email': email or None, 'mode': 'none', 'nudge': False, 'note': why or ''}
+    if kind == 'long':
+        if email:
+            plan['mode'] = 'email'
+            plan['nudge'] = bool(important and addr and status == 'validated')
+        elif addr:
+            plan['mode'] = 'text'                                   # no email on file: the text has to carry the message
+        return plan
+    if not addr:
+        plan['mode'] = 'email' if email else 'none'
+    elif kind == 'urgent' and status == 'unvalidated' and email and cm != 'text':
+        plan['mode'] = 'both'
+    else:
+        plan['mode'] = 'text-first'                                 # an email only if the text is rejected
+    return plan
+
+def deliver(plan, text_body, email_subject, email_body=None, nudge_body=None, send=None):
+    """Carry out a delivery_plan. Returns {'ok', 'sent': ['text'|'email'...], 'reason'}. send(to_list, subject, body) -> bool."""
+    send = send or _send_mail
+    email_body = email_body if email_body is not None else text_body
+    sent = []
+    def txt(body):
+        return plan['text'] and send([plan['text']], email_subject, body)
+    def eml():
+        return plan['email'] and send([plan['email']], email_subject, email_body)
+    mode = plan['mode']
+    if mode == 'both':
+        if txt(text_body): sent.append('text')
+        if eml(): sent.append('email')
+    elif mode == 'text-first':
+        if txt(text_body): sent.append('text')
+        elif eml(): sent.append('email')
+    elif mode == 'email':
+        if eml(): sent.append('email')
+        if plan.get('nudge') and nudge_body and txt(nudge_body): sent.append('text')
+    elif mode == 'text':
+        if txt(text_body): sent.append('text')
+    return {'ok': bool(sent), 'sent': sent, 'reason': '' if sent else (plan.get('note') or ('send failed' if mode != 'none' else 'no contact info'))}
 
 
 def _table_cols(cur, table):
@@ -1391,17 +1510,14 @@ def add_player():
 
 
 def _send_permission_request(name, email, phone, carrier, added_by, token):
+    """Ask a new player if they may be contacted. A short notice (kind 'simple'): the text, or the email if the text cannot go."""
     link = f"{request.host_url.rstrip('/')}/sub-preferences?t={token}"
     body = (f"Hi {name.split()[0]},\n\n{added_by} added you to the Hugh's Golf League (Boone Links) list of possible subs.\n\n"
             f"Before anyone contacts you, please tell us if that's OK and how to reach you:\n{link}\n\n"
             f"If you'd rather not be contacted, use the same link and choose \"Do not contact me\". You won't hear from us again.")
-    sent_email = _send_mail([email], "Hugh's Golf League — OK to contact you about subbing?", body) if email else False
-    sent_text = False
-    if phone and carrier:
-        addr, _err = sms_address(phone, carrier)
-        if addr:
-            sent_text = _send_mail([addr], "Hugh's Golf", f"{added_by} added you as a possible sub for Hugh's Golf League. OK to contact you? {link}")
-    return link, sent_email, sent_text
+    plan = delivery_plan('simple', phone, carrier, email, '')
+    res = deliver(plan, f"{added_by} added you as a possible sub for Hugh's Golf League. OK to contact you? {link}", "Hugh's Golf", email_body=body)
+    return link, 'email' in res['sent'], 'text' in res['sent']
 
 
 def _is_private_host(host):
@@ -1410,17 +1526,17 @@ def _is_private_host(host):
             (h.startswith('172.') and h.split('.')[1:2] and h.split('.')[1].isdigit() and 16 <= int(h.split('.')[1]) <= 31) or h.endswith('.local'))
 
 
-def _contact_address(cur, name):
-    """(address, error) for one player: carrier text gateway, else email (also when they asked for email only)."""
+def _contact_plan(cur, name, kind, important=False):
+    """(delivery plan, error) for one player: see delivery_plan for how each kind of message reaches them."""
     cur.execute("SELECT Phone, CellCarrier, Email, COALESCE(ContactMethod,'') FROM Players WHERE Player=?", (name,))
     r = cur.fetchone()
     if not r:
         return None, 'not in the player file'
     phone, carrier, email, cm = r
-    addr, err = (None, 'email only') if cm == 'email' else sms_address(phone, carrier)
-    if not addr and email:
-        addr, err = email, None
-    return addr, (err or 'no contact info')
+    plan = delivery_plan(kind, phone, carrier, email, cm, important)
+    if plan['mode'] == 'none':
+        return None, plan['note'] or 'no contact info'
+    return plan, None
 
 
 @app.route('/send-rainout-text', methods=['POST'])
@@ -1465,8 +1581,8 @@ def send_rainout_text():
         cur = conn.cursor()
         now = now_local().strftime('%Y-%m-%d %H:%M')
         for name in players:
-            addr, err = _contact_address(cur, name)
-            if not addr:
+            plan, err = _contact_plan(cur, name, 'urgent')                 # rainouts: see delivery_plan
+            if not plan:
                 failed.append({'player': name, 'reason': err}); continue
             members_json = json.dumps(members_of.get(name, [])) if kind else None
             cur.execute("SELECT Token FROM RainoutNotice WHERE Date=? AND Player=? AND Test=? AND COALESCE(Kind,'')=?", (date, name, 1 if test else 0, kind))
@@ -1481,12 +1597,17 @@ def send_rainout_text():
                 text = ('TEST: ' if test else '') + f"{message} You're the point person for {', '.join(members_of[name])}: please let them know. Tap to confirm and tick off who you told: {base}/r/{token}"
             else:
                 text = ('TEST: ' if test else '') + f"{message} Please tap to confirm - no need to reply: {base}/r/{token}"
-            todo.append((name, addr, text))
+            todo.append((name, plan, text))
         conn.commit(); conn.close()
     # 2) Send with no lock and no open transaction.
-    for name, addr, text in todo:
-        if simulated or _send_mail([addr], "Hugh's Golf", text):
-            sent.append(name)
+    via = {}
+    for name, plan, text in todo:
+        if simulated:
+            sent.append(name); via[name] = ['simulated']
+            continue
+        res = deliver(plan, text, "Hugh's Golf")
+        if res['ok']:
+            sent.append(name); via[name] = res['sent']
         else:
             failed.append({'player': name, 'reason': 'send failed'})
     # 3) Log the result (short lock).
@@ -1496,7 +1617,7 @@ def send_rainout_text():
         _log_row(cur, 'send_rainout_text', f'{actor} sent a {"TEST " if test else ""}{"point-person " if kind else ""}rainout text for {date} to {len(sent)} of {len(players)}' + (' (sandbox: not actually sent)' if simulated else ''),
                  f'message={message} failed={[f["player"] for f in failed]}')
         conn.commit(); conn.close()
-    return jsonify({'ok': True, 'simulated': simulated, 'test': test, 'sent': sent, 'failed': failed})
+    return jsonify({'ok': True, 'simulated': simulated, 'test': test, 'sent': sent, 'failed': failed, 'via': via})
 
 
 @app.route('/rainout-point-people', methods=['GET', 'POST'])
@@ -1694,6 +1815,21 @@ def sub_preferences():
 # The player's login session (Players.ActiveSession) must match the session sent with the request, and only these fields can change.
 _PROFILE_CARRIERS = {'', 'AT&T', 'T-Mobile', 'Verizon', 'Sprint', 'Cricket', 'Boost', 'US Cellular', 'Metro', 'Other'}
 
+def _profile_carriers():
+    """Carriers a player may pick: the active ones in the CarrierGateways table (plus 'Other' and none); the old fixed list if there is no table."""
+    names = set(_PROFILE_CARRIERS)
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        try:
+            rows = conn.execute("SELECT Carrier FROM CarrierGateways WHERE COALESCE(Active,'Y') != 'N'").fetchall()
+        finally:
+            conn.close()
+        if rows:
+            names = {''} | {r[0] for r in rows} | {'Other'}
+    except Exception:
+        pass
+    return names
+
 def _clean_profile_phone(raw):
     """'' stays '', ten digits (a leading 1 is dropped) become 513-205-9457, anything else is None (not a usable cell number)."""
     import re as _re
@@ -1725,7 +1861,7 @@ def update_my_profile():
         changes['Phone'] = phone
     if 'carrier' in body:
         carrier = str(body.get('carrier') or '').strip()
-        if carrier not in _PROFILE_CARRIERS:
+        if carrier not in _profile_carriers():
             return jsonify({'ok': False, 'error': 'Pick a carrier from the list.'}), 400
         changes['CellCarrier'] = carrier
     for key, col in (('emailStats', 'EmailStats'), ('textStats', 'TextStats')):
@@ -1943,6 +2079,111 @@ def admin_remove_photo():
     return jsonify({'ok': True, 'modifiedMs': db_modified_ms()})
 
 
+# ── Admin ▸ Carriers: change a carrier's status, and send a test text ───────────────────────────────────────────────────────────
+def _admin_session_ok(cur, admin, token):
+    """True when the admin's own login session matches and the database says they are an admin (never the browser's word for it)."""
+    if not _session_matches(cur, admin, token):
+        return False
+    cur.execute('SELECT Officer FROM Players WHERE Player=?', (admin,))
+    return ((cur.fetchone() or [''])[0] or '').strip().lower() in _ADMIN_ROLES
+
+def _carrier_row_dict(cur, name):
+    cur.execute('SELECT Carrier, Gateway, Status, ValidatedAt, ValidatedBy, Note, Active FROM CarrierGateways WHERE LOWER(Carrier)=LOWER(?)', (name,))
+    r = cur.fetchone()
+    return dict(zip(('Carrier', 'Gateway', 'Status', 'ValidatedAt', 'ValidatedBy', 'Note', 'Active'), r)) if r else None
+
+@app.route('/carrier-admin', methods=['POST'])
+def carrier_admin():
+    import re as _re
+    b = request.get_json(silent=True) or {}
+    admin = str(b.get('admin') or '').strip(); token = str(b.get('sessionToken') or '').strip()
+    action = str(b.get('action') or ''); name = ' '.join(str(b.get('carrier') or '').split())
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        try:
+            cur = conn.cursor()
+            if not _admin_session_ok(cur, admin, token):
+                return jsonify({'ok': False, 'error': 'Only an admin who is signed in can change carriers.'}), 403
+            ensure_carrier_table(cur)
+            today = now_local().strftime('%Y-%m-%d')
+            note = str(b.get('note') or '').strip()[:200]
+            gateway = str(b.get('gateway') or '').strip().lower()
+            if gateway and not _re.fullmatch(r'[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}', gateway):
+                return jsonify({'ok': False, 'error': 'The gateway should look like txt.example.com (no @ and no spaces).'}), 400
+            if action == 'add':
+                if not (2 <= len(name) <= 30) or not gateway:
+                    return jsonify({'ok': False, 'error': 'Give the carrier a name and its gateway.'}), 400
+                if _carrier_row_dict(cur, name):
+                    return jsonify({'ok': False, 'error': f'{name} is already in the list.'}), 400
+                cur.execute('INSERT INTO CarrierGateways (Carrier, Gateway, Status, Note, Active) VALUES (?,?,?,?,?)', (name, gateway, 'unvalidated', note, 'Y'))
+                what = f'added {name} ({gateway})'
+            else:
+                row = _carrier_row_dict(cur, name)
+                if not row:
+                    return jsonify({'ok': False, 'error': 'That carrier is not in the list.'}), 404
+                name = row['Carrier']
+                if action == 'validate':
+                    cur.execute("UPDATE CarrierGateways SET Status='validated', ValidatedAt=?, ValidatedBy=?, Note=? WHERE Carrier=?", (today, admin, note or row['Note'] or '', name))
+                    what = f'marked {name} validated'
+                elif action == 'unavailable':
+                    cur.execute("UPDATE CarrierGateways SET Status='unavailable', ValidatedBy=?, Note=? WHERE Carrier=?", (admin, note or row['Note'] or '', name))
+                    what = f'marked {name} unavailable'
+                elif action == 'unvalidate':
+                    cur.execute("UPDATE CarrierGateways SET Status='unvalidated', ValidatedAt=NULL, ValidatedBy=?, Note=? WHERE Carrier=?", (admin, note or row['Note'] or '', name))
+                    what = f'set {name} back to unvalidated'
+                elif action == 'save':
+                    active = 'N' if str(b.get('active') or 'Y').upper() == 'N' else 'Y'
+                    cur.execute('UPDATE CarrierGateways SET Gateway=?, Note=?, Active=? WHERE Carrier=?', (gateway or row['Gateway'], note, active, name))
+                    what = f'edited {name}'
+                else:
+                    return jsonify({'ok': False, 'error': 'Unknown action.'}), 400
+            _log_row(cur, 'carrier_admin', f'{admin} {what}', f'ip={_audit_ip()}')
+            conn.commit()
+            out = _carrier_row_dict(cur, name)
+        finally:
+            conn.close()
+    return jsonify({'ok': True, 'row': out, 'modifiedMs': db_modified_ms()})
+
+@app.route('/carrier-test', methods=['POST'])
+def carrier_test():
+    """Send one test text to a player's number through a carrier's gateway. The admin confirms with the player that it arrived,
+    then marks the carrier validated. The sandbox only texts the admin's own number."""
+    b = request.get_json(silent=True) or {}
+    admin = str(b.get('admin') or '').strip(); token = str(b.get('sessionToken') or '').strip()
+    carrier = ' '.join(str(b.get('carrier') or '').split()); player = str(b.get('player') or '').strip()
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        try:
+            cur = conn.cursor()
+            if not _admin_session_ok(cur, admin, token):
+                return jsonify({'ok': False, 'error': 'Only an admin who is signed in can send a test.'}), 403
+            ensure_carrier_table(cur)
+            row = _carrier_row_dict(cur, carrier)
+            cur.execute('SELECT Phone FROM Players WHERE Player=?', (player,))
+            pr = cur.fetchone()
+            if not row or not pr:
+                return jsonify({'ok': False, 'error': 'Pick a carrier and a player.'}), 404
+            digits = ''.join(ch for ch in str(pr[0] or '') if ch.isdigit())
+            digits = digits[1:] if len(digits) == 11 and digits.startswith('1') else digits
+            if len(digits) != 10:
+                return jsonify({'ok': False, 'error': f'{player} has no usable cell number.'}), 400
+            if 'sandbox' in VERSION.lower() and player != admin:
+                return jsonify({'ok': False, 'error': 'The sandbox only texts your own number. Test other people on the live site.'}), 403
+        finally:
+            conn.close()
+    sent = _send_mail([f'{digits}@{row["Gateway"]}'], "Hugh's Golf", f"Hugh's Golf League test text ({row['Carrier']}). If you got this, please tell {admin}.")
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        try:
+            _log_row(conn.cursor(), 'carrier_test', f'{admin} sent a test text to {player} through {row["Carrier"]}' + ('' if sent else ' (the mail server refused it)'), f'ip={_audit_ip()}')
+            conn.commit()
+        finally:
+            conn.close()
+    if not sent:
+        return jsonify({'ok': False, 'error': 'The mail server refused the test. Check the league email settings.'}), 502
+    return jsonify({'ok': True, 'to': f'***-***-{digits[-4:]}'})
+
+
 @app.route('/need-sub', methods=['POST'])
 def need_sub():
     """Send a sub request to selected players, CC'ing the secretary."""
@@ -2076,8 +2317,9 @@ def need_sub():
 
             cur.execute("SELECT COALESCE(ContactMethod,'') FROM Players WHERE Player=?", (recipient,))
             _cm = (cur.fetchone() or [''])[0]
-            # Email (skipped if the player asked for text only)
-            if r['Email'] and _cm != 'text':
+
+            def do_email():
+                nonlocal email_count
                 try:
                     msg = MIMEMultipart()
                     msg['From']    = gmail_user
@@ -2093,33 +2335,53 @@ def need_sub():
                         if developer_email and developer_email not in recipients_list:
                             recipients_list.append(developer_email)
                         server.sendmail(gmail_user, recipients_list, msg.as_string())
-                    sent_this_one = True
                     email_count += 1
+                    return True
                 except Exception as e:
                     error = f'Email failed for {recipient}: {e}'
                     errors.append(error)
                     print(f'need_sub {error}')
+                    return False
 
-            # SMS (skipped if the player asked for email only)
-            if r['Phone'] and r['CellCarrier'] and _cm != 'email':
-                addr, err = sms_address(r['Phone'], r['CellCarrier'])
-                if addr:
-                    try:
-                        sms_msg = MIMEText(message)
-                        sms_msg['From']    = gmail_user
-                        sms_msg['To']      = addr
-                        sms_msg['Subject'] = "Hugh's Golf - Sub Needed"
-                        with _AuditSMTP('smtp.gmail.com', 465) as server:
-                            server.login(gmail_user, gmail_pw)
-                            server.send_message(sms_msg)
-                        sent_this_one = True
-                        sms_count += 1
-                    except Exception as e:
-                        error = f'SMS failed for {recipient}: {e}'
-                        errors.append(error)
-                        print(f'need_sub {error}')
-                else:
-                    errors.append(f'SMS skipped for {recipient}: {err}')
+            def do_sms(addr):
+                nonlocal sms_count
+                try:
+                    sms_msg = MIMEText(message)
+                    sms_msg['From']    = gmail_user
+                    sms_msg['To']      = addr
+                    sms_msg['Subject'] = "Hugh's Golf - Sub Needed"
+                    with _AuditSMTP('smtp.gmail.com', 465) as server:
+                        server.login(gmail_user, gmail_pw)
+                        server.send_message(sms_msg)
+                    sms_count += 1
+                    return True
+                except Exception as e:
+                    error = f'SMS failed for {recipient}: {e}'
+                    errors.append(error)
+                    print(f'need_sub {error}')
+                    return False
+
+            # A sub request is urgent (see delivery_plan): a tested carrier gets the text only (an email if it is rejected),
+            # an untested one gets the text and the email, an unavailable one gets the email. Officers are copied on the email.
+            plan = delivery_plan('urgent', r['Phone'], r['CellCarrier'], r['Email'], _cm)
+            did_email = did_sms = False
+            if plan['mode'] == 'both':
+                did_sms = do_sms(plan['text'])
+                did_email = do_email()
+            elif plan['mode'] == 'text-first':
+                did_sms = do_sms(plan['text'])
+                if not did_sms and plan['email']:
+                    did_email = do_email()
+            elif plan['mode'] == 'email':
+                did_email = do_email()
+            else:
+                errors.append(f'No way to reach {recipient}: {plan["note"] or "no contact info"}')
+            sent_this_one = did_email or did_sms
+            if did_sms and not did_email:                  # the officers' copy normally rides on the player's email, so send it on its own
+                copy_to = [e for e in officer_emails if e != r['Email']]
+                if developer_email and developer_email not in copy_to:
+                    copy_to.append(developer_email)
+                _send_mail(copy_to, f"{subject} (sent by text to {recipient})", message)
 
             if sent_this_one:
                 sent_count += 1
@@ -2391,7 +2653,7 @@ def notify_payout():
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        cur.execute("SELECT Email, Phone, CellCarrier FROM Players WHERE Player=?", (player,))
+        cur.execute("SELECT Email, Phone, CellCarrier, COALESCE(ContactMethod,'') AS ContactMethod FROM Players WHERE Player=?", (player,))
         row = cur.fetchone()
         conn.close()
     except Exception as e:
@@ -2449,25 +2711,31 @@ You've received a payout of ${amount:.2f} from the {source}.
         except Exception as e:
             errors.append(f'Email failed: {e}')
 
-    # Send to SMS via carrier gateway
-    if row['Phone'] and row['CellCarrier']:
-        addr, err = sms_address(row['Phone'], row['CellCarrier'])
-        if addr:
-            try:
-                by_text = f" (by {recorded_by})" if recorded_by else ""
-                sms_body = f"Hugh's Golf League: ${amount:.2f} payout from {source}{by_text}. {comment} Reply CONFIRMED if received."
-                msg = MIMEText(sms_body)
-                msg['From']    = gmail_user
-                msg['To']      = addr
-                msg['Subject'] = "Hugh's Golf League"
-                with _AuditSMTP('smtp.gmail.com', 465) as server:
-                    server.login(gmail_user, gmail_pw)
-                    server.send_message(msg)
-                sent_to.append('sms')
-            except Exception as e:
-                errors.append(f'SMS failed: {e}')
-        else:
-            errors.append(err)
+    # Text via the carrier gateway. A payout notice is a long, important message (see delivery_plan): the email carries it and a tested
+    # carrier also gets a short "check your email" text; with no email on file (or if the email failed) the text carries the details.
+    plan = delivery_plan('long', row['Phone'], row['CellCarrier'], row['Email'], row['ContactMethod'], important=True)
+    sms_body = None
+    by_text = f" (by {recorded_by})" if recorded_by else ""
+    detail_text = (f"Hugh's Golf League: ${amount:.2f} payout from {source}{by_text}. {comment} Reply CONFIRMED if received."
+                   if message_type != 'reminder' else f"Hugh's Golf League: you have an unpaid balance of ${amount:.2f} from {source}. {comment}")
+    if plan['text'] and (plan['mode'] == 'text' or 'email' not in sent_to):
+        sms_body = detail_text
+    elif plan['nudge'] and 'email' in sent_to:
+        sms_body = "Hugh's Golf League: a notice was emailed to you. Please check your email."
+    if sms_body and plan['text']:
+        try:
+            msg = MIMEText(sms_body)
+            msg['From']    = gmail_user
+            msg['To']      = plan['text']
+            msg['Subject'] = "Hugh's Golf League"
+            with _AuditSMTP('smtp.gmail.com', 465) as server:
+                server.login(gmail_user, gmail_pw)
+                server.send_message(msg)
+            sent_to.append('sms')
+        except Exception as e:
+            errors.append(f'SMS failed: {e}')
+    elif not row['Email'] and plan['note']:
+        errors.append(plan['note'])
 
     if not sent_to:
         return jsonify({'ok': False, 'error': '; '.join(errors) or 'No email or phone on file'}), 404
@@ -3482,6 +3750,8 @@ def ensure_schema():
         if 'PhotoKey' not in _table_cols(cur, 'Players'):            # random key of the player's photo file (see /upload-my-photo)
             cur.execute('ALTER TABLE Players ADD COLUMN PhotoKey TEXT')
             print(f'[{now_local():%H:%M:%S}] Schema check: added Players.PhotoKey')
+        conn.commit()
+        ensure_carrier_table(cur)                                    # carrier text gateways + their tested status
         conn.commit()
         # Player-added players: approval + contact permission
         p_cols = _table_cols(cur, 'Players')
