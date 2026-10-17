@@ -2901,7 +2901,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.6';
+const APP_VERSION = '20261018.7';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4056,6 +4056,7 @@ function ensureAppChangelogTable() {
   ensureCol('SeasonSettings', 'StandPlace3', 'REAL DEFAULT 90');
   ensureCol('SeasonSettings', 'Byes', 'INTEGER DEFAULT 0');          // in LS_MID_SEASON_OK, so it must exist
   ensureCol('Players', 'PhotoKey', 'TEXT');                          // random key of the player's photo file (see /upload-my-photo)
+  ensureCol('Players', 'PhotoReminders', 'INTEGER DEFAULT 0');       // how many times the player was asked to add a photo (see /photo-reminder)
   ensureCol('LeagueSettings', 'StartWeek', "TEXT DEFAULT '2nd'");   // which league day of April the season starts on (1st/2nd/3rd/4th/Last)
   // Backfill from LeagueParms if available and StandPlace1 is still null
   try {
@@ -4139,6 +4140,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.7', 'October 18, 2026', [
+    ['enhancement', 'Reminder to add your photo', 'When you log in without a photo, a popup asks you to add one (it opens My Profile on the photo button). You are asked at most three times, once per login, and never again once you have a photo or after the third reminder. PR #128.', 1],
   ]);
   ensureVersion('20261018.6', 'October 18, 2026', [
     ['summary', 'New Broadcast screen: send a message to a group and collect one-tap answers, for example who is in for next season.', '', 0],
@@ -19743,7 +19747,7 @@ async function checkPlayerProfileOnLogin(playerName) {
   if (!p.Phone)       missing.push('📱 Cell phone number');
   if (!p.CellCarrier) missing.push('📶 Cell carrier (for text notifications)');
 
-  if (!missing.length) return;
+  if (!missing.length) return false;
 
   // Build a nice modal
   const overlay = document.createElement('div');
@@ -19772,6 +19776,32 @@ async function checkPlayerProfileOnLogin(playerName) {
     overlay.remove();
     showPlayerSelfEditModal(playerName);
   };
+  return true;
+}
+
+// Asked at most PHOTO_REMINDER_MAX times (the server counts it per player), only when the player has no photo, once per browser session.
+async function maybeShowPhotoReminder(name) {
+  try {
+    if (!name || !db || !hasDbColumn('Players', 'PhotoKey') || playerPhotoMap()[name]) return;
+    if (hasDbColumn('Players', 'IsTest') && query(`SELECT 1 FROM Players WHERE Player=? AND COALESCE(IsTest,'N')='Y'`, [name]).length) return;   // test accounts are never asked
+    const wn = document.getElementById('whatsNewModal'); if (wn && getComputedStyle(wn).display !== 'none') return;   // the What's New popup goes first, this waits for the next login
+    const key = `hg_photo_reminded_${name}`; try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch (e) {}
+    const j = await (await fetch('/photo-reminder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player: name, sessionToken: playerSessionToken(name) }) })).json();
+    if (!j.ok || !j.show) return;
+    try { db.run('UPDATE Players SET PhotoReminders=? WHERE Player=?', [j.count, name]); } catch (e) {}
+    const overlay = document.createElement('div'); overlay.id = 'photoReminderOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+    overlay.innerHTML = `<div style="background:white;border-radius:12px;padding:26px;max-width:380px;width:90%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+      <div style="margin-bottom:10px">${playerAvatar(name, 72, true).replace('margin-right:6px;', '')}</div>
+      <div style="font-size:19px;font-weight:700;color:#1b5e20;margin-bottom:6px">📷 Add your photo</div>
+      <div style="font-size:14px;color:#444;margin-bottom:6px">Your photo shows next to your name in the league, so everybody knows who's who. It only takes a few seconds, from your phone's camera or gallery.</div>
+      <div style="font-size:11px;color:#999;margin-bottom:16px">Reminder ${j.count} of ${j.max}${j.count >= j.max ? ' — this is the last time we will ask.' : '.'}</div>
+      <div style="display:flex;gap:10px"><button id="photoReminderLater" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:13px">Not now</button>
+        <button id="photoReminderAdd" style="flex:2;padding:10px;background:#1b5e20;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Add photo</button></div></div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('photoReminderLater').onclick = () => overlay.remove();
+    document.getElementById('photoReminderAdd').onclick = () => { overlay.remove(); showPlayerSelfEditModal(name); };
+  } catch (e) { /* a reminder is never worth breaking a login */ }
 }
 
 function showPlayerSelfEditModal(playerName) {
@@ -19889,9 +19919,11 @@ async function loginSuccess(player, opts = {}) {
     checkPendingGallusSubmissions();
   }
   // Check player profile completion on login (players only)
+  let askedForContactInfo = false;
   if (currentUser.role === 'player') {
-    checkPlayerProfileOnLogin(player.Player);
+    askedForContactInfo = await checkPlayerProfileOnLogin(player.Player);
   }
+  if (!opts.impersonatedBy && !askedForContactInfo) maybeShowPhotoReminder(player.Player);   // never two popups at once, and never on someone else's count
 
   startHeartbeat();   // Who's On: record this login's IP and keep checking in while the app is open
   if (isOfficerRole()) setTimeout(() => { try { psAutoOnView(getCurrentSeason()); } catch (e) {} }, 4000);   // a fully scored post-season week that was never re-checked calculates itself
