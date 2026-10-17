@@ -2853,7 +2853,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261017.3';
+const APP_VERSION = '20261017.4';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4048,6 +4048,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261017.4', 'October 17, 2026', [
+    ['enhancement', 'My Profile: no sub question for regulars', 'Players on a team this season are no longer asked whether we may contact them about subbing; only players who might sub see that question and the line on the profile summary. PR #120.', 1],
   ]);
   ensureVersion('20261017.3', 'October 17, 2026', [
     ['summary', 'Players can add a photo to their profile, and it shows as a small circle beside their name on Standings and Matches.', '', 0],
@@ -19187,7 +19190,7 @@ function showMyProfile() {
     + '<div style="font-size:13px;margin-bottom:8px"><b>Phone:</b> ' + (p.Phone || 'not set') + '</div>'
     + '<div style="font-size:13px;margin-bottom:8px"><b>Carrier:</b> ' + (p.CellCarrier || 'not set') + '</div>'
     + '<div style="font-size:13px;margin-bottom:8px"><b>Stats:</b> ' + ([p.EmailStats === 'Y' ? 'email' : '', p.TextStats === 'Y' ? 'text' : ''].filter(Boolean).join(' and ') || 'none') + '</div>'
-    + '<div style="font-size:13px;margin-bottom:20px"><b>Sub requests:</b> ' + ({ email: 'by email', text: 'by text', both: 'by email and text', none: 'please don\'t ask me' }[profileContactChoice(p)] || 'not answered') + '</div>'
+    + (isRegularPlayer(p.Player) ? '<div style="margin-bottom:12px"></div>' : '<div style="font-size:13px;margin-bottom:20px"><b>Sub requests:</b> ' + ({ email: 'by email', text: 'by text', both: 'by email and text', none: 'please don\'t ask me' }[profileContactChoice(p)] || 'not answered') + '</div>')
     + '<div style="display:flex;gap:10px">'
     + '<button onclick="document.getElementById(\'myProfileOverlay\').remove()" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;cursor:pointer">Close</button>'
     + '<button onclick="document.getElementById(\'myProfileOverlay\').remove();showPlayerSelfEditModal(\'' + pn + '\');" style="flex:2;padding:10px;background:#1b5e20;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Edit</button>'
@@ -19283,6 +19286,10 @@ function refreshSelfPhoto(playerName) {
 // "My Profile" (click your name at the top): a player edits their own contact details and preferences. The server checks the player's
 // login session before it changes anything, and it only accepts these fields (never role, handicap, teams or whether they play).
 const PROFILE_CARRIERS = ['AT&T', 'T-Mobile', 'Verizon', 'Sprint', 'Cricket', 'Boost', 'US Cellular', 'Metro', 'Other'];
+// A regular (on a team this season) is not asked about subbing: that question is for players who might sub.
+function isRegularPlayer(name) {
+  try { return query(`SELECT 1 FROM Teams WHERE League="Hugh's" AND Year=? AND Player=? LIMIT 1`, [getCurrentSeason(), name]).length > 0; } catch (e) { return false; }
+}
 function profileContactChoice(p) {
   if (!p) return '';
   if (p.BlockSubs === 'Y') return 'none';
@@ -19360,7 +19367,7 @@ function showPlayerSelfEditModal(playerName) {
   const esc2 = t => String(t ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   const field = 'width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box';
   const lab = 'font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px';
-  const choice = profileContactChoice(p);
+  const choice = profileContactChoice(p), regular = isRegularPlayer(playerName);
   const radio = (val, text) => `<label style="display:block;padding:7px 10px;border:1px solid #e3e3e3;border-radius:6px;margin-bottom:6px;font-size:13px;cursor:pointer"><input type="radio" name="selfContact" value="${val}" ${choice === val ? 'checked' : ''}> ${text}</label>`;
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;overflow:auto';
@@ -19383,8 +19390,8 @@ function showPlayerSelfEditModal(playerName) {
       <div style="margin-bottom:16px"><label style="${lab}">SEND ME LEAGUE STATS</label>
         <label style="display:block;font-size:13px;margin-bottom:4px;cursor:pointer"><input type="checkbox" id="selfEmailStats" ${p.EmailStats === 'Y' ? 'checked' : ''}> By email</label>
         <label style="display:block;font-size:13px;cursor:pointer"><input type="checkbox" id="selfTextStats" ${p.TextStats === 'Y' ? 'checked' : ''}> By text</label></div>
-      <div style="margin-bottom:20px"><label style="${lab}">MAY WE CONTACT YOU WHEN A SUB IS NEEDED?</label>
-        ${radio('email', 'Yes, by email')}${radio('text', 'Yes, by text')}${radio('both', 'Yes, by email and text')}${radio('none', "No, don't ask me to sub")}</div>
+      ${regular ? '<div style="margin-bottom:20px"></div>' : `<div style="margin-bottom:20px"><label style="${lab}">MAY WE CONTACT YOU WHEN A SUB IS NEEDED?</label>
+        ${radio('email', 'Yes, by email')}${radio('text', 'Yes, by text')}${radio('both', 'Yes, by email and text')}${radio('none', "No, don't ask me to sub")}</div>`}
       <div style="display:flex;gap:10px">
         <button id="selfCancelBtn" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:13px">Cancel</button>
         <button id="selfSaveBtn" style="flex:2;padding:10px;background:#1b5e20;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Save</button>

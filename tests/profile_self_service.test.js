@@ -32,6 +32,13 @@ assert.strictEqual(choice({ ContactOK: 'Y', ContactMethod: 'both' }), 'both'); a
   // the server says no: the message is shown, nothing changes locally, the form stays open and can be tried again
   w = world({ resp: { ok: false, error: 'Please sign in again, then try once more.' } }); await w.c.doSelfProfileSave(w.overlay, 'Pat Example');
   assert.deepStrictEqual(w.alerts, ['Please sign in again, then try once more.']); assert.strictEqual(w.runs.length, 0); assert.strictEqual(w.removed(), 0); assert.strictEqual(w.els.selfSaveBtn.disabled, false);
+  // regulars (on a team this season) are not asked about subbing
+  const rw = vm.createContext({ query: (sql, args) => (args[1] === 'Reg Ular' ? [{ 1: 1 }] : []), getCurrentSeason: () => 2027 });
+  vm.runInContext(extract('isRegularPlayer'), rw);
+  assert.strictEqual(rw.isRegularPlayer('Reg Ular'), true); assert.strictEqual(rw.isRegularPlayer('Sub Candidate'), false);
+  const rf = vm.createContext({ query: () => { throw new Error('no Teams table'); }, getCurrentSeason: () => 2027 }); vm.runInContext(extract('isRegularPlayer'), rf); assert.strictEqual(rf.isRegularPlayer('x'), false, 'an error means: ask');
+  const modalSrc = extract('showPlayerSelfEditModal'); assert(/\$\{regular \? '<div style="margin-bottom:20px"><\/div>' : `<div[^`]*MAY WE CONTACT YOU/.test(modalSrc), 'the question is skipped for a regular');
+  assert(/isRegularPlayer\(p\.Player\) \? /.test(extract('showMyProfile')), 'and so is the summary line');
   // wiring: the modal asks for the stats and sub-request choices, and the old direct database write is gone
   const modal = extract('showPlayerSelfEditModal');
   ['selfEmail', 'selfPhone', 'selfCarrier', 'selfEmailStats', 'selfTextStats', 'selfContact'].forEach(id => assert(modal.includes(id), id));
