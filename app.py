@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261018.5-sandbox'
+VERSION    = '20261018.6-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1742,6 +1742,293 @@ def rainout_ack(token):
         body = f'<h1>Thanks, {first} ✅</h1><p class="ok">You are confirmed. See you at the next round!</p>'
     else:
         body = f'<h1>Hi {first} 👋</h1><p>{_html.escape(msg)}</p><form method="post"><button type="submit" style="{btn}">👍 Got it</button></form>'
+    return _PREF_PAGE.replace('%BODY%', body)
+
+
+# ── Broadcast: a freeform message to a chosen group, optionally asking each player for a one-tap answer ─────────────
+# Each recipient gets their own link (/b/<token>), so answers come back to the app and not to the league inbox. Officers only
+# (their own login session, checked against the database). A test goes only to the officer. The sandbox never texts real players.
+_BROADCAST_ASKS = {
+    'season': ('Yes, I\'m in', 'No, not next year', 'Not sure yet'),
+    'rsvp':   ('Yes, I\'ll be there', 'No, I can\'t make it', 'Not sure yet'),
+}
+_BROADCAST_ANSWERS = ('yes', 'no', 'maybe')
+
+def ensure_broadcast_tables(cur):
+    cur.execute("""CREATE TABLE IF NOT EXISTS Broadcast (
+        Id INTEGER PRIMARY KEY AUTOINCREMENT, Title TEXT, Message TEXT, Ask TEXT, Year INTEGER, Audience TEXT,
+        CreatedAt TEXT, CreatedBy TEXT, ClosedAt TEXT, Test INTEGER DEFAULT 0)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS BroadcastRecipient (
+        Token TEXT PRIMARY KEY, BroadcastId INTEGER, Player TEXT, SentAt TEXT, Via TEXT,
+        Answer TEXT, Note TEXT, AnsweredAt TEXT, AnsweredBy TEXT)""")
+    cur.execute("CREATE INDEX IF NOT EXISTS BroadcastRecipient_b ON BroadcastRecipient (BroadcastId, Player)")
+
+def _broadcast_audience(cur, group, year, names):
+    """[(player, reason)] for a group; reason is '' when the player may be sent the message. Test accounts never appear.
+    A player on that year's roster is contacted unless they asked not to be; anyone else only if they agreed to be contacted."""
+    cols = _table_cols(cur, 'Players')
+    c = lambda col, d: f"COALESCE({col},'{d}')" if col in cols else f"'{d}'"
+    cur.execute(f"SELECT Player, {c('Status', '')}, {c('ContactOK', '')}, {c('Participates', 'Y')}, {c('IsTest', 'N')} FROM Players ORDER BY Player")
+    info = {r[0]: r[1:] for r in cur.fetchall()}
+    cur.execute('SELECT DISTINCT Player FROM Teams WHERE League="Hugh\'s" AND Year=?', (year,))
+    roster = {r[0] for r in cur.fetchall()}
+    if group == 'names':
+        pool, strict = [n for n in names if n in info], True
+    elif group == 'team':
+        pool, strict = [p for p in info if p in roster], False
+    elif group == 'subs':
+        pool, strict = [p for p in info if p not in roster], False
+    else:
+        pool, strict = list(info), False
+    out = []
+    for p in sorted(set(pool)):
+        status, ok, part, test = info[p]
+        if test == 'Y':
+            continue
+        reason = ''
+        if status in ('Pending', 'Rejected', 'Prospect'):
+            reason = f'{status.lower()} player'
+        elif ok == 'N':
+            reason = 'asked not to be contacted'
+        elif part == 'N':
+            reason = 'not playing'
+        elif p not in roster and ok != 'Y':
+            reason = 'has not agreed to be contacted'
+            if not strict:
+                continue                                         # a big list of everyone who never agreed would only be noise
+        out.append((p, reason))
+    return out
+
+def _broadcast_text(message, link):
+    return f'{message} Tap to answer: {link}' if link else message
+
+@app.route('/broadcast', methods=['POST'])
+def broadcast():
+    b = request.get_json(silent=True) or {}
+    admin = str(b.get('admin') or '').strip(); token = str(b.get('sessionToken') or '').strip(); action = str(b.get('action') or '')
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        try:
+            cur = conn.cursor()
+            if not _admin_session_ok(cur, admin, token):
+                return jsonify({'ok': False, 'error': 'Only an admin who is signed in can send broadcasts.'}), 403
+            ensure_broadcast_tables(cur)
+            conn.commit()
+        finally:
+            conn.close()
+    if action == 'preview':
+        return _broadcast_preview(b)
+    if action == 'send':
+        return _broadcast_send(b, admin)
+    if action == 'list':
+        return _broadcast_list()
+    if action == 'status':
+        return _broadcast_status(b)
+    if action in ('answer', 'close', 'reopen'):
+        return _broadcast_change(b, admin, action)
+    return jsonify({'ok': False, 'error': 'Unknown action.'}), 400
+
+def _bc_year(b):
+    try: return int(b.get('year'))
+    except (TypeError, ValueError): return now_local().year
+
+def _bc_names(b):
+    return [str(n).strip() for n in (b.get('names') or []) if str(n).strip()][:150]
+
+def _bc_group(b):
+    g = str(b.get('group') or 'team')
+    return g if g in ('team', 'subs', 'all', 'names') else 'team'
+
+def _broadcast_preview(b):
+    conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+    try:
+        cur = conn.cursor()
+        rows, skipped = [], []
+        for name, reason in _broadcast_audience(cur, _bc_group(b), _bc_year(b), _bc_names(b)):
+            if reason:
+                skipped.append({'player': name, 'reason': reason}); continue
+            plan, err = _contact_plan(cur, name, 'urgent')
+            if not plan:
+                skipped.append({'player': name, 'reason': err or 'no contact info'}); continue
+            rows.append({'player': name, 'mode': plan['mode']})
+    finally:
+        conn.close()
+    return jsonify({'ok': True, 'recipients': rows, 'skipped': skipped})
+
+def _broadcast_send(b, admin):
+    test = bool(b.get('test'))
+    title = ' '.join(str(b.get('title') or '').split())[:80]
+    message = ' '.join(str(b.get('message') or '').split())[:300]
+    ask = str(b.get('ask') or '')
+    ask = ask if ask in _BROADCAST_ASKS else ''
+    remind_id = b.get('remindId')
+    if not message and not remind_id or not title and not remind_id:
+        return jsonify({'ok': False, 'error': 'A title and a message are required.'}), 400
+    if not test and _is_private_host(request.host):
+        return jsonify({'ok': False, 'error': 'Open the app from its public address (not the home-network address) so the links work on players\' phones.'}), 400
+    base = request.host_url.rstrip('/')
+    simulated = ('sandbox' in VERSION.lower()) and not test
+    now = now_local().strftime('%Y-%m-%d %H:%M')
+    todo, skipped = [], []
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
+        if remind_id:                                                   # ask again, only those who have not answered
+            cur.execute('SELECT Id, Title, Message, Ask, Year, Audience, ClosedAt FROM Broadcast WHERE Id=? AND COALESCE(Test,0)=0', (remind_id,))
+            r = cur.fetchone()
+            if not r or r[6]:
+                conn.close(); return jsonify({'ok': False, 'error': 'That question is closed or does not exist.'}), 400
+            bid, title, message, ask, year, audience = r[0], r[1], r[2], r[3] or '', r[4], r[5]
+            cur.execute("SELECT Player FROM BroadcastRecipient WHERE BroadcastId=? AND COALESCE(Answer,'')='' ORDER BY Player", (bid,))
+            names = [x[0] for x in cur.fetchall()]
+            people = [(n, '') for n in names]
+        else:
+            year, group = _bc_year(b), _bc_group(b)
+            if test:
+                people = [(admin, '')]
+            else:
+                people = _broadcast_audience(cur, group, year, _bc_names(b))
+            audience = group
+            cur.execute('INSERT INTO Broadcast (Title, Message, Ask, Year, Audience, CreatedAt, CreatedBy, Test) VALUES (?,?,?,?,?,?,?,?)',
+                        (title, message, ask, year, audience, now, admin, 1 if test else 0))
+            bid = cur.lastrowid
+        for name, reason in people:
+            if reason:
+                skipped.append({'player': name, 'reason': reason}); continue
+            plan, err = _contact_plan(cur, name, 'urgent')
+            if not plan:
+                skipped.append({'player': name, 'reason': err or 'no contact info'}); continue
+            cur.execute('SELECT Token FROM BroadcastRecipient WHERE BroadcastId=? AND Player=?', (bid, name))
+            row = cur.fetchone()
+            tok = row[0] if row else uuid.uuid4().hex[:16]
+            if not row:
+                cur.execute('INSERT INTO BroadcastRecipient (Token, BroadcastId, Player) VALUES (?,?,?)', (tok, bid, name))
+            link = f'{base}/b/{tok}' if ask else ''
+            text = ('TEST: ' if test else '') + _broadcast_text(message, link)
+            todo.append((name, tok, plan, text, link))
+        conn.commit(); conn.close()
+    sent, failed, via = [], [], {}
+    for name, tok, plan, text, link in todo:
+        if simulated:
+            sent.append(name); via[name] = ['simulated']; continue
+        email_body = f"{message}\n\n" + (f"Please tell us here (one tap, no login):\n{link}\n\n" if link else '') + "Hugh's Golf League"
+        res = deliver(plan, text, title or "Hugh's Golf", email_body=email_body)
+        if res['ok']:
+            sent.append(name); via[name] = res['sent']
+        else:
+            failed.append({'player': name, 'reason': res['reason'] or 'send failed'})
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
+        for name, tok, plan, text, link in todo:
+            if name in sent:
+                cur.execute('UPDATE BroadcastRecipient SET SentAt=?, Via=? WHERE Token=?', (now, ','.join(via.get(name, [])), tok))
+        _log_row(cur, 'broadcast', f'{admin} sent {"a TEST " if test else ""}broadcast "{title}" to {len(sent)} of {len(todo) + len(skipped)}' + (' (sandbox: not actually sent)' if simulated else ''),
+                 f'id={bid} ask={ask} skipped={[s["player"] for s in skipped]} failed={[f["player"] for f in failed]}')
+        conn.commit(); conn.close()
+    return jsonify({'ok': True, 'id': bid, 'simulated': simulated, 'test': test, 'sent': sent, 'failed': failed, 'skipped': skipped, 'via': via})
+
+def _broadcast_list():
+    conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+    try:
+        cur = conn.cursor()
+        cur.execute("""SELECT B.Id, B.Title, B.Ask, B.Year, B.CreatedAt, B.CreatedBy, COALESCE(B.ClosedAt,''),
+              COUNT(R.Token), SUM(CASE WHEN COALESCE(R.Answer,'')!='' THEN 1 ELSE 0 END)
+              FROM Broadcast B LEFT JOIN BroadcastRecipient R ON R.BroadcastId=B.Id WHERE COALESCE(B.Test,0)=0 GROUP BY B.Id ORDER BY B.Id DESC LIMIT 50""")
+        rows = [dict(zip(('id', 'title', 'ask', 'year', 'createdAt', 'createdBy', 'closedAt', 'recipients', 'answered'), r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    for r in rows: r['answered'] = r['answered'] or 0
+    return jsonify({'ok': True, 'broadcasts': rows})
+
+def _broadcast_status(b):
+    conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+    try:
+        cur = conn.cursor()
+        cur.execute('SELECT Id, Title, Message, Ask, Year, CreatedAt, CreatedBy, COALESCE(ClosedAt,\'\') FROM Broadcast WHERE Id=? AND COALESCE(Test,0)=0', (b.get('id'),))
+        r = cur.fetchone()
+        if not r:
+            return jsonify({'ok': False, 'error': 'No such broadcast.'}), 404
+        cur.execute("SELECT Player, COALESCE(Answer,''), COALESCE(Note,''), COALESCE(AnsweredAt,''), COALESCE(Via,''), COALESCE(SentAt,'') FROM BroadcastRecipient WHERE BroadcastId=? ORDER BY Player", (r[0],))
+        rows = [dict(zip(('player', 'answer', 'note', 'answeredAt', 'via', 'sentAt'), x)) for x in cur.fetchall()]
+    finally:
+        conn.close()
+    head = dict(zip(('id', 'title', 'message', 'ask', 'year', 'createdAt', 'createdBy', 'closedAt'), r))
+    return jsonify({'ok': True, 'broadcast': head, 'rows': rows, 'labels': list(_BROADCAST_ASKS.get(head['ask'], ('Yes', 'No', 'Not sure')))})
+
+def _broadcast_change(b, admin, action):
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT Id, Title FROM Broadcast WHERE Id=? AND COALESCE(Test,0)=0', (b.get('id'),))
+            r = cur.fetchone()
+            if not r:
+                return jsonify({'ok': False, 'error': 'No such broadcast.'}), 404
+            now = now_local().strftime('%Y-%m-%d %H:%M')
+            if action == 'answer':
+                player, ans = str(b.get('player') or '').strip(), str(b.get('answer') or '')
+                if ans not in _BROADCAST_ANSWERS and ans != '':
+                    return jsonify({'ok': False, 'error': 'Answer must be yes, no or maybe.'}), 400
+                cur.execute('SELECT Token FROM BroadcastRecipient WHERE BroadcastId=? AND Player=?', (r[0], player))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({'ok': False, 'error': f'{player} was not sent this one.'}), 404
+                cur.execute('UPDATE BroadcastRecipient SET Answer=?, Note=COALESCE(?,Note), AnsweredAt=?, AnsweredBy=? WHERE Token=?',
+                            (ans, str(b.get('note') or '')[:200] or None, now if ans else None, admin if ans else None, row[0]))
+                what = f'recorded {player}: {ans or "cleared"} for "{r[1]}"'
+            elif action == 'close':
+                cur.execute('UPDATE Broadcast SET ClosedAt=? WHERE Id=?', (now, r[0])); what = f'closed "{r[1]}"'
+            else:
+                cur.execute('UPDATE Broadcast SET ClosedAt=NULL WHERE Id=?', (r[0],)); what = f'reopened "{r[1]}"'
+            _log_row(cur, 'broadcast', f'{admin} {what}', f'id={r[0]}')
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/b/<token>', methods=['GET', 'POST'])
+def broadcast_page(token):
+    """Public one-tap page from a broadcast text. GET only shows it (so link previews never answer); the buttons POST."""
+    import html as _html
+    token = (token or '').strip()[:32]
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        cur = conn.cursor()
+        try:
+            cur.execute("""SELECT R.Player, B.Title, B.Message, B.Ask, COALESCE(B.ClosedAt,''), COALESCE(R.Answer,''), COALESCE(R.Note,''), B.Id
+                           FROM BroadcastRecipient R JOIN Broadcast B ON B.Id=R.BroadcastId WHERE R.Token=?""", (token,))
+            row = cur.fetchone()
+        except sqlite3.OperationalError:
+            row = None
+        if not row:
+            conn.close()
+            return _PREF_PAGE.replace('%BODY%', '<h1>Link not valid</h1><p>Please ask the league admin.</p>'), 404
+        name, title, msg, ask, closed, ans, note, bid = row
+        if request.method == 'POST' and ask and not closed:
+            new = (request.form.get('answer') or '').strip()
+            if new in _BROADCAST_ANSWERS:
+                ans = new; note = (request.form.get('note') or '').strip()[:200]
+                cur.execute('UPDATE BroadcastRecipient SET Answer=?, Note=?, AnsweredAt=?, AnsweredBy=? WHERE Token=?',
+                            (ans, note, now_local().strftime('%Y-%m-%d %H:%M'), name, token))
+                _log_row(cur, 'broadcast_answer', f'{name} answered "{title}": {ans}', f'id={bid} ip={_audit_ip()}')
+                conn.commit()
+        conn.close()
+    first = _html.escape(name.split()[0])
+    labels = _BROADCAST_ASKS.get(ask, ('Yes', 'No', 'Not sure yet'))
+    shown = dict(zip(_BROADCAST_ANSWERS, labels))
+    body = f'<h1>Hi {first} 👋</h1><p>{_html.escape(msg)}</p>'
+    if ask and ans:
+        body += f'<p class="ok">Thanks, you answered: {_html.escape(shown[ans])} ✅</p>' + ('' if closed else '<p style="color:#666;font-size:14px">You can change your answer below any time.</p>')
+    elif ask and closed:
+        body += '<p>This question is closed.</p>'
+    if ask and not closed:
+        btn = 'margin-top:10px;padding:14px 22px;font-size:17px;border:0;border-radius:8px;width:100%;color:#fff;background:'
+        body += ('<form method="post"><input type="text" name="note" maxlength="200" placeholder="Add a note (optional)" value="' + _html.escape(note) +
+                 '" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:15px;margin:8px 0">' +
+                 f'<button name="answer" value="yes" style="{btn}#1b4d2e">{_html.escape(labels[0])}</button>' +
+                 f'<button name="answer" value="no" style="{btn}#8d2b2b">{_html.escape(labels[1])}</button>' +
+                 f'<button name="answer" value="maybe" style="{btn}#6b6b6b">{_html.escape(labels[2])}</button></form>')
     return _PREF_PAGE.replace('%BODY%', body)
 
 
@@ -3800,6 +4087,7 @@ def ensure_schema():
             print(f'[{now_local():%H:%M:%S}] Schema check: added Players.CellConfirmed')
         conn.commit()
         ensure_carrier_table(cur)                                    # carrier text gateways + their tested status
+        ensure_broadcast_tables(cur)                                 # broadcast messages and the one-tap answers
         conn.commit()
         # Player-added players: approval + contact permission
         p_cols = _table_cols(cur, 'Players')

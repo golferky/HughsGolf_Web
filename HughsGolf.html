@@ -1428,6 +1428,7 @@
       <button onclick="showAdminSection('loginactivity')" id="adminGroupLogging" class="admin-btn">📜 Logging</button>
       <button onclick="showAdminSection('pdfs')" id="adminBtnPdfs" class="admin-btn">📄 PDFs</button>
       <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
+      <button onclick="showAdminSection('broadcast')" id="adminBtnBroadcast" class="admin-btn">📣 Broadcast</button>
       <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">💾 Backups</button>
       <button onclick="showAdminSection('proposals')" id="adminBtnProposals" class="admin-btn">📋 Proposals</button>
       <button onclick="showAdminSection('changelog')" id="adminBtnChangelog" class="admin-btn">📝 Changelog</button>
@@ -1901,6 +1902,34 @@
           <button onclick="document.getElementById('proposalModal').style.display='none'" style="padding:9px 20px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:13px">Cancel</button>
           <button onclick="saveProposal()" style="padding:9px 20px;background:var(--green);color:white;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer">Save</button>
         </div>
+      </div>
+    </div>
+
+    <div id="adminBroadcast" style="display:none">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">📣 Broadcast a message</div>
+        <div style="padding:16px">
+          <div style="font-size:13px;color:#555;margin-bottom:12px">Send one message to a group, and optionally ask each player for a one-tap answer (for example, are they in for next season). Each player gets their own link, so answers come back here instead of to anyone's inbox. Players who asked not to be contacted, test accounts and players with no phone or email are left out. <b>Nothing is sent until you press Send, and you see who gets it first.</b></div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+            <div class="filter-group"><label>Title (also the email subject)</label><input id="bcTitle" maxlength="80" style="padding:7px;border:1px solid #ccc;border-radius:6px;font-size:13px;width:260px"></div>
+            <div class="filter-group"><label>Season</label><select id="bcYear" onchange="bcFill(true)"></select></div>
+            <div class="filter-group"><label>Send to</label><select id="bcGroup" onchange="bcGroupChanged()"></select></div>
+            <div class="filter-group"><label>Ask for an answer</label><select id="bcAsk" onchange="bcFill(true)"><option value="season">Are you in next season? (Yes / No / Not sure)</option><option value="rsvp">Can you make it? (Yes / No / Not sure)</option><option value="">No question, just a message</option></select></div>
+          </div>
+          <div id="bcNamesBox" style="display:none;border:1px solid #ddd;border-radius:6px;padding:8px 10px;margin-bottom:10px;max-height:180px;overflow:auto;font-size:12px"></div>
+          <textarea id="bcMsg" rows="3" maxlength="300" oninput="bcMsgTouched=true" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;font-family:inherit"></textarea>
+          <div style="font-size:11px;color:#777;margin:4px 0 8px">Up to 300 characters. With a question, each text ends with “Tap to answer: &lt;their link&gt;”.</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+            <button onclick="bcPreview()" style="padding:8px 16px;background:white;color:#1b5e20;border:1px solid #1b5e20;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">👀 Preview who gets it</button>
+            <button onclick="bcSend(true)" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">🧪 Send a test to me only</button>
+            <button onclick="bcSend(false)" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">📲 Send to everyone in the list</button>
+          </div>
+          <div id="bcResult" style="font-size:13px"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">📊 Answers</div>
+        <div style="padding:16px"><div id="bcAnswers">Loading…</div></div>
       </div>
     </div>
 
@@ -2872,7 +2901,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.5';
+const APP_VERSION = '20261018.6';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4110,6 +4139,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.6', 'October 18, 2026', [
+    ['summary', 'New Broadcast screen: send a message to a group and collect one-tap answers, for example who is in for next season.', '', 0],
+    ['enhancement', 'Broadcast with one-tap answers', 'Admin → Broadcast sends one message to the players on a season\'s teams, to subs who agreed to be contacted, to everyone eligible, or to hand-picked players, by text and email following the carrier rules. With a question (are you in next season? / can you make it?) each player gets their own link with Yes / No / Not sure and an optional note, and can change their answer until you close the question. You see who answered what, who has not, can remind just the no-answers, and can record an answer a player gave you in person. Players who asked not to be contacted, test accounts and players with no phone or email are left out; you preview who gets it, and can send a test to yourself first. PR #127.', 1],
   ]);
   ensureVersion('20261018.5', 'October 18, 2026', [
     ['summary', 'Each player\'s carrier can now be checked: send a test text, and once it arrives that player is confirmed.', '', 0],
@@ -11847,7 +11880,7 @@ function loadSchedule() {
 }
 
 // ── ADMIN TAB ──
-const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals','awards','balance','backlog','newseason','carriers'];
+const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals','awards','balance','backlog','newseason','carriers','broadcast'];
 const ADMIN_GROUPS = {
   tables: ['players','teams','subs','leaguesettings','carriers'],
   logging: ['loginactivity','serverlog','pageviews','whoson','emaillog']
@@ -12175,7 +12208,7 @@ function showAdminSection(section) {
     const btn = document.getElementById(`adminGroup${g}`);
     if (btn) btn.className = 'admin-btn' + (group === g.toLowerCase() || (g === 'Sql' && section === 'sql') ? ' active-admin-btn' : '');
   });
-  ['pdfs','rainout','sync','gallus','backups','changelog','backlog','newseason','expenses','compare','proposals'].forEach(s => {
+  ['pdfs','rainout','broadcast','sync','gallus','backups','changelog','backlog','newseason','expenses','compare','proposals'].forEach(s => {
     const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
     if (btn) btn.className = 'admin-btn' + (s===section?' active-admin-btn':'');
   });
@@ -12201,6 +12234,7 @@ function showAdminSection(section) {
   if (section==='backlog')   loadBacklog();
   if (section==='newseason') loadNewSeasonSetup();
   if (section==='carriers') loadCarriersAdmin();
+  if (section==='broadcast') loadBroadcastAdmin();
   if (section==='proposals') loadProposalsAdmin();
   if (section==='expenses')  loadExpenses();
   if (section==='compare')   loadCompareSection();
@@ -19487,6 +19521,117 @@ async function carrierPlayerClick(el, action) {
   if (action === 'test') carrierTestPopup(r.carrier, player);
   else if (action === 'confirm') { if (confirm(`Only confirm this after ${player} told you the test text arrived.\n\nConfirm ${player} at ${r.Phone} on ${r.carrier}?`)) await carrierPlayerAction('confirm_player', player, r.carrier); }
   else if (action === 'clear') { if (confirm(`Clear the confirmation for ${player}? Urgent messages will go to them by text and email again.`)) await carrierPlayerAction('unconfirm_player', player, r.carrier); }
+}
+// ── Broadcast: a freeform message to a group, optionally with a one-tap answer (the server decides who is eligible) ──
+let bcMsgTouched = false, bcOpenId = null;
+const bcPost = body => carrierCall('/broadcast', body);
+function bcYears() { try { return query(`SELECT DISTINCT Year FROM Teams WHERE League="Hugh's" ORDER BY Year DESC`).map(r => r.Year); } catch (e) { return []; } }
+function loadBroadcastAdmin() {
+  const ys = bcYears(), ysel = document.getElementById('bcYear'); if (!ysel) return;
+  const keep = ysel.value; ysel.innerHTML = (ys.length ? ys : [new Date().getFullYear()]).map(y => `<option value="${y}">${y} teams</option>`).join(''); if (keep) ysel.value = keep;
+  bcFill(false); bcGroupChanged(); bcLoadList(bcOpenId);
+}
+function bcGroupOptions(y) {
+  return [['team', `Players on a ${y} team`], ['subs', 'Subs who agreed to be contacted'], ['all', 'Everyone eligible'], ['names', 'Pick players…']];
+}
+function bcFill(force) {                              // the title and message start from a template until you type your own
+  const y = parseInt(document.getElementById('bcYear').value) || new Date().getFullYear(), ask = document.getElementById('bcAsk').value;
+  const gsel = document.getElementById('bcGroup'), cur = gsel.value; gsel.innerHTML = bcGroupOptions(y).map(o => `<option value="${o[0]}">${escapeHtml(o[1])}</option>`).join(''); if (cur) gsel.value = cur;
+  const title = document.getElementById('bcTitle'), msg = document.getElementById('bcMsg');
+  if (!bcMsgTouched || force && !msg.value.trim()) {
+    if (ask === 'season') { title.value = `Are you in for ${y + 1}?`; msg.value = `Hugh's Golf League: are you in for the ${y + 1} season?`; }
+    else if (ask === 'rsvp') { title.value = 'Can you make it?'; msg.value = `Hugh's Golf League: can you make it?`; }
+    else if (!title.value) { title.value = "Hugh's Golf League"; }
+    bcMsgTouched = false;
+  }
+}
+function bcGroupChanged() {
+  const box = document.getElementById('bcNamesBox'), g = document.getElementById('bcGroup').value; if (!box) return;
+  box.style.display = g === 'names' ? '' : 'none';
+  if (g === 'names' && !box.innerHTML) {
+    let names = []; try { names = query(`SELECT Player FROM Players WHERE COALESCE(IsTest,'N') != 'Y' ORDER BY Player`).map(r => r.Player); } catch (e) {}
+    box.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:4px 14px">' + names.map(n => `<label><input type="checkbox" class="bcName" value="${escapeHtml(n)}"> ${escapeHtml(n)}</label>`).join('') + '</div>';
+  }
+}
+function bcBody(extra) {
+  return { group: document.getElementById('bcGroup').value, year: parseInt(document.getElementById('bcYear').value), ask: document.getElementById('bcAsk').value,
+    names: [...document.querySelectorAll('.bcName:checked')].map(e => e.value), title: document.getElementById('bcTitle').value.trim(), message: document.getElementById('bcMsg').value.trim(), ...extra };
+}
+function bcSummary(rec) {
+  const n = m => rec.filter(r => m.includes(r.mode)).length;
+  return { both: n(['both']), text: n(['text', 'text-first']), email: n(['email']), total: rec.length };
+}
+async function bcPreview() {
+  const out = document.getElementById('bcResult'); out.textContent = 'Checking…';
+  const j = await bcPost({ action: 'preview', ...bcBody() });
+  if (!j.ok) { out.innerHTML = `<span style="color:#c62828">${escapeHtml(j.error || 'Failed')}</span>`; return; }
+  const s = bcSummary(j.recipients);
+  out.innerHTML = `<div style="border:1px solid #ddd;border-radius:6px;padding:8px 10px"><b>${s.total} people will get it</b>: ${s.both} by text and email (their number is not confirmed yet), ${s.text} by text, ${s.email} by email only.
+    <div style="margin-top:4px;color:#2e7d32">${j.recipients.map(r => escapeHtml(r.player)).join(', ') || 'Nobody.'}</div>
+    ${j.skipped.length ? `<div style="margin-top:6px;color:#c62828">Left out (${j.skipped.length}): ${j.skipped.map(x => escapeHtml(x.player) + ' (' + escapeHtml(x.reason) + ')').join(', ')}</div>` : ''}</div>`;
+  return j;
+}
+async function bcSend(test) {
+  const out = document.getElementById('bcResult'), b = bcBody();
+  if (!b.title || !b.message) { alert('Give the broadcast a title and a message first.'); return; }
+  let extra = {};
+  if (!test) {
+    const j = await bcPreview(); if (!j) return;
+    if (!j.recipients.length) { alert('Nobody would get this. Change who it goes to.'); return; }
+    const s = bcSummary(j.recipients);
+    if (!confirm(`Send this to ${s.total} people (${s.both} by text and email, ${s.text} by text, ${s.email} by email)?\n\n${b.message}${b.ask ? '\n\n(each text ends with their own answer link)' : ''}\n\nThis cannot be taken back.`)) return;
+  } else if (!confirm('Send this test only to you (real text and email to your own number)?')) return;
+  out.textContent = 'Sending…';
+  const j = await bcPost({ action: 'send', test: !!test, ...b, ...extra });
+  if (!j.ok) { out.innerHTML = `<span style="color:#c62828">${escapeHtml(j.error || 'Failed')}</span>`; return; }
+  out.innerHTML = (j.simulated ? '<b>Sandbox: nothing was actually sent to players.</b> ' : '') + (j.test ? '🧪 Test sent to you. Tap its link on your phone to see the answer page. ' : '✓ ') + `${j.sent.length} sent`
+    + (j.failed.length ? ` · <span style="color:#c62828">failed: ${j.failed.map(f => escapeHtml(f.player) + ' (' + escapeHtml(f.reason) + ')').join(', ')}</span>` : '')
+    + (j.skipped.length ? ` · left out: ${j.skipped.map(x => escapeHtml(x.player)).join(', ')}` : '');
+  if (!test) { bcOpenId = j.id; bcLoadList(j.id); }
+}
+async function bcLoadList(selectId) {
+  const box = document.getElementById('bcAnswers'); if (!box) return;
+  const j = await bcPost({ action: 'list' });
+  if (!j.ok) { box.innerHTML = `<span style="color:#c62828">${escapeHtml(j.error || 'Could not load.')}</span>`; return; }
+  if (!j.broadcasts.length) { box.innerHTML = '<div style="font-size:13px;color:#555">Nothing sent yet.</div>'; return; }
+  const id = selectId && j.broadcasts.some(b => b.id === selectId) ? selectId : j.broadcasts[0].id; bcOpenId = id;
+  box.innerHTML = `<div style="margin-bottom:10px"><select id="bcPick" onchange="bcOpenId=parseInt(this.value);bcShow(bcOpenId)" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:13px">`
+    + j.broadcasts.map(b => `<option value="${b.id}"${b.id === id ? ' selected' : ''}>${escapeHtml(b.createdAt)} · ${escapeHtml(b.title)} (${b.answered}/${b.recipients} answered${b.closedAt ? ', closed' : ''})</option>`).join('') + `</select></div><div id="bcDetail"></div>`;
+  bcShow(id);
+}
+async function bcShow(id) {
+  const box = document.getElementById('bcDetail'); if (!box) return;
+  const j = await bcPost({ action: 'status', id });
+  if (!j.ok) { box.innerHTML = `<span style="color:#c62828">${escapeHtml(j.error || 'Could not load.')}</span>`; return; }
+  const b = j.broadcast, L = { yes: j.labels[0], no: j.labels[1], maybe: j.labels[2] }, rows = j.rows;
+  const grp = a => rows.filter(r => r.answer === a), none = rows.filter(r => !r.answer);
+  const names = list => list.map(r => `<span title="${escapeHtml(r.answeredAt)}">${escapeHtml(r.player)}${r.note ? ` <i style="color:#666">“${escapeHtml(r.note)}”</i>` : ''}</span>`).join(', ') || '—';
+  const sel = r => `<select data-p="${escapeHtml(r.player)}" onchange="bcRecord(this)" style="font-size:11px;padding:2px"><option value="">record an answer…</option><option value="yes">${escapeHtml(L.yes)}</option><option value="no">${escapeHtml(L.no)}</option><option value="maybe">${escapeHtml(L.maybe)}</option></select>`;
+  const sect = (color, label, list) => `<div style="margin:8px 0"><b style="color:${color}">${escapeHtml(label)} (${list.length})</b><div style="font-size:13px;margin-top:2px">${names(list)}</div></div>`;
+  box.innerHTML = `<div style="font-size:13px;color:#555;margin-bottom:6px">“${escapeHtml(b.message)}” — sent ${escapeHtml(b.createdAt)} by ${escapeHtml(b.createdBy)}${b.closedAt ? ` · <b>closed ${escapeHtml(b.closedAt)}</b>` : ''}</div>`
+    + (b.ask ? sect('#2e7d32', L.yes, grp('yes')) + sect('#c62828', L.no, grp('no')) + sect('#e65100', L.maybe, grp('maybe')) : '')
+    + `<div style="margin:8px 0"><b style="color:#555">${b.ask ? 'No answer yet' : 'Sent to'} (${none.length + (b.ask ? 0 : rows.length - none.length)})</b>
+       <div style="font-size:13px;margin-top:4px">${(b.ask ? none : rows).map(r => `<div style="margin:3px 0">${escapeHtml(r.player)} <span style="color:#999;font-size:11px">${escapeHtml(r.via || 'not sent')}</span>${b.ask ? ' ' + sel(r) : ''}</div>`).join('') || '—'}</div></div>`
+    + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${b.ask && none.length && !b.closedAt ? `<button onclick="bcRemind(${b.id}, ${none.length})" style="padding:7px 14px;background:#e65100;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">🔁 Remind the ${none.length} who haven't answered</button>` : ''}
+       ${b.ask ? `<button onclick="bcClose(${b.id}, ${b.closedAt ? 'false' : 'true'})" style="padding:7px 14px;border:1px solid #888;background:white;border-radius:6px;cursor:pointer;font-size:13px">${b.closedAt ? 'Reopen the question' : 'Close the question'}</button>` : ''}
+       <button onclick="bcShow(${b.id})" style="padding:7px 14px;border:1px solid #ccc;background:white;border-radius:6px;cursor:pointer;font-size:13px">↻ Refresh</button></div>`;
+}
+async function bcRecord(el) {
+  if (!el.value) return;
+  const j = await bcPost({ action: 'answer', id: bcOpenId, player: el.dataset.p, answer: el.value });
+  if (!j.ok) alert(j.error || 'Could not save.');
+  bcLoadList(bcOpenId);
+}
+async function bcRemind(id, n) {
+  if (!confirm(`Send the question again to the ${n} who haven't answered? Each gets their same link.`)) return;
+  const j = await bcPost({ action: 'send', remindId: id });
+  alert(j.ok ? `${j.simulated ? 'Sandbox: nothing was actually sent. ' : ''}Sent again to ${j.sent.length}${j.failed.length ? `; couldn't reach ${j.failed.map(f => f.player).join(', ')}` : ''}.` : (j.error || 'Failed'));
+  bcShow(id);
+}
+async function bcClose(id, close) {
+  const j = await bcPost({ action: close ? 'close' : 'reopen', id });
+  if (!j.ok) alert(j.error || 'Could not save.');
+  bcLoadList(id);
 }
 async function carrierClick(el, action) {
   const name = el.dataset.c, row = carrierRows().find(r => r.Carrier === name); if (!row) return;
