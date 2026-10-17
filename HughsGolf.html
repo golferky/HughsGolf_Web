@@ -2853,7 +2853,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261017.5';
+const APP_VERSION = '20261017.6';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3819,6 +3819,49 @@ window.addEventListener('beforeunload', () => {
 });
 
 // ── Helpers ──
+// ── Movable popups ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Any popup (a card on a full-screen dimmed layer) can be dragged by its title strip, the top 64 px that is not a button, field or link, so
+// it can be moved aside to read what is behind it. Mouse and pen only (on a touch screen a drag scrolls). It cannot be dragged off screen.
+const POPUP_DRAG_STRIP = 64;
+function popupCardFor(el) {
+  for (let n = el; n && n !== document.body && n.parentElement; n = n.parentElement) {
+    const par = n.parentElement;
+    if (par === document.body || par === document.documentElement) break;
+    if (getComputedStyle(par).position === 'fixed' && par.offsetWidth >= window.innerWidth * 0.9 && par.offsetHeight >= window.innerHeight * 0.9) return n;
+  }
+  return null;
+}
+function popupDragClamp(rect0, dx, dy) {            // keep at least 80 px of the card on screen, and its title strip below the top edge
+  const minDx = 80 - rect0.right, maxDx = window.innerWidth - 80 - rect0.left, minDy = -rect0.top, maxDy = window.innerHeight - 40 - rect0.top;
+  return [Math.min(maxDx, Math.max(minDx, dx)), Math.min(maxDy, Math.max(minDy, dy))];
+}
+(function installPopupDrag() {
+  let drag = null;
+  const interactive = 'input, select, textarea, button, a, label, canvas, [contenteditable]';
+  const inStrip = (card, e) => { const r = card.getBoundingClientRect(); return e.clientY - r.top <= POPUP_DRAG_STRIP && e.clientY >= r.top && e.clientX >= r.left && e.clientX <= r.right; };
+  document.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'touch' || (e.button !== undefined && e.button > 0) || !e.target.closest || e.target.closest(interactive)) return;
+    const card = popupCardFor(e.target); if (!card || !inStrip(card, e)) return;
+    const t = card._popupShift || { x: 0, y: 0 };
+    drag = { card, x0: e.clientX, y0: e.clientY, base: t, rect0: card.getBoundingClientRect() };
+    card.style.cursor = 'grabbing'; e.preventDefault();
+  }, true);
+  document.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const [dx, dy] = popupDragClamp(drag.rect0, e.clientX - drag.x0, e.clientY - drag.y0);
+    drag.card.style.transform = `translate(${drag.base.x + dx}px, ${drag.base.y + dy}px)`;
+    drag.card._popupShift = { x: drag.base.x + dx, y: drag.base.y + dy };
+  }, true);
+  const end = () => { if (drag) { drag.card.style.cursor = ''; drag = null; } };
+  document.addEventListener('pointerup', end, true); document.addEventListener('pointercancel', end, true);
+  document.addEventListener('pointerover', e => {        // a hand over the title strip says it can be moved
+    if (drag || e.pointerType === 'touch' || !e.target.closest) return;
+    document.querySelectorAll('[data-popup-hand]').forEach(c => { c.style.cursor = ''; c.removeAttribute('data-popup-hand'); });
+    if (e.target.closest(interactive)) return;
+    const card = popupCardFor(e.target); if (card && inStrip(card, e)) { card.style.cursor = 'grab'; card.setAttribute('data-popup-hand', '1'); }
+  }, true);
+})();
+
 // ── serverRun: write to local memory AND server simultaneously ───────────────
 let SERVER_RUN_QUEUE = Promise.resolve();
 
@@ -4048,6 +4091,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261017.6', 'October 17, 2026', [
+    ['summary', 'Popups can now be moved: drag one by its title area to see what is behind it.', '', 0],
+    ['enhancement', 'Movable popups', 'Edit Player, My Profile and the other popups can be dragged by their title strip (the top of the card, away from buttons and fields) with the mouse. They cannot be dragged off the screen. PR #122.', 1],
   ]);
   ensureVersion('20261017.5', 'October 17, 2026', [
     ['admin', 'Photo files are named after the player', 'A new photo is saved as gary-scudder_3fa9c1e2b7d4.jpg (the player\'s name plus a random part), so a photo is easy to find in the photos folder on the server. Photos uploaded before this keep their old names until the player uploads again. PR #121.', 1],
