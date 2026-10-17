@@ -10,7 +10,7 @@ function world(rows = [], players = []) {
     db: { run: (sql, args) => mirrored.push({ sql, args }) }, alert: m => alerts.push(m), SERVER_DB_MODIFIED_MS: 0, SERVER_DB_MODIFIED: 0, isSandboxHost: () => false,
     fetch: async (url, o) => { sent.push({ url, body: JSON.parse(o.body) }); return { json: async () => c.reply }; } });
   c.reply = { ok: true, row: { Carrier: 'Verizon', Gateway: 'vtext.com', Status: 'validated', ValidatedAt: '2026-10-18', ValidatedBy: 'Boss Admin', Note: '', Active: 'Y' }, modifiedMs: 9 };
-  ['carrierCanonical', 'carrierRows', 'carrierState', 'carrierChoices', 'fillCarrierSelect', 'carrierMirror', 'carrierCandidates', 'loadCarriersAdmin', 'normalizeCarrier'].forEach(f => vm.runInContext(extract(f), c));
+  ['carrierCanonical', 'carrierRows', 'carrierState', 'carrierChoices', 'fillCarrierSelect', 'carrierMirror', 'carrierCandidates', 'loadCarriersAdmin', 'loadCarrierPlayers', 'carrierPlayerRows', 'cellKey', 'cellConfirmedOn', 'normalizeCarrier'].forEach(f => vm.runInContext(extract(f), c));
   ['carrierCall', 'carrierAdminAction'].forEach(f => vm.runInContext(extract(f, true), c));
   vm.runInContext("const CARRIER_RETEST_DAYS = 365; const CARRIER_FALLBACK = ['AT&T', 'Verizon', 'T-Mobile', 'Sprint', 'Boost', 'Cricket', 'Metro', 'US Cellular'];", c);
   return { c, els, sent, alerts, mirrored };

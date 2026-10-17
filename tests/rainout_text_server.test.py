@@ -15,6 +15,9 @@ INSERT INTO Players VALUES ('Cell One','502-555-0101','verizon','',''), ('Mail O
 """)
 c.commit(); c.close()
 app.ensure_schema()
+c = sqlite3.connect(app.DB_PATH)                              # every player's text is confirmed (an unconfirmed player is also emailed: see carrier_gateways.test.py)
+for _n, _p, _c in c.execute('SELECT Player, Phone, CellCarrier FROM Players').fetchall(): c.execute('UPDATE Players SET CellConfirmed=? WHERE Player=?', ('2026-10-18|' + app._cell_key(_p, _c), _n))
+c.commit(); c.close()
 c = sqlite3.connect(app.DB_PATH); c.execute("UPDATE CarrierGateways SET Status='validated', ValidatedAt=?, ValidatedBy='test' WHERE Carrier IN ('AT&T','Verizon')", (app.now_local().strftime('%Y-%m-%d'),)); c.commit(); c.close()   # tested carriers: a rainout goes out as a text only
 cl = app.app.test_client(); H = {'X-Save-Token': app.SAVE_TOKEN, 'X-Actor': 'Boss Admin', 'X-Actor-Role': 'admin'}
 PUB = {'base_url': 'https://hughsgolf.example.org'}

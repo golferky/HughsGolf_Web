@@ -116,4 +116,28 @@ app.VERSION = '20261017.9'
 r = tst(player='Pat Player', carrier='Verizon'); assert r.status_code == 200 and texts[-1][0] == '5025550111@vtext.com'
 assert tst(carrier='Nope').status_code == 404
 app._send_mail = lambda to, subj, body: False; assert tst().status_code == 502
+# per-player confirmation: a test text that arrived for this number on this carrier; a new number or carrier no longer counts
+assert 'CellConfirmed' in [r[1] for r in sqlite3.connect(app.DB_PATH).execute('PRAGMA table_info(Players)')]
+conf = lambda who: sqlite3.connect(app.DB_PATH).execute('SELECT CellConfirmed FROM Players WHERE Player=?', (who,)).fetchone()[0]
+assert app.cell_confirmed('', '502-555-0199', 'T-Mobile') is False and app.cell_confirmed(f'{today}|5025550199|t-mobile', '(502) 555-0199', 'tmobile') is True
+assert app.cell_confirmed(f'{today}|5025550199|t-mobile', '502-555-0198', 'T-Mobile') is False and app.cell_confirmed(f'{today}|5025550199|t-mobile', '502-555-0199', 'Verizon') is False
+# unconfirmed players on a validated carrier are treated as untested (urgent: text + email); confirmed ones get the text only
+assert app.delivery_plan('urgent', '502-555-0199', 'T-Mobile', 'e@x.com', '', False)['mode'] == 'text-first'
+assert app.delivery_plan('urgent', '502-555-0199', 'T-Mobile', 'e@x.com', '', False, confirmed=False)['mode'] == 'both'
+assert app.delivery_plan('urgent', '502-555-0199', 'T-Mobile', 'e@x.com', '', False, confirmed=True)['mode'] == 'text-first'
+assert app.delivery_plan('long', '502-555-0199', 'T-Mobile', 'e@x.com', '', True, confirmed=False)['nudge'] is False
+assert app.delivery_plan('long', '502-555-0199', 'T-Mobile', 'e@x.com', '', True, confirmed=True)['nudge'] is True
+cp = lambda who: app._contact_plan(sqlite3.connect(app.DB_PATH).cursor(), who, 'urgent')[0]['mode']
+assert cp('Boss Admin') == 'both', 'not confirmed yet'
+r = act(action='confirm_player', carrier='T-Mobile', player='Boss Admin'); j = r.get_json()
+assert r.status_code == 200 and j['player'] == 'Boss Admin' and j['confirmed'] == f'{today}|5025550199|t-mobile' and conf('Boss Admin') == j['confirmed']
+assert cp('Boss Admin') == 'text-first'
+c = sqlite3.connect(app.DB_PATH); c.execute("UPDATE Players SET Phone='502-555-0100' WHERE Player='Boss Admin'"); c.commit(); c.close()
+assert cp('Boss Admin') == 'both', 'a new number is not confirmed'
+assert act(action='confirm_player', carrier='Verizon', player='Boss Admin').status_code == 400, 'the carrier must be the player\'s own'
+assert act(action='confirm_player', carrier='T-Mobile', player='Nobody').status_code == 404
+c = sqlite3.connect(app.DB_PATH); c.execute("UPDATE Players SET Phone='502-555-0199' WHERE Player='Boss Admin'"); c.commit(); c.close()
+assert cp('Boss Admin') == 'text-first'
+assert act(action='unconfirm_player', carrier='T-Mobile', player='Boss Admin').status_code == 200 and conf('Boss Admin') == '' and cp('Boss Admin') == 'both'
+assert cl.post('/carrier-admin', json={'admin': 'Pat Player', 'sessionToken': 'sess-pat', 'action': 'confirm_player', 'carrier': 'Verizon', 'player': 'Pat Player'}).status_code == 403
 print('ok')
