@@ -52,3 +52,4 @@ const R = (Carrier, Status, ValidatedAt = null, Active = 'Y', Note = '') => ({ C
   assert(/no cell number saved/.test(popup), 'the popup says why nobody can be tested');
   console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });
+{ const eh = extract('escapeHtml'); const f = new Function(eh + '; return escapeHtml;')(); assert(f(5135550199) === '5135550199' && f(null) === '' && f('a<b') === 'a&lt;b', 'escapeHtml copes with numbers and empty values'); }
