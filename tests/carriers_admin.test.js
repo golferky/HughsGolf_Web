@@ -48,7 +48,7 @@ const R = (Carrier, Status, ValidatedAt = null, Active = 'Y', Note = '') => ({ C
   assert(/ADMIN_SECTIONS = \[[^\]]*'carriers'/.test(src) && /tables: \['players','teams','subs','leaguesettings','carriers'\]/.test(src) && /id="adminBtnCarriers"/.test(src) && /id="adminCarriers"/.test(src) && /if \(section==='carriers'\) loadCarriersAdmin\(\)/.test(src));
   assert(/\$\{carrierChoices\(\)\.map\(c =>/.test(extract('showPlayerSelfEditModal')), 'My Profile uses the table');
   assert(/fillCarrierSelect\('pmCarrier'\);\s*document\.getElementById\('pmCarrier'\)\.value = normalizeCarrier/.test(src));
-  const popup = extract('carrierTestPopup'); assert(/\/carrier-test/.test(popup) && /confirm\(`Send a real test text/.test(popup) && /isSandboxHost\(\) \|\| p\.Player === me/.test(popup), 'the test popup confirms, and in the sandbox only offers your own number');
-  assert(/no cell number saved/.test(popup) && /sandbox can only text your own number/.test(popup), 'the popup says why nobody can be tested');
+  const popup = extract('carrierTestPopup'); assert(/\/carrier-test/.test(popup) && /confirm\(`Send a REAL test text/.test(popup) && /confirmed: true/.test(popup) && /person\.Phone/.test(popup), 'the test popup confirms with the name and number, in the sandbox too');
+  assert(/no cell number saved/.test(popup), 'the popup says why nobody can be tested');
   console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });
