@@ -2849,7 +2849,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261017.1';
+const APP_VERSION = '20261017.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4043,6 +4043,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261017.2', 'October 17, 2026', [
+    ['summary', 'Players can now update their own profile: click your name at the top to change your email, cell, carrier, how you get stats, and whether we may ask you to sub.', '', 0],
+    ['enhancement', 'My Profile: self-service settings', 'Players edit their own email, phone, carrier, email / text stats and sub-request contact choice (the same choice as the permission page). The server checks the player\'s login before saving and only accepts those fields; the change is logged. PR #118.', 1],
   ]);
   ensureVersion('20261017.1', 'October 17, 2026', [
     ['summary', 'Picking a Round date from an earlier season now changes the grids on Stableford, Matches and Skins/CTPs; they used to stay on the newest season.', '', 0],
@@ -19172,7 +19176,9 @@ function showMyProfile() {
     + '<div style="font-size:13px;margin-bottom:8px"><b>Name:</b> ' + p.Player + '</div>'
     + '<div style="font-size:13px;margin-bottom:8px"><b>Email:</b> ' + (p.Email || 'not set') + '</div>'
     + '<div style="font-size:13px;margin-bottom:8px"><b>Phone:</b> ' + (p.Phone || 'not set') + '</div>'
-    + '<div style="font-size:13px;margin-bottom:20px"><b>Carrier:</b> ' + (p.CellCarrier || 'not set') + '</div>'
+    + '<div style="font-size:13px;margin-bottom:8px"><b>Carrier:</b> ' + (p.CellCarrier || 'not set') + '</div>'
+    + '<div style="font-size:13px;margin-bottom:8px"><b>Stats:</b> ' + ([p.EmailStats === 'Y' ? 'email' : '', p.TextStats === 'Y' ? 'text' : ''].filter(Boolean).join(' and ') || 'none') + '</div>'
+    + '<div style="font-size:13px;margin-bottom:20px"><b>Sub requests:</b> ' + ({ email: 'by email', text: 'by text', both: 'by email and text', none: 'please don\'t ask me' }[profileContactChoice(p)] || 'not answered') + '</div>'
     + '<div style="display:flex;gap:10px">'
     + '<button onclick="document.getElementById(\'myProfileOverlay\').remove()" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;cursor:pointer">Close</button>'
     + '<button onclick="document.getElementById(\'myProfileOverlay\').remove();showPlayerSelfEditModal(\'' + pn + '\');" style="flex:2;padding:10px;background:#1b5e20;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Edit</button>'
@@ -19181,21 +19187,37 @@ function showMyProfile() {
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 }
 
+// "My Profile" (click your name at the top): a player edits their own contact details and preferences. The server checks the player's
+// login session before it changes anything, and it only accepts these fields (never role, handicap, teams or whether they play).
+const PROFILE_CARRIERS = ['AT&T', 'T-Mobile', 'Verizon', 'Sprint', 'Cricket', 'Boost', 'US Cellular', 'Metro', 'Other'];
+function profileContactChoice(p) {
+  if (!p) return '';
+  if (p.BlockSubs === 'Y') return 'none';
+  return p.ContactOK === 'Y' && ['email', 'text', 'both'].includes(p.ContactMethod) ? p.ContactMethod : '';
+}
+function selfProfilePayload(playerName) {
+  const v = id => document.getElementById(id);
+  const choice = document.querySelector('input[name="selfContact"]:checked');
+  return {
+    player: playerName, sessionToken: localStorage.getItem(`hg_session_${playerName}`) || window._mySessionToken || '',
+    email: v('selfEmail').value.trim(), phone: v('selfPhone').value.trim(), carrier: v('selfCarrier').value,
+    emailStats: v('selfEmailStats').checked ? 'Y' : 'N', textStats: v('selfTextStats').checked ? 'Y' : 'N',
+    contact: choice ? choice.value : ''
+  };
+}
 async function doSelfProfileSave(overlay, playerName) {
-  const email   = document.getElementById('selfEmail').value.trim();
-  const phone   = document.getElementById('selfPhone').value.trim();
-  const carrier = document.getElementById('selfCarrier').value;
+  const btn = document.getElementById('selfSaveBtn'); if (btn) btn.disabled = true;
   try {
-    db.run('UPDATE Players SET Email=?, Phone=?, CellCarrier=? WHERE Player=?',
-      [email, phone, carrier, playerName]);
-    const now = new Date().toISOString().replace('T',' ').substring(0,19);
-    db.run("INSERT INTO LogTable (log_time, method, source, text) VALUES (?, 'profile-update', ?, ?)",
-      [now, playerName, playerName + ' updated their contact info']);
-    await saveDBToServer();
+    const resp = await fetch('/update-my-profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(selfProfilePayload(playerName)) });
+    const json = await resp.json().catch(() => ({}));
+    if (!json.ok) { alert(json.error || 'Could not save your profile.'); if (btn) btn.disabled = false; return; }
+    const saved = json.player || {}, cols = Object.keys(saved).filter(c => hasDbColumn('Players', c));          // keep this browser's copy in step
+    if (cols.length) { try { db.run(`UPDATE Players SET ${cols.map(c => `${c}=?`).join(', ')} WHERE Player=?`, [...cols.map(c => saved[c]), playerName]); } catch (e) {} }
+    if (json.modifiedMs) { SERVER_DB_MODIFIED_MS = json.modifiedMs; SERVER_DB_MODIFIED = json.modifiedMs / 1000; }
     overlay.remove();
-    alert('\u2713 Contact info updated. Thank you, ' + playerName + '!');
-  } catch(e) {
-    alert('Save failed: ' + e.message);
+    showToast('✓ Profile updated', '#2e7d32', 2500);
+  } catch (e) {
+    alert('Save failed: ' + e.message); if (btn) btn.disabled = false;
   }
 }
 
@@ -19242,42 +19264,32 @@ async function checkPlayerProfileOnLogin(playerName) {
 function showPlayerSelfEditModal(playerName) {
   const p = query(`SELECT * FROM Players WHERE Player=?`, [playerName])[0];
   if (!p) return;
-
+  const esc2 = t => String(t ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const field = 'width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box';
+  const lab = 'font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px';
+  const choice = profileContactChoice(p);
+  const radio = (val, text) => `<label style="display:block;padding:7px 10px;border:1px solid #e3e3e3;border-radius:6px;margin-bottom:6px;font-size:13px;cursor:pointer"><input type="radio" name="selfContact" value="${val}" ${choice === val ? 'checked' : ''}> ${text}</label>`;
   const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;overflow:auto';
   overlay.innerHTML = `
-    <div style="background:white;border-radius:12px;padding:28px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
-      <div style="font-size:18px;font-weight:700;color:#1b5e20;margin-bottom:20px">📋 Update Your Contact Info</div>
-      <div style="margin-bottom:12px">
-        <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">EMAIL</label>
-        <input id="selfEmail" type="email" value="${p.Email||''}" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
-      </div>
-      <div style="margin-bottom:12px">
-        <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">CELL PHONE</label>
-        <input id="selfPhone" type="tel" value="${p.Phone||''}" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
-      </div>
-      <div style="margin-bottom:20px">
-        <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">CARRIER</label>
-        <select id="selfCarrier" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
-          <option value="">None</option>
-          <option value="AT&T" ${p.CellCarrier==='AT&T'?'selected':''}>AT&T</option>
-          <option value="T-Mobile" ${p.CellCarrier==='T-Mobile'?'selected':''}>T-Mobile</option>
-          <option value="Verizon" ${p.CellCarrier==='Verizon'?'selected':''}>Verizon</option>
-          <option value="Sprint" ${p.CellCarrier==='Sprint'?'selected':''}>Sprint</option>
-          <option value="Cricket" ${p.CellCarrier==='Cricket'?'selected':''}>Cricket</option>
-          <option value="Boost" ${p.CellCarrier==='Boost'?'selected':''}>Boost</option>
-          <option value="US Cellular" ${p.CellCarrier==='US Cellular'?'selected':''}>US Cellular</option>
-          <option value="Metro" ${p.CellCarrier==='Metro'?'selected':''}>Metro</option>
-          <option value="Other" ${p.CellCarrier==='Other'?'selected':''}>Other</option>
-        </select>
-      </div>
+    <div style="background:white;border-radius:12px;padding:24px;max-width:420px;width:92%;max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+      <div style="font-size:18px;font-weight:700;color:#1b5e20;margin-bottom:4px">📋 My Profile</div>
+      <div style="font-size:12px;color:#777;margin-bottom:16px">${esc2(playerName)}</div>
+      <div style="margin-bottom:12px"><label style="${lab}">EMAIL</label><input id="selfEmail" type="email" value="${esc2(p.Email)}" style="${field}"></div>
+      <div style="margin-bottom:12px"><label style="${lab}">CELL PHONE</label><input id="selfPhone" type="tel" value="${esc2(p.Phone)}" style="${field}"></div>
+      <div style="margin-bottom:16px"><label style="${lab}">CARRIER (for text messages)</label>
+        <select id="selfCarrier" style="${field}"><option value="">None</option>${PROFILE_CARRIERS.map(c => `<option value="${esc2(c)}" ${p.CellCarrier === c ? 'selected' : ''}>${esc2(c)}</option>`).join('')}</select></div>
+      <div style="margin-bottom:16px"><label style="${lab}">SEND ME LEAGUE STATS</label>
+        <label style="display:block;font-size:13px;margin-bottom:4px;cursor:pointer"><input type="checkbox" id="selfEmailStats" ${p.EmailStats === 'Y' ? 'checked' : ''}> By email</label>
+        <label style="display:block;font-size:13px;cursor:pointer"><input type="checkbox" id="selfTextStats" ${p.TextStats === 'Y' ? 'checked' : ''}> By text</label></div>
+      <div style="margin-bottom:20px"><label style="${lab}">MAY WE CONTACT YOU WHEN A SUB IS NEEDED?</label>
+        ${radio('email', 'Yes, by email')}${radio('text', 'Yes, by text')}${radio('both', 'Yes, by email and text')}${radio('none', "No, don't ask me to sub")}</div>
       <div style="display:flex;gap:10px">
         <button id="selfCancelBtn" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:13px">Cancel</button>
         <button id="selfSaveBtn" style="flex:2;padding:10px;background:#1b5e20;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">Save</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
-
   document.getElementById('selfCancelBtn').onclick = () => overlay.remove();
   document.getElementById('selfSaveBtn').onclick = () => doSelfProfileSave(overlay, playerName);
 }
