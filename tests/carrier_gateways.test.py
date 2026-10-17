@@ -102,13 +102,16 @@ assert act(action='validate', carrier='Nope').status_code == 404 and act(action=
 assert 'Mint Mobile' in app._profile_carriers() and 'Other' in app._profile_carriers() and '' in app._profile_carriers(), 'a new carrier can be picked in a profile'
 assert sqlite3.connect(app.DB_PATH).execute("SELECT COUNT(*) FROM LogTable WHERE method='carrier_admin'").fetchone()[0] >= 6
 
-# test text: through the chosen carrier's gateway to the player's number; the sandbox only texts the admin's own number
+# test text: through the chosen carrier's gateway to the player's number; in the sandbox, texting someone else needs the admin's confirmation
 texts = []; app._send_mail = lambda to, subj, body: (texts.append((to[0], body)), True)[1]
 tst = lambda **b: cl.post('/carrier-test', json={'admin': 'Boss Admin', 'sessionToken': 'sess-boss', 'carrier': 'T-Mobile', 'player': 'Boss Admin', **b})
 assert cl.post('/carrier-test', json={'admin': 'Pat Player', 'sessionToken': 'sess-pat', 'carrier': 'Verizon', 'player': 'Pat Player'}).status_code == 403
 assert 'sandbox' in app.VERSION.lower()
 r = tst(); assert r.status_code == 200 and r.get_json()['to'] == '***-***-0199' and texts[0][0] == '5025550199@tmomail.net' and 'tell Boss Admin' in texts[0][1]
-assert tst(player='Pat Player', carrier='Verizon').status_code == 403 and len(texts) == 1, 'the sandbox does not text other people'
+assert tst(player='Pat Player', carrier='Verizon').status_code == 403 and len(texts) == 1, 'the sandbox does not text other people without confirmation'
+assert tst(player='Pat Player', carrier='Verizon', confirmed='yes').status_code == 403 and len(texts) == 1
+r = tst(player='Pat Player', carrier='Verizon', confirmed=True); assert r.status_code == 200 and texts[-1][0] == '5025550111@vtext.com' and len(texts) == 2
+texts.pop()
 app.VERSION = '20261017.9'
 r = tst(player='Pat Player', carrier='Verizon'); assert r.status_code == 200 and texts[-1][0] == '5025550111@vtext.com'
 assert tst(carrier='Nope').status_code == 404

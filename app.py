@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261018.1-sandbox'
+VERSION    = '20261018.3-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -2147,7 +2147,7 @@ def carrier_admin():
 @app.route('/carrier-test', methods=['POST'])
 def carrier_test():
     """Send one test text to a player's number through a carrier's gateway. The admin confirms with the player that it arrived,
-    then marks the carrier validated. The sandbox only texts the admin's own number."""
+    then marks the carrier validated. In the sandbox, texting anyone but the admin needs the admin's confirmation (`confirmed`), which the screen asks for by showing who and which number."""
     b = request.get_json(silent=True) or {}
     admin = str(b.get('admin') or '').strip(); token = str(b.get('sessionToken') or '').strip()
     carrier = ' '.join(str(b.get('carrier') or '').split()); player = str(b.get('player') or '').strip()
@@ -2167,8 +2167,8 @@ def carrier_test():
             digits = digits[1:] if len(digits) == 11 and digits.startswith('1') else digits
             if len(digits) != 10:
                 return jsonify({'ok': False, 'error': f'{player} has no usable cell number.'}), 400
-            if 'sandbox' in VERSION.lower() and player != admin:
-                return jsonify({'ok': False, 'error': 'The sandbox only texts your own number. Test other people on the live site.'}), 403
+            if 'sandbox' in VERSION.lower() and player != admin and b.get('confirmed') is not True:
+                return jsonify({'ok': False, 'error': 'In the sandbox, texting someone else needs your confirmation first.'}), 403
         finally:
             conn.close()
     sent = _send_mail([f'{digits}@{row["Gateway"]}'], "Hugh's Golf", f"Hugh's Golf League test text ({row['Carrier']}). If you got this, please tell {admin}.")
