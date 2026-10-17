@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261017.4-sandbox'
+VERSION    = '20261017.5-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1825,9 +1825,17 @@ def _session_matches(cur, player, token):
     row = cur.fetchone()
     return bool(row and row[0] and _hmac.compare_digest(str(row[0]), str(token)))
 
+def _photo_key_for(player):
+    """A readable, still unguessable file key: the player's name plus 12 random hex digits (gary-scudder_3fa9c1e2b7d4)."""
+    import secrets as _secrets, unicodedata as _ud, re as _re
+    plain = _ud.normalize('NFKD', str(player or '')).encode('ascii', 'ignore').decode('ascii').lower()
+    slug = _re.sub(r'[^a-z0-9]+', '-', plain).strip('-')[:30].strip('-') or 'player'
+    return f'{slug}_{_secrets.token_hex(6)}'
+
 def _photo_path(key):
+    """Where a photo file lives, or None when the key is not one this app makes (name_12hex, or the older 24-hex keys)."""
     import re as _re
-    return os.path.join(PHOTO_DIR, key + '.jpg') if key and _re.fullmatch(r'[0-9a-f]{24}', key) else None
+    return os.path.join(PHOTO_DIR, key + '.jpg') if key and _re.fullmatch(r'(?:[a-z0-9-]{1,30}_[0-9a-f]{12}|[0-9a-f]{24})', key) else None
 
 def _drop_photo_file(key):
     path = _photo_path(key)
@@ -1848,7 +1856,6 @@ def serve_player_photo(key):
 
 @app.route('/upload-my-photo', methods=['POST'])
 def upload_my_photo():
-    import secrets as _secrets
     from urllib.parse import unquote
     player = unquote(request.headers.get('X-Player', '') or '').strip()
     token = (request.headers.get('X-Session', '') or '').strip()
@@ -1870,7 +1877,7 @@ def upload_my_photo():
                 cur.execute('ALTER TABLE Players ADD COLUMN PhotoKey TEXT')
             cur.execute('SELECT PhotoKey FROM Players WHERE Player=?', (player,))
             old = (cur.fetchone() or [''])[0]
-            key = _secrets.token_hex(12)
+            key = _photo_key_for(player)
             os.makedirs(PHOTO_DIR, exist_ok=True)
             tmp = os.path.join(PHOTO_DIR, key + '.tmp')
             with open(tmp, 'wb') as f:
