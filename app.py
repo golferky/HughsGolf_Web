@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261017.2-sandbox'
+VERSION    = '20261017.3-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1782,6 +1782,160 @@ def update_my_profile():
     return jsonify({'ok': True, 'player': saved, 'changed': changed, 'modifiedMs': db_modified_ms()})
 
 
+# ── Player photos ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Stored as small JPEG files next to the app (never inside the database, which every browser downloads whole). The database only holds a random
+# key per player (Players.PhotoKey); a new photo gets a new key, so the browser cache never shows an old picture. Uploading and removing
+# check the player's login session, like the profile save.
+PHOTO_DIR = os.path.join(BASE_DIR, 'photos')
+PHOTO_MAX_BYTES = 300 * 1024
+PHOTO_MAX_SIDE = 1200
+PHOTO_MIN_SIDE = 64
+_ADMIN_ROLES = ('admin', 'president', 'secretary', 'developer')
+
+def _jpeg_dimensions(data):
+    """(width, height) of a JPEG from its start-of-frame marker, or None if it is not a readable JPEG."""
+    if len(data) < 4 or data[:3] != b'\xff\xd8\xff':
+        return None
+    i = 2
+    while i + 9 < len(data):
+        if data[i] != 0xFF:
+            return None
+        marker = data[i + 1]
+        if marker == 0xFF:
+            i += 1
+            continue
+        if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+            i += 2
+            continue
+        seg = int.from_bytes(data[i + 2:i + 4], 'big')
+        if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+            h = int.from_bytes(data[i + 5:i + 7], 'big'); w = int.from_bytes(data[i + 7:i + 9], 'big')
+            return (w, h) if w and h else None
+        if seg < 2:
+            return None
+        i += 2 + seg
+    return None
+
+def _session_matches(cur, player, token):
+    """True when token is player's current login session."""
+    import hmac as _hmac
+    if not player or not token or 'ActiveSession' not in _table_cols(cur, 'Players'):
+        return False
+    cur.execute('SELECT ActiveSession FROM Players WHERE Player=?', (player,))
+    row = cur.fetchone()
+    return bool(row and row[0] and _hmac.compare_digest(str(row[0]), str(token)))
+
+def _photo_path(key):
+    import re as _re
+    return os.path.join(PHOTO_DIR, key + '.jpg') if key and _re.fullmatch(r'[0-9a-f]{24}', key) else None
+
+def _drop_photo_file(key):
+    path = _photo_path(key)
+    if path:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+@app.route('/photos/<key>.jpg')
+def serve_player_photo(key):
+    path = _photo_path(key)
+    if not path or not os.path.isfile(path):
+        return ('', 404)
+    resp = send_from_directory(PHOTO_DIR, key + '.jpg', mimetype='image/jpeg')
+    resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'       # a changed photo has a new key
+    return resp
+
+@app.route('/upload-my-photo', methods=['POST'])
+def upload_my_photo():
+    import secrets as _secrets
+    from urllib.parse import unquote
+    player = unquote(request.headers.get('X-Player', '') or '').strip()
+    token = (request.headers.get('X-Session', '') or '').strip()
+    if request.content_length and request.content_length > PHOTO_MAX_BYTES:
+        return jsonify({'ok': False, 'error': 'That photo is too large. Try again, or pick a smaller one.'}), 413
+    data = request.get_data(cache=False)
+    if not data or len(data) > PHOTO_MAX_BYTES:
+        return jsonify({'ok': False, 'error': 'That photo is too large. Try again, or pick a smaller one.'}), 413
+    dims = _jpeg_dimensions(data)
+    if not dims or max(dims) > PHOTO_MAX_SIDE or min(dims) < PHOTO_MIN_SIDE:
+        return jsonify({'ok': False, 'error': 'That does not look like a usable photo.'}), 400
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        try:
+            cur = conn.cursor()
+            if not _session_matches(cur, player, token):
+                return jsonify({'ok': False, 'error': 'Please sign in again, then try once more.'}), 403
+            if 'PhotoKey' not in _table_cols(cur, 'Players'):
+                cur.execute('ALTER TABLE Players ADD COLUMN PhotoKey TEXT')
+            cur.execute('SELECT PhotoKey FROM Players WHERE Player=?', (player,))
+            old = (cur.fetchone() or [''])[0]
+            key = _secrets.token_hex(12)
+            os.makedirs(PHOTO_DIR, exist_ok=True)
+            tmp = os.path.join(PHOTO_DIR, key + '.tmp')
+            with open(tmp, 'wb') as f:
+                f.write(data)
+            os.replace(tmp, _photo_path(key))
+            try:
+                cur.execute('UPDATE Players SET PhotoKey=? WHERE Player=?', (key, player))
+                _log_row(cur, 'photo_update', f'{player} set their photo', f'ip={_audit_ip()} bytes={len(data)}')
+                conn.commit()
+            except Exception:
+                _drop_photo_file(key)
+                raise
+        finally:
+            conn.close()
+    _drop_photo_file(old)
+    return jsonify({'ok': True, 'photoKey': key, 'modifiedMs': db_modified_ms()})
+
+def _remove_photo(cur, player, actor, by_admin):
+    cur.execute('SELECT PhotoKey FROM Players WHERE Player=?', (player,))
+    row = cur.fetchone()
+    old = (row[0] if row else '') or ''
+    cur.execute("UPDATE Players SET PhotoKey='' WHERE Player=?", (player,))
+    _log_row(cur, 'photo_removed', f'{actor} removed {"the photo of " + player if by_admin else "their photo"}', f'ip={_audit_ip()}')
+    return old
+
+@app.route('/remove-my-photo', methods=['POST'])
+def remove_my_photo():
+    body = request.get_json(silent=True) or {}
+    player = str(body.get('player') or '').strip(); token = str(body.get('sessionToken') or '').strip()
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        try:
+            cur = conn.cursor()
+            if not _session_matches(cur, player, token) or 'PhotoKey' not in _table_cols(cur, 'Players'):
+                return jsonify({'ok': False, 'error': 'Please sign in again, then try once more.'}), 403
+            old = _remove_photo(cur, player, player, False)
+            conn.commit()
+        finally:
+            conn.close()
+    _drop_photo_file(old)
+    return jsonify({'ok': True, 'modifiedMs': db_modified_ms()})
+
+@app.route('/admin-remove-photo', methods=['POST'])
+def admin_remove_photo():
+    """An admin takes down any player's photo (the admin's own login session is checked, and the admin role comes from the database)."""
+    body = request.get_json(silent=True) or {}
+    admin = str(body.get('admin') or '').strip(); token = str(body.get('sessionToken') or '').strip(); player = str(body.get('player') or '').strip()
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        try:
+            cur = conn.cursor()
+            if not _session_matches(cur, admin, token) or 'PhotoKey' not in _table_cols(cur, 'Players'):
+                return jsonify({'ok': False, 'error': 'Please sign in again, then try once more.'}), 403
+            cur.execute('SELECT Officer FROM Players WHERE Player=?', (admin,))
+            role = ((cur.fetchone() or [''])[0] or '').strip().lower()
+            if role not in _ADMIN_ROLES:
+                return jsonify({'ok': False, 'error': 'Only an admin can remove another player\'s photo.'}), 403
+            old = _remove_photo(cur, player, admin, True)
+            conn.commit()
+        finally:
+            conn.close()
+    _drop_photo_file(old)
+    return jsonify({'ok': True, 'modifiedMs': db_modified_ms()})
+
+
 @app.route('/need-sub', methods=['POST'])
 def need_sub():
     """Send a sub request to selected players, CC'ing the secretary."""
@@ -3317,6 +3471,10 @@ def ensure_schema():
         elif lp_cols and 'AnthropicApiKey' not in lp_cols:
             cur.execute("ALTER TABLE LeagueParms ADD COLUMN AnthropicApiKey TEXT")
             print(f'[{now_local():%H:%M:%S}] Schema check: added missing LeagueParms.AnthropicApiKey column')
+        conn.commit()
+        if 'PhotoKey' not in _table_cols(cur, 'Players'):            # random key of the player's photo file (see /upload-my-photo)
+            cur.execute('ALTER TABLE Players ADD COLUMN PhotoKey TEXT')
+            print(f'[{now_local():%H:%M:%S}] Schema check: added Players.PhotoKey')
         conn.commit()
         # Player-added players: approval + contact permission
         p_cols = _table_cols(cur, 'Players')
