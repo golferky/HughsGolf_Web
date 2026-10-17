@@ -18,7 +18,7 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
     db = new SQL.Database();
     db.run(`CREATE TABLE CarrierGateways (Carrier TEXT PRIMARY KEY, Gateway TEXT, Status TEXT, ValidatedAt TEXT, ValidatedBy TEXT, Note TEXT, Active TEXT);
       INSERT INTO CarrierGateways VALUES ('T-Mobile','tmomail.net','validated','2026-10-01','Boss','', 'Y'), ('Verizon','vtext.com','unvalidated',NULL,NULL,'','Y'), ('AT&T','txt.att.net','unavailable',NULL,'Boss','ended','Y');
-      CREATE TABLE Players (Player TEXT, Phone TEXT, CellCarrier TEXT, IsTest TEXT); INSERT INTO Players VALUES ('Pat Example','502-555-0111','Verizon','N'), ('Boss Admin','502-555-0199','T-Mobile','N');`);
+      CREATE TABLE Players (Player TEXT, Phone, CellCarrier TEXT, IsTest TEXT); INSERT INTO Players VALUES ('Pat Example','502-555-0111','Verizon','N'), ('Boss Admin','502-555-0199','T-Mobile','N'), ('Num Ber',5025550123,'T-Mobile','N');`);
     currentUser = { name: 'Boss Admin', role: 'admin' }; localStorage.setItem('hg_session_Boss Admin', 'sess');
     const ta = document.getElementById('tab-admin'); ta.style.display = 'block'; ta.classList.add('active'); document.getElementById('adminCarriers').style.display = 'block'; loadCarriersAdmin();
   });
@@ -33,6 +33,10 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
   await p.click('#carrierTestOk'); await p.waitForFunction(() => !document.getElementById('carrierTestOk'));
   assert.strictEqual(calls[1], 'admin:validate');
   assert(/Verizon.*Validated/.test(await p.$eval('#carriersBody', e => e.innerText.replace(/\s+/g, ' '))), 'the table shows the new status');
+  // a phone stored as a number (not text) still opens the popup
+  await p.click('button[data-c="T-Mobile"][onclick*="test"]');
+  assert(/Num Ber \(5025550123\)/.test(await p.innerText('#carrierTestWho')));
+  await p.click('#carrierTestClose');
   // Mark unavailable asks for a reason
   await p.click('button[data-c="T-Mobile"][onclick*="unavailable"]'); await p.waitForTimeout(100); assert.strictEqual(calls[2], 'admin:unavailable');
   assert.deepStrictEqual(errs, [], errs.join('; '));
