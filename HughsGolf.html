@@ -2400,6 +2400,10 @@
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="pmLogin"> Login Access</label>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="pmBlockSubs"> 🚫 Don't ask to sub</label>
       </div>
+      <div id="pmPhotoRow" style="display:none;align-items:center;gap:10px;margin-bottom:12px;padding:8px 12px;border:1px solid #e3e3e3;border-radius:6px;font-size:13px">
+        <span id="pmPhotoSlot"></span><span style="flex:1;color:#555">Profile photo</span>
+        <button type="button" id="pmPhotoRemove" style="padding:5px 10px;border:1px solid #ffcccc;border-radius:5px;background:#fff5f5;color:#c62828;font-size:12px;cursor:pointer">Remove photo</button>
+      </div>
       <div id="pmParticipationSection" style="margin-bottom:12px;padding:10px 12px;background:#eef7ee;border:1px solid #c8e6c9;border-radius:6px">
         <label style="font-size:11px;font-weight:700;color:#2e7d32;display:block;margin-bottom:6px">🏌️ LEAGUE PARTICIPATION <span style="font-weight:400;color:#777">(separate from the access role)</span></label>
         <select id="pmParticipates" style="width:100%;padding:7px 10px;border:1px solid #c8e6c9;border-radius:6px;font-size:13px;background:white">
@@ -2849,7 +2853,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261017.2';
+const APP_VERSION = '20261017.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3960,6 +3964,7 @@ function ensureAppChangelogTable() {
   ensureCol('SeasonSettings', 'StandPlace2', 'REAL DEFAULT 100');
   ensureCol('SeasonSettings', 'StandPlace3', 'REAL DEFAULT 90');
   ensureCol('SeasonSettings', 'Byes', 'INTEGER DEFAULT 0');          // in LS_MID_SEASON_OK, so it must exist
+  ensureCol('Players', 'PhotoKey', 'TEXT');                          // random key of the player's photo file (see /upload-my-photo)
   ensureCol('LeagueSettings', 'StartWeek', "TEXT DEFAULT '2nd'");   // which league day of April the season starts on (1st/2nd/3rd/4th/Last)
   // Backfill from LeagueParms if available and StandPlace1 is still null
   try {
@@ -4043,6 +4048,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261017.3', 'October 17, 2026', [
+    ['summary', 'Players can add a photo to their profile, and it shows as a small circle beside their name on Standings and Matches.', '', 0],
+    ['enhancement', 'Player photos', 'Click your name, then Edit, then Add / change photo. The picture is shrunk to a small square on your phone or computer (about 40 KB) and stored as a file on the league server, not in the database. It shows immediately; you can replace or remove it, and an admin can remove any photo. Until someone adds a photo the screens look as before; after that, players without one get a circle with their initials. PR #119.', 1],
   ]);
   ensureVersion('20261017.2', 'October 17, 2026', [
     ['summary', 'Players can now update their own profile: click your name at the top to change your email, cell, carrier, how you get stats, and whether we may ask you to sub.', '', 0],
@@ -6909,7 +6918,7 @@ function loadStandings() {
       else if (_played) tr.style.background = '#f0f8f0';
       tr.innerHTML = `
         <td class="rank-cell ctr ${rank<=3?'rank-'+rank:''}">${rank}</td>
-        <td style="${_played?'font-weight:700;color:var(--green)':''}">${r.Player}</td>
+        <td style="${_played?'font-weight:700;color:var(--green)':''}">${playerAvatar(r.Player)}${r.Player}</td>
         <td class="ctr">${r.Team||''}</td>
         <td class="ctr"><span class="badge badge-${(r.Grade||'').toLowerCase()}">${r.Grade||''}</span></td>
         <td class="num"><strong>${r.pts||0}</strong></td>
@@ -6994,8 +7003,8 @@ function loadStandings() {
       tr.innerHTML = `
         <td class="rank-cell ctr ${i<payPlaces?'rank-'+(i+1):''}">${i+1}</td>
         <td class="ctr"><strong>${r.Team}</strong></td>
-        <td style="${_aPlayed?'font-weight:700;color:var(--green)':''}">${r.a_player||''}</td>
-        <td style="${_bPlayed?'font-weight:700;color:var(--green)':''}">${r.b_player||''}</td>
+        <td style="${_aPlayed?'font-weight:700;color:var(--green)':''}">${r.a_player ? playerAvatar(r.a_player) : ''}${r.a_player||''}</td>
+        <td style="${_bPlayed?'font-weight:700;color:var(--green)':''}">${r.b_player ? playerAvatar(r.b_player) : ''}${r.b_player||''}</td>
         <td class="num">${a}</td>
         <td class="num">${b}</td>
         <td class="num"><strong>${plyr}</strong></td>
@@ -7982,7 +7991,7 @@ function renderMatchup(mu, teams, scores, existing, subs={}) {
 
     html += `<tr style="border-bottom:1px solid #f0ebe0">
       <td style="padding:8px 12px;font-weight:600;color:${r.grade==='A'?'#2e7d32':'#1565c0'}">${r.grade}</td>
-      <td style="padding:8px 12px${noshow1?' color:var(--gray);font-style:italic':''}">${noshow1?r.p1+'(NS)':disp1}</td>
+      <td style="padding:8px 12px${noshow1?' color:var(--gray);font-style:italic':''}">${r.p1 ? playerAvatar(r.p1) : ''}${noshow1?r.p1+'(NS)':disp1}</td>
       <td style="padding:8px 12px;text-align:center;font-family:'DM Mono',monospace">${net1??'—'}</td>
       <td style="padding:8px 12px;text-align:center;font-family:'DM Mono',monospace;${ptColor(res.pts1, res.pts2)}">${res.pts1}</td>
       <td style="padding:8px 12px;text-align:center;font-family:'DM Mono',monospace;${r.grade==='A'?tptColor1:'color:#ccc'}">${r.grade==='A'?calc.t1tpts:'—'}</td>
@@ -7990,7 +7999,7 @@ function renderMatchup(mu, teams, scores, existing, subs={}) {
       <td style="padding:8px 12px;text-align:center;font-family:'DM Mono',monospace;${r.grade==='A'?tptColor2:'color:#ccc'}">${r.grade==='A'?calc.t2tpts:'—'}</td>
       <td style="padding:8px 12px;text-align:center;font-family:'DM Mono',monospace;${ptColor(res.pts2, res.pts1)}">${res.pts2}</td>
       <td style="padding:8px 12px;text-align:center;font-family:'DM Mono',monospace">${net2??'—'}</td>
-      <td style="padding:8px 12px${noshow2?' color:var(--gray);font-style:italic':''}">${noshow2?r.p2+'(NS)':disp2}</td>
+      <td style="padding:8px 12px${noshow2?' color:var(--gray);font-style:italic':''}">${r.p2 ? playerAvatar(r.p2) : ''}${noshow2?r.p2+'(NS)':disp2}</td>
     </tr>`;
   });
 
@@ -8201,7 +8210,7 @@ function loadMatchesTable() {
         : name;
 
       html += `<tr>
-        <td style="${td}">${displayName}</td>
+        <td style="${td}">${playerAvatar(sub || name)}${displayName}</td>
         <td style="${tdC}">${slot.team}</td>
         <td style="${tdC}">${slot.grade}</td>
         <td style="${tdC}">${net}</td>
@@ -19171,7 +19180,7 @@ function showMyProfile() {
   const warn = missing.length ? '<div style="background:#fff3e0;border-radius:6px;padding:10px;margin-bottom:16px;font-size:12px;color:#e65100">Missing: ' + missing.join(', ') + '</div>' : '';
   const pn = p.Player.replace(/'/g, "\\'");
   overlay.innerHTML = '<div style="background:white;border-radius:12px;padding:28px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2)">'
-    + '<div style="font-size:18px;font-weight:700;color:#1b5e20;margin-bottom:16px">My Profile</div>'
+    + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">' + playerAvatar(p.Player, 56, true).replace('margin-right:6px;', '') + '<div style="font-size:18px;font-weight:700;color:#1b5e20">My Profile</div></div>'
     + warn
     + '<div style="font-size:13px;margin-bottom:8px"><b>Name:</b> ' + p.Player + '</div>'
     + '<div style="font-size:13px;margin-bottom:8px"><b>Email:</b> ' + (p.Email || 'not set') + '</div>'
@@ -19185,6 +19194,90 @@ function showMyProfile() {
     + '</div></div>';
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// ── Player photos: a small circle beside a name ───────────────────────────────────────────────────────────────────────────
+// Photos are small JPEG files on the server (/photos/<key>.jpg); the database only holds each player's random PhotoKey. Until somebody has a
+// photo, screens look exactly as before; once one exists, players without one get a grey circle with their initials so names line up.
+function playerPhotoMap() {
+  if (!db || !hasDbColumn('Players', 'PhotoKey')) return {};
+  const c = window._photoCache;
+  if (c && c.db === db && c.v === (window._photoVer || 0)) return c.map;
+  const map = {};
+  try { query(`SELECT Player, PhotoKey FROM Players WHERE PhotoKey IS NOT NULL AND PhotoKey != ''`).forEach(r => { map[r.Player] = r.PhotoKey; }); } catch (e) {}
+  window._photoCache = { db, v: window._photoVer || 0, map };
+  return map;
+}
+function playerInitials(name) {
+  const w = String(name || '').trim().split(/\s+/).filter(Boolean);
+  return ((w[0] || '')[0] || '') + ((w.length > 1 ? w[w.length - 1] : '')[0] || '');
+}
+function playerAvatar(name, px = 22, force = false) {
+  const map = playerPhotoMap();
+  if (!force && !Object.keys(map).length) return '';
+  const key = map[name], box = `width:${px}px;height:${px}px;border-radius:50%;flex:none;vertical-align:middle;margin-right:6px;`;
+  if (key) return `<img src="/photos/${key}.jpg" alt="" loading="lazy" style="${box}object-fit:cover;border:1px solid #d8d8d8">`;
+  return `<span style="${box}display:inline-flex;align-items:center;justify-content:center;background:#e3e8e0;color:#6b7a66;font-size:${Math.round(px * 0.42)}px;font-weight:700;text-transform:uppercase">${escapeHtml(playerInitials(name))}</span>`;
+}
+function playerSessionToken(name) { return localStorage.getItem(`hg_session_${name}`) || window._mySessionToken || ''; }
+// Shrink a chosen picture to a centred 400 x 400 JPEG (a phone photo is several MB; this is about 40 KB).
+async function photoToSquareJpeg(file, side = 400, quality = 0.82) {
+  let bmp;
+  try { bmp = await createImageBitmap(file); }
+  catch (e) {
+    bmp = await new Promise((resolve, reject) => { const img = new Image(), url = URL.createObjectURL(file); img.onload = () => { URL.revokeObjectURL(url); resolve(img); }; img.onerror = () => reject(new Error('unreadable')); img.src = url; });
+  }
+  const w = bmp.width || bmp.naturalWidth, h = bmp.height || bmp.naturalHeight, s0 = Math.min(w, h);
+  const canvas = document.createElement('canvas'); canvas.width = side; canvas.height = side;
+  canvas.getContext('2d').drawImage(bmp, (w - s0) / 2, (h - s0) / 2, s0, s0, 0, 0, side, side);
+  return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('unreadable')), 'image/jpeg', quality));
+}
+function photoChanged(playerName, key) {                    // keep this browser's copy and every drawn avatar in step with the server
+  try { db.run('UPDATE Players SET PhotoKey=? WHERE Player=?', [key || '', playerName]); } catch (e) {}
+  window._photoVer = (window._photoVer || 0) + 1;
+}
+async function uploadMyPhoto(file, playerName) {
+  const status = document.getElementById('selfPhotoStatus'); const say = (t, bad) => { if (status) { status.textContent = t; status.style.color = bad ? '#c62828' : '#666'; } };
+  say('Uploading…');
+  try {
+    const blob = await photoToSquareJpeg(file);
+    const resp = await fetch('/upload-my-photo', { method: 'POST', headers: { 'Content-Type': 'image/jpeg', 'X-Player': encodeURIComponent(playerName), 'X-Session': playerSessionToken(playerName) }, body: blob });
+    const json = await resp.json().catch(() => ({}));
+    if (!json.ok) { say(json.error || 'Could not save the photo.', true); return false; }
+    if (json.modifiedMs) { SERVER_DB_MODIFIED_MS = json.modifiedMs; SERVER_DB_MODIFIED = json.modifiedMs / 1000; }
+    photoChanged(playerName, json.photoKey); refreshSelfPhoto(playerName); say('Photo saved.');
+    return true;
+  } catch (e) { say("Couldn't read that picture. Try a JPEG or PNG.", true); return false; }
+}
+async function removeMyPhoto(playerName) {
+  if (!confirm('Remove your photo?')) return false;
+  const resp = await fetch('/remove-my-photo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player: playerName, sessionToken: playerSessionToken(playerName) }) });
+  const json = await resp.json().catch(() => ({}));
+  if (!json.ok) { alert(json.error || 'Could not remove the photo.'); return false; }
+  photoChanged(playerName, ''); refreshSelfPhoto(playerName);
+  return true;
+}
+async function adminRemovePhoto(playerName) {
+  if (!confirm(`Remove ${playerName}'s photo?`)) return false;
+  const resp = await fetch('/admin-remove-photo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin: currentUser?.name || '', sessionToken: playerSessionToken(currentUser?.name || ''), player: playerName }) });
+  const json = await resp.json().catch(() => ({}));
+  if (!json.ok) { alert(json.error || 'Could not remove the photo.'); return false; }
+  photoChanged(playerName, '');
+  try { loadAdminPlayers(); } catch (e) {}
+  return true;
+}
+// The admin's player editor: shows a player's photo with a button to take it down (nothing for a new player or one without a photo).
+function playerEditorPhotoRow(playerName) {
+  const row = document.getElementById('pmPhotoRow'); if (!row) return;
+  const has = !!(playerName && playerPhotoMap()[playerName]);
+  row.style.display = has ? 'flex' : 'none';
+  if (!has) return;
+  document.getElementById('pmPhotoSlot').innerHTML = playerAvatar(playerName, 40, true);
+  document.getElementById('pmPhotoRemove').onclick = async () => { if (await adminRemovePhoto(playerName)) playerEditorPhotoRow(playerName); };
+}
+function refreshSelfPhoto(playerName) {
+  const slot = document.getElementById('selfPhotoSlot'); if (slot) slot.innerHTML = playerAvatar(playerName, 72, true);
+  const rm = document.getElementById('selfPhotoRemove'); if (rm) rm.style.display = playerPhotoMap()[playerName] ? '' : 'none';
 }
 
 // "My Profile" (click your name at the top): a player edits their own contact details and preferences. The server checks the player's
@@ -19274,7 +19367,15 @@ function showPlayerSelfEditModal(playerName) {
   overlay.innerHTML = `
     <div style="background:white;border-radius:12px;padding:24px;max-width:420px;width:92%;max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
       <div style="font-size:18px;font-weight:700;color:#1b5e20;margin-bottom:4px">📋 My Profile</div>
-      <div style="font-size:12px;color:#777;margin-bottom:16px">${esc2(playerName)}</div>
+      <div style="font-size:12px;color:#777;margin-bottom:12px">${esc2(playerName)}</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+        <div id="selfPhotoSlot" style="flex:none"></div>
+        <div style="flex:1">
+          <label style="display:inline-block;padding:7px 12px;border:1px solid #1b5e20;border-radius:6px;color:#1b5e20;font-size:12px;font-weight:600;cursor:pointer"><input id="selfPhotoFile" type="file" accept="image/*" style="display:none">📷 Add / change photo</label>
+          <button id="selfPhotoRemove" type="button" style="display:none;padding:7px 10px;border:1px solid #ffcccc;border-radius:6px;background:#fff5f5;color:#c62828;font-size:12px;cursor:pointer;margin-left:6px">Remove</button>
+          <div id="selfPhotoStatus" style="font-size:11px;color:#666;margin-top:6px;min-height:14px">Shown to other players beside your name.</div>
+        </div>
+      </div>
       <div style="margin-bottom:12px"><label style="${lab}">EMAIL</label><input id="selfEmail" type="email" value="${esc2(p.Email)}" style="${field}"></div>
       <div style="margin-bottom:12px"><label style="${lab}">CELL PHONE</label><input id="selfPhone" type="tel" value="${esc2(p.Phone)}" style="${field}"></div>
       <div style="margin-bottom:16px"><label style="${lab}">CARRIER (for text messages)</label>
@@ -19292,6 +19393,9 @@ function showPlayerSelfEditModal(playerName) {
   document.body.appendChild(overlay);
   document.getElementById('selfCancelBtn').onclick = () => overlay.remove();
   document.getElementById('selfSaveBtn').onclick = () => doSelfProfileSave(overlay, playerName);
+  refreshSelfPhoto(playerName);
+  document.getElementById('selfPhotoFile').onchange = ev => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; if (f) uploadMyPhoto(f, playerName); };
+  document.getElementById('selfPhotoRemove').onclick = () => removeMyPhoto(playerName);
 }
 
 async function loginSuccess(player, opts = {}) {
@@ -20415,7 +20519,7 @@ function loadAdminPlayers() {
         <button onclick="deletePlayer('${(r.Player||'').replace(/'/g,"\\'")}')" style="padding:3px 10px;border:1px solid #ffcccc;border-radius:4px;background:#fff5f5;cursor:pointer;font-size:11px;color:#c62828">Delete</button>
       </td>
       <td style="padding:7px 12px;font-weight:600;cursor:pointer;color:var(--green)" title="Show this player's scores" onclick="event.stopPropagation();showPlayerScores('${(r.Player||'').replace(/'/g,"\\'")}')">
-        ${r.Player||''}
+        ${playerAvatar(r.Player, 24)}${r.Player||''}
         ${teamMap[r.Player]?`<span style="font-size:10px;color:var(--gray);margin-left:6px">${teamMap[r.Player]}</span>`:''}
       </td>
       <td style="padding:7px 12px;font-size:12px">${r.FirstName||''}</td>
@@ -20454,6 +20558,7 @@ function openPlayerModal(name) {
   document.getElementById('pmTextStats').checked = false;
   document.getElementById('pmLogin').checked = true;
   document.getElementById('pmBlockSubs').checked = false;
+  playerEditorPhotoRow('');
   loadParticipationFields(null);
   document.getElementById('pmPassword1').value = '';
   document.getElementById('pmPassword2').value = '';
@@ -20527,6 +20632,7 @@ function editPlayer(name) {
   document.getElementById('pmTextStats').checked = r.TextStats==='Y';
   document.getElementById('pmLogin').checked = r.Login==='Y';
   document.getElementById('pmBlockSubs').checked = r.BlockSubs==='Y';
+  playerEditorPhotoRow(r.Player);
   loadParticipationFields(r);
   document.getElementById('pmPassword1').value = '';
   document.getElementById('pmPassword2').value = '';
