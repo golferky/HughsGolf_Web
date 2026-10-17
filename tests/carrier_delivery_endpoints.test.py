@@ -16,6 +16,9 @@ c.executescript("""CREATE TABLE Players (Player TEXT, Officer TEXT, Login TEXT, 
   ('Mail Pref','Admin','Y','502-555-0005','T-Mobile','mp@x.com','email',NULL);""")
 c.commit(); c.close()
 app.ensure_schema()
+c = sqlite3.connect(app.DB_PATH)                              # every player's text is confirmed (an unconfirmed player is also emailed: see carrier_gateways.test.py)
+for _n, _p, _c in c.execute('SELECT Player, Phone, CellCarrier FROM Players').fetchall(): c.execute('UPDATE Players SET CellConfirmed=? WHERE Player=?', ('2026-10-18|' + app._cell_key(_p, _c), _n))
+c.commit(); c.close()
 c = sqlite3.connect(app.DB_PATH); c.execute("UPDATE CarrierGateways SET Status='unavailable', Note='ended' WHERE Carrier='AT&T'"); c.commit(); c.close()
 app.get_gmail_creds = lambda: ('league@example.com', 'pw')
 smtp, plain = [], []

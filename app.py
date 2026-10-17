@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261018.4-sandbox'
+VERSION    = '20261018.5-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -248,10 +248,33 @@ def sms_address(phone, carrier):
 #   simple   text, and an email if the text is rejected or the carrier is unavailable
 #   long     email; plus a short "check your email" text for the important ones when the carrier is validated
 # A player who asked for email only is never texted; one who asked for text only is not emailed unless the text cannot be sent.
-def delivery_plan(kind, phone, carrier, email, contact_method='', important=False):
+def _cell_key(phone, carrier):
+    """What a player's text confirmation was for: their 10-digit number and carrier. A new number or carrier no longer matches it."""
+    d = ''.join(c for c in str(phone or '') if c.isdigit())
+    d = d[1:] if len(d) == 11 and d.startswith('1') else d
+    return f'{d}|{canonical_carrier(carrier).lower()}'
+
+def cell_confirmed(stored, phone, carrier):
+    """True when a test text to this player's current number and carrier was confirmed ('date|digits|carrier' in Players.CellConfirmed)."""
+    parts = str(stored or '').split('|', 1)
+    return len(parts) == 2 and parts[1] == _cell_key(phone, carrier)
+
+def _player_confirmed(cur, name):
+    """True/False for one player, or None when the database has no CellConfirmed column yet."""
+    try:
+        cur.execute("SELECT COALESCE(CellConfirmed,''), Phone, CellCarrier FROM Players WHERE Player=?", (name,))
+    except sqlite3.OperationalError:
+        return None
+    r = cur.fetchone()
+    return cell_confirmed(*r) if r else None
+
+def delivery_plan(kind, phone, carrier, email, contact_method='', important=False, confirmed=None):
+    """confirmed=False means this player has not yet had a test text arrive: on a validated carrier they are treated as untested."""
     cm = str(contact_method or '').strip().lower()
     addr, why = (None, 'prefers email') if cm == 'email' else sms_address(phone, carrier)
     status = carrier_info(carrier)['status'] if addr else 'unavailable'
+    if status == 'validated' and confirmed is False:
+        status = 'unvalidated'
     plan = {'text': addr, 'email': email or None, 'mode': 'none', 'nudge': False, 'note': why or ''}
     if kind == 'long':
         if email:
@@ -1533,7 +1556,7 @@ def _contact_plan(cur, name, kind, important=False):
     if not r:
         return None, 'not in the player file'
     phone, carrier, email, cm = r
-    plan = delivery_plan(kind, phone, carrier, email, cm, important)
+    plan = delivery_plan(kind, phone, carrier, email, cm, important, confirmed=_player_confirmed(cur, name))
     if plan['mode'] == 'none':
         return None, plan['note'] or 'no contact info'
     return plan, None
@@ -2131,6 +2154,23 @@ def carrier_admin():
                 elif action == 'unvalidate':
                     cur.execute("UPDATE CarrierGateways SET Status='unvalidated', ValidatedAt=NULL, ValidatedBy=?, Note=? WHERE Carrier=?", (admin, note or row['Note'] or '', name))
                     what = f'set {name} back to unvalidated'
+                elif action in ('confirm_player', 'unconfirm_player'):
+                    player = str(b.get('player') or '').strip()
+                    if 'CellConfirmed' not in _table_cols(cur, 'Players'):
+                        cur.execute('ALTER TABLE Players ADD COLUMN CellConfirmed TEXT')
+                    cur.execute('SELECT Phone, CellCarrier FROM Players WHERE Player=?', (player,))
+                    pr = cur.fetchone()
+                    if not pr:
+                        return jsonify({'ok': False, 'error': 'That player is not in the player file.'}), 404
+                    if action == 'confirm_player':
+                        if canonical_carrier(pr[1]).lower() != name.lower() or len(_cell_key(pr[0], pr[1]).split('|')[0]) != 10:
+                            return jsonify({'ok': False, 'error': f"{player}'s carrier or number is not the one that was tested. Refresh and try again."}), 400
+                        cur.execute('UPDATE Players SET CellConfirmed=? WHERE Player=?', (f'{today}|{_cell_key(pr[0], pr[1])}', player))
+                        what = f"confirmed {player}'s text on {name}"
+                    else:
+                        cur.execute("UPDATE Players SET CellConfirmed='' WHERE Player=?", (player,))
+                        what = f"cleared {player}'s text confirmation"
+                    b_confirmed = cur.execute('SELECT CellConfirmed FROM Players WHERE Player=?', (player,)).fetchone()[0]
                 elif action == 'save':
                     active = 'N' if str(b.get('active') or 'Y').upper() == 'N' else 'Y'
                     cur.execute('UPDATE CarrierGateways SET Gateway=?, Note=?, Active=? WHERE Carrier=?', (gateway or row['Gateway'], note, active, name))
@@ -2142,7 +2182,10 @@ def carrier_admin():
             out = _carrier_row_dict(cur, name)
         finally:
             conn.close()
-    return jsonify({'ok': True, 'row': out, 'modifiedMs': db_modified_ms()})
+    res = {'ok': True, 'row': out, 'modifiedMs': db_modified_ms()}
+    if action in ('confirm_player', 'unconfirm_player'):
+        res.update(player=player, confirmed=b_confirmed or '')
+    return jsonify(res)
 
 @app.route('/carrier-test', methods=['POST'])
 def carrier_test():
@@ -2317,6 +2360,7 @@ def need_sub():
 
             cur.execute("SELECT COALESCE(ContactMethod,'') FROM Players WHERE Player=?", (recipient,))
             _cm = (cur.fetchone() or [''])[0]
+            _conf = _player_confirmed(cur, recipient)
 
             def do_email():
                 nonlocal email_count
@@ -2363,7 +2407,7 @@ def need_sub():
 
             # A sub request is urgent (see delivery_plan): a tested carrier gets the text only (an email if it is rejected),
             # an untested one gets the text and the email, an unavailable one gets the email. Officers are copied on the email.
-            plan = delivery_plan('urgent', r['Phone'], r['CellCarrier'], r['Email'], _cm)
+            plan = delivery_plan('urgent', r['Phone'], r['CellCarrier'], r['Email'], _cm, confirmed=_conf)
             did_email = did_sms = False
             if plan['mode'] == 'both':
                 did_sms = do_sms(plan['text'])
@@ -2655,6 +2699,7 @@ def notify_payout():
         cur = conn.cursor()
         cur.execute("SELECT Email, Phone, CellCarrier, COALESCE(ContactMethod,'') AS ContactMethod FROM Players WHERE Player=?", (player,))
         row = cur.fetchone()
+        conf = _player_confirmed(cur, player)
         conn.close()
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
@@ -2713,7 +2758,7 @@ You've received a payout of ${amount:.2f} from the {source}.
 
     # Text via the carrier gateway. A payout notice is a long, important message (see delivery_plan): the email carries it and a tested
     # carrier also gets a short "check your email" text; with no email on file (or if the email failed) the text carries the details.
-    plan = delivery_plan('long', row['Phone'], row['CellCarrier'], row['Email'], row['ContactMethod'], important=True)
+    plan = delivery_plan('long', row['Phone'], row['CellCarrier'], row['Email'], row['ContactMethod'], important=True, confirmed=conf)
     sms_body = None
     by_text = f" (by {recorded_by})" if recorded_by else ""
     detail_text = (f"Hugh's Golf League: ${amount:.2f} payout from {source}{by_text}. {comment} Reply CONFIRMED if received."
@@ -3750,6 +3795,9 @@ def ensure_schema():
         if 'PhotoKey' not in _table_cols(cur, 'Players'):            # random key of the player's photo file (see /upload-my-photo)
             cur.execute('ALTER TABLE Players ADD COLUMN PhotoKey TEXT')
             print(f'[{now_local():%H:%M:%S}] Schema check: added Players.PhotoKey')
+        if 'CellConfirmed' not in _table_cols(cur, 'Players'):       # 'date|digits|carrier' of the last test text that arrived for this player
+            cur.execute('ALTER TABLE Players ADD COLUMN CellConfirmed TEXT')
+            print(f'[{now_local():%H:%M:%S}] Schema check: added Players.CellConfirmed')
         conn.commit()
         ensure_carrier_table(cur)                                    # carrier text gateways + their tested status
         conn.commit()
