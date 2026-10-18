@@ -45,7 +45,7 @@ const R = (Carrier, Status, ValidatedAt = null, Active = 'Y', Note = '') => ({ C
   assert(/INSERT OR REPLACE INTO CarrierGateways/.test(x.mirrored[1].sql) && x.mirrored[1].args[0] === 'Verizon' && x.mirrored[1].args[2] === 'validated');
   x = world([]); x.c.reply = { ok: false, error: 'Only an admin who is signed in can change carriers.' }; assert.strictEqual(await x.c.carrierAdminAction('validate', 'Verizon'), false); assert.deepStrictEqual(Array.from(x.alerts), ['Only an admin who is signed in can change carriers.']); assert.strictEqual(x.mirrored.length, 0);
   // wiring
-  assert(/ADMIN_SECTIONS = \[[^\]]*'carriers'/.test(src) && /tables: \['players','teams','subs','leaguesettings','carriers'\]/.test(src) && /id="adminBtnCarriers"/.test(src) && /id="adminCarriers"/.test(src) && /if \(section==='carriers'\) loadCarriersAdmin\(\)/.test(src));
+  assert(/ADMIN_SECTIONS = \[[^\]]*'carriers'/.test(src) && /tables: \['players','teams','subs','carriers','newseason'\]/.test(src) && /id="adminBtnCarriers"/.test(src) && /id="adminCarriers"/.test(src) && /if \(section==='carriers'\) loadCarriersAdmin\(\)/.test(src));
   assert(/\$\{carrierChoices\(\)\.map\(c =>/.test(extract('showPlayerSelfEditModal')), 'My Profile uses the table');
   assert(/fillCarrierSelect\('pmCarrier'\);\s*document\.getElementById\('pmCarrier'\)\.value = normalizeCarrier/.test(src));
   const popup = extract('carrierTestPopup'); assert(/\/carrier-test/.test(popup) && /confirm\(`Send a REAL test text/.test(popup) && /confirmed: true/.test(popup) && /person\.Phone/.test(popup), 'the test popup confirms with the name and number, in the sandbox too');

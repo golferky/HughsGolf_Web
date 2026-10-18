@@ -1438,23 +1438,12 @@
   <div class="section" id="tab-admin">
     <div class="admin-nav">
       <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
-      <button onclick="showAdminSection('sql')" id="adminGroupSql" class="admin-btn">🔍 SQL</button>
-      <button onclick="showAdminSection('players')" id="adminGroupTables" class="admin-btn">🗂️ Table Maintenance</button>
-      <button onclick="showAdminSection('loginactivity')" id="adminGroupLogging" class="admin-btn">📜 Logging</button>
-      <button onclick="showAdminSection('pdfs')" id="adminBtnPdfs" class="admin-btn">📄 PDFs</button>
-      <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
-      <button onclick="showAdminSection('broadcast')" id="adminBtnBroadcast" class="admin-btn">📣 Broadcast</button>
-      <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">💾 Backups</button>
-      <button onclick="showAdminSection('proposals')" id="adminBtnProposals" class="admin-btn">📋 Proposals</button>
-      <button onclick="showAdminSection('changelog')" id="adminBtnChangelog" class="admin-btn">📝 Changelog</button>
-      <button onclick="showAdminSection('backlog')" id="adminBtnBacklog" class="admin-btn">🗒️ Backlog</button>
-      <button onclick="showAdminSection('newseason')" id="adminBtnNewseason" class="admin-btn">🌱 New Season</button>
-      <button onclick="showAdminSection('expenses')" id="adminBtnExpenses" class="admin-btn">💰 Expenses</button>
-      <button onclick="showAdminSection('awards')" id="adminBtnAwards" class="admin-btn">🏆 Award Prizes</button>
-      <button onclick="showAdminSection('balance')" id="adminBtnBalance" class="admin-btn">📒 Balance Sheet</button>
-      <button onclick="showAdminSection('pageviews')" id="adminBtnPageviewsTop" class="admin-btn">📊 Usage</button>
-      <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
-      <button onclick="showAdminSection('compare');setTimeout(()=>{const s=document.getElementById('compareDateSel');if(s&&s.value)runCompareWithLive();},100)" id="adminBtnCompare" class="admin-btn" style="display:none">📊 Compare Live</button>
+      <button onclick="showAdminSection(adminGroupDefault('tables'))" id="adminGroupTables" class="admin-btn">🗂️ Table Maintenance</button>
+      <button onclick="showAdminSection(adminGroupDefault('messages'))" id="adminGroupMessages" class="admin-btn">📣 Messages</button>
+      <button onclick="showAdminSection(adminGroupDefault('money'))" id="adminGroupMoney" class="admin-btn">💰 Money</button>
+      <button onclick="showAdminSection(adminGroupDefault('logging'))" id="adminGroupLogging" class="admin-btn">📜 Logging</button>
+      <button onclick="showAdminSection(adminGroupDefault('notes'))" id="adminGroupNotes" class="admin-btn">📝 Notes</button>
+      <button onclick="showAdminSection(adminGroupDefault('developer'))" id="adminGroupDeveloper" class="admin-btn">🛠️ Developer</button>
       <button onclick="triggerRedeploy()" id="adminBtnRedeploy" class="admin-btn dev-only" style="color:#e65100">🚀 Redeploy</button>
     </div>
 
@@ -1462,8 +1451,21 @@
       <button onclick="showAdminSection('players')" id="adminBtnPlayers" class="admin-subbtn">👥 Players</button>
       <button onclick="showAdminSection('teams')" id="adminBtnTeams" class="admin-subbtn">⛳ Teams</button>
       <button onclick="showAdminSection('subs')" id="adminBtnSubs" class="admin-subbtn">🔄 Subs</button>
-      <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-subbtn">⚙️ League Settings</button>
       <button onclick="showAdminSection('carriers')" id="adminBtnCarriers" class="admin-subbtn">📶 Carriers</button>
+      <button onclick="showAdminSection('newseason')" id="adminBtnNewseason" class="admin-subbtn">🌱 New Season</button>
+    </div>
+
+    <div id="adminSubnavMessages" class="admin-subnav">
+      <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-subbtn">🌧 Rain Out</button>
+      <button onclick="showAdminSection('broadcast')" id="adminBtnBroadcast" class="admin-subbtn">📣 Broadcast</button>
+      <button onclick="showAdminSection('pdfs')" id="adminBtnPdfs" class="admin-subbtn">📄 PDFs</button>
+      <button onclick="showAdminSection('proposals')" id="adminBtnProposals" class="admin-subbtn">📋 Proposals</button>
+    </div>
+
+    <div id="adminSubnavMoney" class="admin-subnav">
+      <button onclick="showAdminSection('expenses')" id="adminBtnExpenses" class="admin-subbtn">💰 Expenses</button>
+      <button onclick="showAdminSection('awards')" id="adminBtnAwards" class="admin-subbtn">🏆 Award Prizes</button>
+      <button onclick="showAdminSection('balance')" id="adminBtnBalance" class="admin-subbtn">📒 Balance Sheet</button>
     </div>
 
     <div id="adminSubnavLogging" class="admin-subnav">
@@ -1472,6 +1474,19 @@
       <button onclick="showAdminSection('emaillog')" id="adminBtnEmaillog" class="admin-subbtn">✉️ Emails Sent</button>
       <button onclick="showAdminSection('pageviews')" id="adminBtnPageviews" class="admin-subbtn">📊 Usage</button>
       <button onclick="showAdminSection('whoson')" id="adminBtnWhoson" class="admin-subbtn">🟢 Who's On</button>
+    </div>
+
+    <div id="adminSubnavNotes" class="admin-subnav">
+      <button onclick="showAdminSection('changelog')" id="adminBtnChangelog" class="admin-subbtn">📝 Changelog</button>
+      <button onclick="showAdminSection('backlog')" id="adminBtnBacklog" class="admin-subbtn">🗒️ Backlog</button>
+    </div>
+
+    <div id="adminSubnavDeveloper" class="admin-subnav">
+      <button onclick="showAdminSection('sql')" id="adminBtnSql" class="admin-subbtn">🔍 SQL</button>
+      <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-subbtn">⚙️ League Settings</button>
+      <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-subbtn">💾 Backups</button>
+      <button onclick="showAdminSection('compare');setTimeout(()=>{const s=document.getElementById('compareDateSel');if(s&&s.value)runCompareWithLive();},100)" id="adminBtnCompare" class="admin-subbtn" style="display:none">📊 Compare Live</button>
+      <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-subbtn" style="display:none">🔁 Sync</button>
     </div>
 
     <!-- AWARD PRIZES (Admin section): everything we assign or pay to winners -->
@@ -4176,6 +4191,7 @@ function ensureAppChangelogTable() {
     ['enhancement', 'Post Season > Scores: post-season scores get their own tab', 'Post Season has a new Scores tab (first in the group) with the score grid for each season\'s post season: pick the season, enter or view its scores, payments and skins. Play > Scores is now the regular season only, and the Play round-date bar no longer lists post-season nights. Gallus imports open the tab that matches the card\'s night. PR #136.', 1],
     ['enhancement', 'Home shows Stats on the same page', 'Stats is no longer a second tab under Home: the Stats (Individual, Rankings, Leaders, Head to Head) now sit below the Home cards on one page, and the extra row of tabs is gone. Usage still counts Stats separately. PR #136.', 2],
     ['enhancement', 'Skins/CTPs and Stableford for both regular season and post season', 'Post Season has its own Skins/CTPs and Stableford tabs for each season\'s two post-season nights (the Stableford team standings stay in Play). Play > Skins/CTPs and Play > Stableford now list regular season nights only. The Award Prizes shortcut for post-season skins opens Post Season > Skins/CTPs. PR #136.', 3],
+    ['enhancement', 'Admin tabs consolidated into groups', 'The Admin tab\'s 18 buttons are now Gallus Queue, Table Maintenance (Players, Teams, Subs, Carriers, New Season), Messages (Rain Out, Broadcast, PDFs, Proposals), Money (Expenses, Award Prizes, Balance Sheet), Logging, Notes (Changelog, Backlog) and Developer (SQL, League Settings, Backups, Compare Live; Redeploy beside it). The developer-only screens are together, and the Developer button is hidden from anyone who cannot open any of them. A group button returns to the screen you last used in it. PR #136.', 4],
   ]);
   ensureVersion('20261018.14', 'October 18, 2026', [
     ['bugfix', 'Broadcast: Refresh also updates the answered count', 'The Refresh button in Answers reloaded only the names; the "(0/1 answered)" count in the drop-down stayed old until you left the screen. It now reloads both. PR #135.', 1],
@@ -11969,9 +11985,15 @@ function loadSchedule() {
 
 // ── ADMIN TAB ──
 const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals','awards','balance','backlog','newseason','carriers','broadcast'];
+// Admin sections are grouped under a few buttons; the developer-only screens sit together in Developer. A group button is hidden
+// from anyone who cannot open any of its screens.
 const ADMIN_GROUPS = {
-  tables: ['players','teams','subs','leaguesettings','carriers'],
-  logging: ['loginactivity','serverlog','pageviews','whoson','emaillog']
+  tables: ['players','teams','subs','carriers','newseason'],
+  messages: ['rainout','broadcast','pdfs','proposals'],
+  money: ['expenses','awards','balance'],
+  logging: ['loginactivity','serverlog','emaillog','pageviews','whoson'],
+  notes: ['changelog','backlog'],
+  developer: ['sql','leaguesettings','backups','compare','sync']
 };
 
 function adminIdSuffix(section) {
@@ -11979,9 +12001,22 @@ function adminIdSuffix(section) {
 }
 
 function adminGroupForSection(section) {
-  if (ADMIN_GROUPS.tables.includes(section)) return 'tables';
-  if (ADMIN_GROUPS.logging.includes(section)) return 'logging';
-  return section;
+  return Object.keys(ADMIN_GROUPS).find(g => ADMIN_GROUPS[g].includes(section)) || section;
+}
+function adminSectionVisible(section) {              // is this screen's button shown to the person using the app?
+  const b = document.getElementById(`adminBtn${adminIdSuffix(section)}`);
+  return !b || b.style.display !== 'none';
+}
+// A group button opens the screen you last used in it, else its first one you can see.
+function adminGroupDefault(group) {
+  const last = (window._adminLastInGroup || {})[group], list = ADMIN_GROUPS[group] || [];
+  return (last && adminSectionVisible(last) ? last : list.find(adminSectionVisible)) || list[0];
+}
+function syncAdminGroupButtons() {                   // hide a group nobody could open anything in (for example Developer, for an admin)
+  Object.keys(ADMIN_GROUPS).forEach(g => {
+    const btn = document.getElementById(`adminGroup${g.charAt(0).toUpperCase() + g.slice(1)}`);
+    if (btn) btn.style.display = ADMIN_GROUPS[g].some(adminSectionVisible) ? '' : 'none';
+  });
 }
 
 // ── Admin ▸ New Season: the setup checklist (it used to be a Help section) ──
@@ -12279,32 +12314,22 @@ function showAdminSection(section) {
   pvTrack('admin', section);
   const group = adminGroupForSection(section);
 
-  // Subnav sections use admin-subbtn; all others use admin-btn
-  const SUBNAV_SECTIONS = new Set([...ADMIN_GROUPS.tables, ...ADMIN_GROUPS.logging]);
+  // Grouped sections are pills in their group's second row (admin-subbtn); Gallus Queue stands alone (admin-btn)
+  const SUBNAV_SECTIONS = new Set(Object.values(ADMIN_GROUPS).flat());
   function _adminBtnBase(s) { return SUBNAV_SECTIONS.has(s) ? 'admin-subbtn' : 'admin-btn'; }
+  if (group !== section) (window._adminLastInGroup = window._adminLastInGroup || {})[group] = section;
 
   ADMIN_SECTIONS.forEach(s => {
     document.getElementById(`admin${adminIdSuffix(s)}`).style.display = s===section?'block':'none';
     const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
     if (btn) btn.className = _adminBtnBase(s) + (s===section?' active-admin-btn':'');
   });
-
-  document.getElementById('adminSubnavTables')?.classList.toggle('active-admin-subnav', group === 'tables');
-  document.getElementById('adminSubnavLogging')?.classList.toggle('active-admin-subnav', group === 'logging');
-
-  ['Sql','Tables','Logging'].forEach(g => {
-    const btn = document.getElementById(`adminGroup${g}`);
-    if (btn) btn.className = 'admin-btn' + (group === g.toLowerCase() || (g === 'Sql' && section === 'sql') ? ' active-admin-btn' : '');
+  Object.keys(ADMIN_GROUPS).forEach(g => {
+    const cap = g.charAt(0).toUpperCase() + g.slice(1);
+    document.getElementById(`adminSubnav${cap}`)?.classList.toggle('active-admin-subnav', group === g);
+    const gb = document.getElementById(`adminGroup${cap}`);
+    if (gb) gb.className = 'admin-btn' + (group === g ? ' active-admin-btn' : '');
   });
-  ['pdfs','rainout','broadcast','sync','gallus','backups','changelog','backlog','newseason','expenses','compare','proposals'].forEach(s => {
-    const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
-    if (btn) btn.className = 'admin-btn' + (s===section?' active-admin-btn':'');
-  });
-  // Usage has two buttons (top-level tab + logging subnav pill)
-  const pvTop = document.getElementById('adminBtnPageviewsTop');
-  const pvSub = document.getElementById('adminBtnPageviews');
-  if (pvTop) pvTop.className = 'admin-btn' + (section==='pageviews'?' active-admin-btn':'');
-  if (pvSub) pvSub.className = 'admin-subbtn' + (section==='pageviews'?' active-admin-btn':'');
 
   if (section==='players') loadAdminPlayers();
   if (section==='teams')   loadAdminTeams();
@@ -13042,6 +13067,7 @@ function loadAdminTab() {
   const isSandboxEnv = isSandboxHost() || location.port === '8446';
   const compareBtn = document.getElementById('adminBtnCompare');
   if (compareBtn) compareBtn.style.display = isSandboxEnv ? '' : 'none';
+  syncAdminGroupButtons();
 }
 
 // ── PLAYERS ──
@@ -20043,8 +20069,6 @@ function applyRoleAccess() {
   if (lsBtn) lsBtn.style.display = role === 'developer' ? '' : 'none';
   const laBtn = document.getElementById('adminBtnLoginactivity');
   if (laBtn) laBtn.style.display = (role === 'developer' || role === 'admin') ? '' : 'none';
-  const loggingGroupBtn = document.getElementById('adminGroupLogging');
-  if (loggingGroupBtn) loggingGroupBtn.style.display = (role === 'developer' || role === 'admin') ? '' : 'none';
   const backupBtn = document.getElementById('adminBtnBackups');
   if (backupBtn) backupBtn.style.display = role === 'developer' ? '' : 'none';
   const redeployBtn = document.getElementById('adminBtnRedeploy');
@@ -20080,14 +20104,15 @@ function applyRoleAccess() {
   });
   syncTabGroups();
 
-  // Hide SQL button for non-developers
-  const sqlBtn = document.getElementById('adminGroupSql');
+  // SQL is developer only
+  const sqlBtn = document.getElementById('adminBtnSql');
   if (sqlBtn) sqlBtn.style.display = role === 'developer' ? '' : 'none';
 
   // Show Compare Live button in sandbox environment (must be here AND in loadAdminTab to cover both paths)
   const _isSandboxEnv = isSandboxHost() || location.port === '8446';
   const _compareBtn = document.getElementById('adminBtnCompare');
   if (_compareBtn) _compareBtn.style.display = _isSandboxEnv ? '' : 'none';
+  syncAdminGroupButtons();                      // a group with nothing you can open is hidden
 
   // Show/hide entry save/clear buttons based on role
   const entrySaveBtn  = document.getElementById('entrySave');
