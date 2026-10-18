@@ -6,8 +6,8 @@ Last updated: 2026-10-18
 
 ## 🐞 Bugs / to look at *(added Oct 18, 2026; the notes had screenshots that still need to be attached)*
 
-- [ ] **Need a Refresh button** — Which screen(s) is still to be confirmed from the screenshot. Several admin screens already have one (Balance Sheet, Server Log, Backups, Changelog, Who's On, Usage); the player-facing screens do not.
-- [ ] **Proposals disappeared** — Proposals (Home card and Admin → Proposals) no longer show. To find out: what the screen showed vs. expected, and whether this is the default "active only" filter or the proposals themselves missing from the database.
+- [x] **Need a Refresh button** — A ↻ button next to the database time at the top now fetches the latest data and redraws the current screen (PR #131).
+- [ ] **Proposals disappeared** — The proposals and suggestion-box tables were only ever created in the browser's copy of the database, never on the server, so a proposal saved to a server without them was lost on the next reload. The server now creates both tables at startup (PR #131). Still to do: look in older backups (Admin → Backups) for the lost proposals and re-enter them.
 - [ ] **Byes: what happens if a team no-shows against a bye** — A team playing a bye (odd number of teams, or the bogus "never shows" team) that does not show up, or the real team scheduled against the bogus team not showing: define the points/forfeit rule, then check the code against it.
 
 ---
