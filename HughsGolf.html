@@ -2902,7 +2902,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.13';
+const APP_VERSION = '20261018.14';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4153,6 +4153,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.14', 'October 18, 2026', [
+    ['bugfix', 'Broadcast: Refresh also updates the answered count', 'The Refresh button in Answers reloaded only the names; the "(0/1 answered)" count in the drop-down stayed old until you left the screen. It now reloads both. PR #135.', 1],
   ]);
   ensureVersion('20261018.13', 'October 18, 2026', [
     ['bugfix', 'Broadcast: never asks about a season more than a year ahead', 'The Season drop-down only offers teams up to the current year, so "are you in for next season?" asks about next year and not the one after (it was offering 2028 once the 2027 teams existed). The server refuses it too. PR #134.', 1],
@@ -19670,7 +19673,7 @@ async function bcShow(id) {
        <div style="font-size:13px;margin-top:4px">${(b.ask ? none : rows).map(r => `<div style="margin:3px 0">${escapeHtml(r.player)} <span style="color:#999;font-size:11px">${escapeHtml(r.via || 'not sent')}</span>${b.ask ? ' ' + sel(r) : ''}</div>`).join('') || '—'}</div></div>`
     + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${b.ask && none.length && !b.closedAt && !b.test ? `<button onclick="bcRemind(${b.id}, ${none.length})" style="padding:7px 14px;background:#e65100;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">🔁 Remind the ${none.length} who haven't answered</button>` : ''}
        ${b.ask ? `<button onclick="bcClose(${b.id}, ${b.closedAt ? 'false' : 'true'})" style="padding:7px 14px;border:1px solid #888;background:white;border-radius:6px;cursor:pointer;font-size:13px">${b.closedAt ? 'Reopen the question' : 'Close the question'}</button>` : ''}
-       <button onclick="bcShow(${b.id})" style="padding:7px 14px;border:1px solid #ccc;background:white;border-radius:6px;cursor:pointer;font-size:13px">↻ Refresh</button></div>`;
+       <button onclick="bcLoadList(${b.id})" style="padding:7px 14px;border:1px solid #ccc;background:white;border-radius:6px;cursor:pointer;font-size:13px">↻ Refresh</button></div>`;
 }
 async function bcRecord(el) {
   if (!el.value) return;

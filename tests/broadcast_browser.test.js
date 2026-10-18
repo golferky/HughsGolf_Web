@@ -54,6 +54,9 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
   const det = await p.innerText('#bcDetail'); assert(/Yes, I'm in \(1\)/.test(det) && /love it/.test(det) && /No answer yet \(2\)/.test(det) && /Remind the 2 who haven't answered/.test(det), det);
   await p.selectOption('select[data-p="Lee Sample"]', 'no'); await p.waitForFunction(() => /No, not next year \(1\)/.test(document.getElementById('bcDetail').innerText));
   assert(calls.some(c => c.action === 'answer' && c.player === 'Lee Sample' && c.answer === 'no' && c.id === 7));
+  // Refresh reloads the drop-down count as well as the names
+  const before = calls.filter(c => c.action === 'list').length; await p.click('#bcDetail >> text=Refresh'); await p.waitForTimeout(200);
+  assert(calls.filter(c => c.action === 'list').length > before, 'Refresh asks the server for the list again, not just the names');
   await p.click('text=/Remind the/'); await p.waitForTimeout(200); assert(calls.some(c => c.action === 'send' && c.remindId === 7));
   assert.deepStrictEqual(errs, [], errs.join('; '));
   await b.close(); console.log('ok');
