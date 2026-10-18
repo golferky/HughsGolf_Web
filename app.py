@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261018.7-sandbox'
+VERSION    = '20261018.8-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -275,7 +275,7 @@ def delivery_plan(kind, phone, carrier, email, contact_method='', important=Fals
     status = carrier_info(carrier)['status'] if addr else 'unavailable'
     if status == 'validated' and confirmed is False:
         status = 'unvalidated'
-    plan = {'text': addr, 'email': email or None, 'mode': 'none', 'nudge': False, 'note': why or ''}
+    plan = {'text': addr, 'email': email or None, 'mode': 'none', 'nudge': False, 'note': why or '', 'contact_method': cm}
     if kind == 'long':
         if email:
             plan['mode'] = 'email'
@@ -1802,6 +1802,20 @@ def _broadcast_audience(cur, group, year, names):
 def _broadcast_text(message, link):
     return f'{message} Tap to answer: {link}' if link else message
 
+def _broadcast_plan(plan, ask):
+    """With a question, the answer link goes in the email, because carriers often silently drop a text that contains a link, and the text
+    only says to check the email. Someone with no email (or who asked for texts only) gets the link in the text, which may not arrive."""
+    p = dict(plan); p['link_in_text'] = False
+    if not ask:
+        return p
+    if p['text'] and (p['contact_method'] == 'text' or not p['email']):
+        p['mode'], p['link_in_text'] = 'text', True
+    elif p['text'] and p['email']:
+        p['mode'] = 'both'
+    elif p['email']:
+        p['mode'] = 'email'
+    return p
+
 @app.route('/broadcast', methods=['POST'])
 def broadcast():
     b = request.get_json(silent=True) or {}
@@ -1844,13 +1858,15 @@ def _broadcast_preview(b):
     try:
         cur = conn.cursor()
         rows, skipped = [], []
+        ask = str(b.get('ask') or ''); ask = ask if ask in _BROADCAST_ASKS else ''
         for name, reason in _broadcast_audience(cur, _bc_group(b), _bc_year(b), _bc_names(b)):
             if reason:
                 skipped.append({'player': name, 'reason': reason}); continue
             plan, err = _contact_plan(cur, name, 'urgent')
             if not plan:
                 skipped.append({'player': name, 'reason': err or 'no contact info'}); continue
-            rows.append({'player': name, 'mode': plan['mode']})
+            plan = _broadcast_plan(plan, ask)
+            rows.append({'player': name, 'mode': plan['mode'], 'linkInText': plan['link_in_text']})
     finally:
         conn.close()
     return jsonify({'ok': True, 'recipients': rows, 'skipped': skipped})
@@ -1904,7 +1920,14 @@ def _broadcast_send(b, admin):
             if not row:
                 cur.execute('INSERT INTO BroadcastRecipient (Token, BroadcastId, Player) VALUES (?,?,?)', (tok, bid, name))
             link = f'{base}/b/{tok}' if ask else ''
-            text = ('TEST: ' if test else '') + _broadcast_text(message, link)
+            plan = _broadcast_plan(plan, ask)
+            if not ask:
+                body_text = message
+            elif plan['link_in_text']:
+                body_text = _broadcast_text(message, link)
+            else:
+                body_text = f'{message} Check your email to answer.'
+            text = ('TEST: ' if test else '') + body_text
             todo.append((name, tok, plan, text, link))
         conn.commit(); conn.close()
     sent, failed, via = [], [], {}
@@ -1912,7 +1935,7 @@ def _broadcast_send(b, admin):
         if simulated:
             sent.append(name); via[name] = ['simulated']; continue
         email_body = f"{message}\n\n" + (f"Please tell us here (one tap, no login):\n{link}\n\n" if link else '') + "Hugh's Golf League"
-        res = deliver(plan, text, title or "Hugh's Golf", email_body=email_body)
+        res = deliver(plan, text, ('TEST: ' if test else '') + (title or "Hugh's Golf"), email_body=email_body)
         if res['ok']:
             sent.append(name); via[name] = res['sent']
         else:

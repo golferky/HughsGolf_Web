@@ -13,7 +13,7 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
     if (u.startsWith('http://t/vendor/sqljs/')) return r.fulfill({ body: fs.readFileSync(path.join(__dirname, '..', u.replace('http://t/', ''))), contentType: u.endsWith('.wasm') ? 'application/wasm' : 'text/javascript' });
     if (u === 'http://t/broadcast') {
       const body = JSON.parse(r.request().postData()); calls.push(body);
-      if (body.action === 'preview') return json(r, { ok: true, recipients: [{ player: 'Pat Example', mode: 'both' }, { player: 'Lee Sample', mode: 'text-first' }, { player: 'Mo Mail', mode: 'email' }], skipped: [{ player: 'Opt Out', reason: 'asked not to be contacted' }] });
+      if (body.action === 'preview') return json(r, { ok: true, recipients: [{ player: 'Pat Example', mode: 'both' }, { player: 'Lee Sample', mode: 'text-first' }, { player: 'Mo Mail', mode: 'email' }, { player: 'Tex Only', mode: 'text', linkInText: true }], skipped: [{ player: 'Opt Out', reason: 'asked not to be contacted' }] });
       if (body.action === 'send') return json(r, { ok: true, id: 7, simulated: false, test: !!body.test, sent: ['Pat Example', 'Lee Sample', 'Mo Mail'], failed: [], skipped: [], via: {} });
       if (body.action === 'list') return json(r, { ok: true, broadcasts: [{ id: 7, title: 'Are you in for 2027?', ask: 'season', year: 2026, createdAt: '2026-10-18 09:00', createdBy: 'Boss Admin', closedAt: '', recipients: 3, answered: answered ? 2 : 1 }] });
       if (body.action === 'status') return json(r, { ok: true, broadcast: { id: 7, title: 'Are you in for 2027?', message: "Hugh's Golf League: are you in for the 2027 season?", ask: 'season', year: 2026, createdAt: '2026-10-18 09:00', createdBy: 'Boss Admin', closedAt: '' },
@@ -40,8 +40,8 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
   await p.selectOption('#bcGroup', 'names'); const names = await p.$$eval('.bcName', e => e.map(x => x.value)); assert.deepStrictEqual(names, ['Lee Sample', 'Pat Example']);
   await p.check('.bcName[value="Pat Example"]'); await p.selectOption('#bcGroup', 'team');
   // preview says who gets it and who is left out, and asks nothing of anyone
-  await p.click('#adminBroadcast >> text=Preview who gets it'); await p.waitForFunction(() => /3 people will get it/.test(document.getElementById('bcResult').innerText));
-  const pv = await p.innerText('#bcResult'); assert(/1 by text and email/.test(pv) && /1 by text,/.test(pv) && /1 by email only/.test(pv) && /Opt Out \(asked not to be contacted\)/.test(pv), pv);
+  await p.click('#adminBroadcast >> text=Preview who gets it'); await p.waitForFunction(() => /4 people will get it/.test(document.getElementById('bcResult').innerText));
+  const pv = await p.innerText('#bcResult'); assert(/No email on file, so the link is in their text and may not arrive: Tex Only/.test(pv) && /1 by text and email/.test(pv) && /2 by text,/.test(pv) && /1 by email only/.test(pv) && /Opt Out \(asked not to be contacted\)/.test(pv), pv);
   const pc = calls.find(c => c.action === 'preview'); assert(pc && pc.group === 'team' && pc.year === 2026 && JSON.stringify(pc.names) === '["Pat Example"]', JSON.stringify(pc));
   // a test goes through the send action with test=true; the real send previews first, then sends
   await p.click('#adminBroadcast >> text=Send a test to me only'); await p.waitForFunction(() => /Test sent to you/.test(document.getElementById('bcResult').innerText));
