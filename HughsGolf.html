@@ -576,6 +576,7 @@
     <span id="appVersionDisplay">v—</span>
     <span style="color:#9bc59a">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
+    <button id="dbRefreshBtn" onclick="refreshDataNow(this)" title="Reload the latest league data from the server" aria-label="Refresh league data" style="background:transparent;border:1px solid #9bc59a;color:#d6ead2;border-radius:6px;padding:1px 8px;font-size:14px;line-height:1.3;cursor:pointer">↻</button>
   </div>
   <span id="weeksLeftBanner" onclick="showLeagueCalendar()" style="display:none;font-size:12px;color:var(--gold);background:#1a3a1a;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px;cursor:pointer"></span>
   <span id="profileAlertBadge" onclick="showProfileAlertList()" style="display:none;font-size:12px;color:#ffcc80;background:#4a2f00;border:1px solid #ffcc80;padding:5px 12px;border-radius:6px;font-weight:600;margin-left:12px;cursor:pointer">⚠ 0 players need info</span>
@@ -2901,7 +2902,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.9';
+const APP_VERSION = '20261019.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3535,6 +3536,18 @@ async function loadDbInfo() {
   }
 }
 
+// The ↻ button next to the database time: fetch the latest league data and redraw the screen you are on, without a full page reload.
+async function refreshDataNow(btn) {
+  if (!db || !location.href.startsWith('http') || TEST_DB_MODE || (typeof _isTestMode === 'function' && _isTestMode())) { location.reload(); return; }   // a personal test database is not the shared file
+  if (_saveInProgress || _savePending || entryDirty) { alert('You have score changes that are not saved yet. Finish saving them, then refresh.'); return; }
+  const old = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  let ok = false;
+  try { ok = await refreshLiveDbSnapshotForReadOnlyView(); } finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
+  if (!ok) { alert('Could not refresh the league data' + (window._dbRefreshWhy ? ` (${window._dbRefreshWhy})` : '') + '. Check your connection and try again.'); return; }
+  try { refreshTab(activeTabName()); } catch (e) { console.warn('redraw after refresh failed:', e); }
+}
+
 async function refreshLiveDbSnapshotForReadOnlyView() {
   if (!location.href.startsWith('http') || !SQL) return false;
   if (READONLY_DB_REFRESH_PROMISE) return READONLY_DB_REFRESH_PROMISE;
@@ -4140,6 +4153,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261019.1', 'October 19, 2026', [
+    ['enhancement', 'Refresh button', 'A ↻ button next to the database time at the top fetches the latest league data (new board posts, scores and changes other people made) and redraws the screen you are on, without reloading the page. It will not run while you have unsaved score changes. PR #131.', 1],
+    ['bugfix', 'Proposals and the suggestion box are now stored on the server', 'The page created these two tables only in its own copy of the database, so a proposal saved to a server that did not have the tables disappeared on the next reload. The server now creates them at startup. PR #131.', 2],
   ]);
   ensureVersion('20261018.9', 'October 18, 2026', [
     ['bugfix', 'Rainout confirm links and new-sub permission links now go in the email', 'Texts that contain a link are often dropped by carriers. Rainout notices (including the point-person version) and the permission request to a new possible sub now send the link in an email and a short text saying to check it; a player with no email still gets the link in the text. Sub requests already have no link. PR #130.', 1],

@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261018.9-sandbox'
+VERSION    = '20261019.1-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1763,6 +1763,15 @@ _BROADCAST_ASKS = {
     'rsvp':   ('Yes, I\'ll be there', 'No, I can\'t make it', 'Not sure yet'),
 }
 _BROADCAST_ANSWERS = ('yes', 'no', 'maybe')
+
+def ensure_proposal_tables(cur):
+    """Proposed rule changes and suggestions. The page used to create these tables only in its own copy of the database, so a proposal
+    saved to a server without the table was lost on the next reload; the server now has them."""
+    cur.execute("""CREATE TABLE IF NOT EXISTS ProposedChanges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT, status TEXT DEFAULT 'Proposed',
+        proposedBy TEXT, proposedDate TEXT, season TEXT, created_at TEXT)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS Suggestions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT, suggestion TEXT NOT NULL, status TEXT DEFAULT 'New', adminNotes TEXT, submitted_at TEXT, created_at TEXT)""")
 
 def ensure_broadcast_tables(cur):
     cur.execute("""CREATE TABLE IF NOT EXISTS Broadcast (
@@ -4154,6 +4163,7 @@ def ensure_schema():
         conn.commit()
         ensure_carrier_table(cur)                                    # carrier text gateways + their tested status
         ensure_broadcast_tables(cur)                                 # broadcast messages and the one-tap answers
+        ensure_proposal_tables(cur)                                  # proposed rule changes and the suggestion box (they only ever existed in the browser's copy)
         conn.commit()
         # Player-added players: approval + contact permission
         p_cols = _table_cols(cur, 'Players')

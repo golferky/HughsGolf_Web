@@ -13,6 +13,7 @@ app.ensure_schema()
 assert 'StartWeek' in cols('LeagueSettings'), cols('LeagueSettings')
 assert 'PhotoKey' in cols('Players'), cols('Players')
 assert 'PhotoReminders' in cols('Players'), cols('Players')
+assert {'ProposedChanges', 'Suggestions'} <= {r[0] for r in sqlite3.connect(app.DB_PATH).execute("SELECT name FROM sqlite_master WHERE type='table'")}
 assert 'CellConfirmed' in cols('Players'), cols('Players')
 assert {'Carrier', 'Gateway', 'Status', 'ValidatedAt', 'ValidatedBy', 'Note', 'Active'} <= cols('CarrierGateways'), cols('CarrierGateways')
 assert sqlite3.connect(app.DB_PATH).execute("SELECT StartWeek FROM LeagueSettings").fetchone()[0] == '2nd', 'existing rows start on the 2nd'
