@@ -5,7 +5,7 @@ function extract(name) { const i = src.indexOf('function ' + name + '('); assert
 function world(playDate) {
   const els = {}, calls = [];
   ['stablefordSeason', 'matchesSeason', 'skinsSeason', 'ctpsSeason', 'sfStandingsSeason', 'matchesDate'].forEach(id => els[id] = { id, value: '', options: [], set innerHTML(h) { this.options = [...h.matchAll(/value="(\d+)"/g)].map(m => ({ value: m[1] })); }, addEventListener() {} });
-  const c = vm.createContext({ Array, String, els, calls, window: { _playDate: playDate }, db: {},
+  const c = vm.createContext({ Array, String, els, calls, SCREEN_MODE: { skins: 'regular', stableford: 'regular' }, window: { _playDate: playDate }, db: {},
     document: { getElementById: id => els[id] || null, querySelectorAll: () => [] },
     query: sql => /DISTINCT Season/.test(sql) ? [{ Season: 2027 }, { Season: 2026 }, { Season: 2025 }].map(r => r) : /MAX\(Season\)/.test(sql) ? [{ s: 2027 }] : [],
     populateStablefordDateDropdown: () => calls.push('sf:' + els.stablefordSeason.value), populateMatchesDateDropdown: () => calls.push('matches:' + els.matchesSeason.value),
@@ -21,6 +21,6 @@ for (const [fn, season, tag] of [['loadStablefordTab', 'stablefordSeason', 'sf']
 // Stableford standings: follow only when asked (the Round date changed), never when the Season box itself changed
 const sfBody = extract('loadSfStandings');
 assert(/function loadSfStandings\(followDate\)/.test(sfBody) && /if \(followDate === true\) playDateFollowSeason\(seasonSel\);/.test(sfBody));
-assert(/loadStablefordTab\(\); loadSfStandings\(true\);/.test(src), 'a Round date change refreshes the SF standings with it');
+assert(/loadStablefordTab\(\); if \(tab === 'stableford'\) loadSfStandings\(true\);/.test(src), 'a Round date change refreshes the SF standings with it');
 assert(/<select id="sfStandingsSeason" onchange="loadSfStandings\(\)">/.test(src), 'the box\'s own change does not follow the date');
 console.log('ok');

@@ -716,7 +716,6 @@
   <div class="subtabs" id="subTabs">
     <div class="subtab-group" data-group="home">
       <div class="tab active" data-tab="home">🏠 Home</div>
-      <div class="tab" data-tab="stats">📊 Stats</div>
     </div>
     <div class="subtab-group" data-group="play" style="display:none">
       <div class="tab" data-tab="scorecard" id="scorecardTabBtn">📝 Scores</div>
@@ -727,7 +726,10 @@
       <div class="tab" data-tab="stableford">⛳ Stableford</div>
     </div>
     <div class="subtab-group" data-group="postseason" style="display:none">
+      <div class="tab" data-tab="ps_entry">✏️ Scores</div>
       <div class="tab" data-tab="ps_scores">🧾 Scores &amp; Standings</div>
+      <div class="tab" data-tab="ps_skinsview">📍 Skins/CTPs</div>
+      <div class="tab" data-tab="ps_stableford">🏌️ Stableford</div>
       <div class="tab" data-tab="ps_skins">🎲 Skins &amp; CTPs</div>
       <div class="tab" data-tab="ps_earned">🎁 Earned</div>
       <label class="psyear">📅 Season <select id="psYearSelect" onchange="psTabSetSeason(this.value)"></select></label>
@@ -878,386 +880,10 @@
         </div>
       </div>
     </div>
-  </div>
-
-  <!-- BOARD -->
-  <div class="section" id="tab-board">
-    <div class="card" style="margin-bottom:0">
-      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
-        <span>📋 League Board</span>
-        <button onclick="showNewPostModal()" style="padding:5px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Post</button>
-      </div>
-      <div style="padding:8px 12px;border-bottom:1px solid #eee;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#faf7f2">
-        <input id="boardSearch" type="text" placeholder="🔍 Search posts..." oninput="applyBoardFilter()"
-          style="flex:1;min-width:140px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px">
-        <select id="boardAuthorFilter" onchange="applyBoardFilter()"
-          style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px;background:white">
-          <option value="">All authors</option>
-        </select>
-        <div id="boardCatFilter" style="display:flex;gap:4px">
-          <button onclick="setBoardCat('')"              class="board-cat-btn active" data-cat="">All</button>
-          <button onclick="setBoardCat('Announcement')"  class="board-cat-btn" data-cat="Announcement">📢</button>
-          <button onclick="setBoardCat('Rainout')"       class="board-cat-btn" data-cat="Rainout">🌧️</button>
-          <button onclick="setBoardCat('General')"       class="board-cat-btn" data-cat="General">General</button>
-        </div>
-      </div>
-      <div id="boardContent" style="padding:12px;max-height:calc(100vh - 220px);overflow-y:auto"></div>
-    </div>
-  </div>
-
-  <!-- STANDINGS -->
-  <div class="section" id="tab-standings">
-    <div class="controls">
-      <div class="filter-group">
-        <label>Season</label>
-        <select id="standSeason"></select>
-      </div>
-      <div class="filter-group">
-        <label>View</label>
-        <select id="standView">
-          <option value="team">Team</option>
-          <option value="individual">Individual</option>
-        </select>
-      </div>
-      <div class="filter-group pd-own">
-        <label>As of Date</label>
-        <select id="standAsOf">
-          <option value="">Current</option>
-        </select>
-      </div>
-    </div>
-    <div class="half-tabs" id="halfTabs" style="display:none">
-      <div class="half-tab active" data-half="1">1st Half</div>
-      <div class="half-tab" data-half="2">2nd Half</div>
-    </div>
-    <div class="card">
-      <div class="card-header">
-        <span id="standTitle">Standings</span>
-        <span class="subtitle" id="standSubtitle"></span>
-        <button id="standCollapseBtn" onclick="toggleStandCard()" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
-      </div>
-      <div id="standCardBody"><div class="table-wrap"><table id="standTable">
-        <thead><tr><th class="ctr">#</th><th>Player</th><th class="ctr">Team</th><th class="ctr">Grade</th><th class="num">Points</th><th class="num">Rounds</th><th>Bar</th></tr></thead>
-        <tbody></tbody>
-      </table></div></div>
-    </div>
-  </div>
-
-  <!-- STABLEFORD -->
-  <!-- LEADERS -->
-
-  <div class="section" id="tab-stableford">
-    <div class="controls">
-      <div class="filter-group">
-        <label>Season</label>
-        <select id="stablefordSeason" onchange="populateStablefordDateDropdown()"></select>
-      </div>
-      <div class="filter-group pd-own">
-        <label>Week</label>
-        <select id="stablefordDate"></select>
-      </div>
-    </div>
-    <!-- Legend -->
-    <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap;font-size:12px;font-weight:600">
-      <span style="background:#ff6f00;color:white;padding:3px 10px;border-radius:4px">Double Eagle+ (8pts)</span>
-      <span style="background:#ffd700;padding:3px 10px;border-radius:4px">Eagle (4pts)</span>
-      <span style="background:#90EE90;padding:3px 10px;border-radius:4px">Birdie (3pts)</span>
-      <span style="background:white;border:1px solid #ddd;padding:3px 10px;border-radius:4px">Par (2pts)</span>
-      <span style="background:#add8e6;padding:3px 10px;border-radius:4px">Bogey (1pt)</span>
-      <span style="background:#ffcccc;padding:3px 10px;border-radius:4px">Double Bogey+ (0pts)</span>
-    </div>
-    <div id="stablefordPsBanner"></div>
-    <div style="overflow-x:auto">
-      <table id="stablefordTable" style="border-collapse:collapse;font-size:12px;min-width:1000px;width:100%">
-        <thead id="stablefordHead"></thead>
-        <tbody id="stablefordBody"></tbody>
-      </table>
-    </div>
-    <div id="stablefordPsStandings"></div>
-
-    <!-- SF STANDINGS -->
-    <div class="controls">
-      <div class="filter-group">
-        <label>Season</label>
-        <select id="sfStandingsSeason" onchange="loadSfStandings()"></select>
-      </div>
-    </div>
-    <div class="half-tabs" id="sfHalfTabs">
-      <div class="sf-half-tab active" data-sfhalf="1" onclick="setSfHalf('1')">1st Half</div>
-      <div class="sf-half-tab" data-sfhalf="2" onclick="setSfHalf('2')">2nd Half</div>
-      <div class="sf-half-tab" data-sfhalf="all" onclick="setSfHalf('all')">Full Season</div>
-    </div>
-    <div class="card" style="margin-top:12px">
-      <div class="card-header" id="sfStandingsHeader">SF Standings — 1st Half</div>
-      <div class="table-wrap">
-        <table id="sfStandingsTable" style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead id="sfStandingsHead"></thead>
-          <tbody id="sfStandingsBody"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- SCORES VIEW -->
-  <div id="adminScores" style="display:none">
-    <!-- SCORE ENTRY -->
-    <div class="controls" style="justify-content:space-between;align-items:flex-end">
-      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-        <div class="filter-group pd-own">
-          <label>Date</label>
-          <select id="entryDate"></select>
-        </div>
-        <input type="checkbox" id="entryPostSeason" style="display:none">
-        <div class="filter-group">
-          <label>9 Holes</label>
-          <select id="entry9">
-            <option value="Front">Front</option>
-            <option value="Back" selected>Back</option>
-          </select>
-        </div>
-        <div class="filter-group" id="futureScoreOverrideGroup" style="display:none;justify-content:center">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#b71c1c">
-            <input type="checkbox" id="futureScoreOverride" onchange="toggleFutureScoreOverride(this.checked)" style="width:15px;height:15px;cursor:pointer">
-            Local test: allow future scores
-          </label>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button id="entryClear" disabled title="Select a score row to clear that player only" style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;cursor:not-allowed;opacity:.45;font-family:'DM Sans',sans-serif;font-size:13px">Clear</button>
-        <button id="gallusSubmitBtn" onclick="showGallusSubmit()" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">📤 Submit Round</button>
-        <button id="groupIntakeToggle" onclick="toggleGroupIntake()" style="padding:8px 16px;background:#37474f;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">👥 Groups</button>
-      </div>
-    </div>
-
-    <!-- Group Intake Panel -->
-    <div id="groupIntakeCard" style="display:none;margin-bottom:14px">
-      <div class="card">
-        <div class="card-header">
-          👥 Group Intake
-          <span class="subtitle" id="groupIntakeSubtitle"></span>
-          <button onclick="toggleGroupIntake(false)" style="margin-left:auto;padding:4px 12px;font-size:12px;font-weight:600;background:transparent;border:1px solid rgba(255,255,255,.4);border-radius:4px;color:white;cursor:pointer">Classic Entry ↗</button>
-        </div>
-        <div id="groupIntakeBody" style="padding:14px"></div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-bottom:0">
-      <div class="card-header">
-        <span>Score Entry</span>
-        <span class="subtitle" id="entrySubtitle"></span>
-        <div class="report-screen-only" style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px">
-          <span style="background:#f9c74f;color:#5a3e00;padding:2px 8px;border-radius:3px;font-weight:600">Skin Win</span>
-          <span style="background:#4e9bd1;color:white;padding:2px 8px;border-radius:3px;font-weight:600">Skin Tie</span>
-          <span style="color:#c8e6c9;padding:2px 4px;font-weight:600">○ Birdie</span>
-          <span id="entryLegendSkins" style="background:rgba(200,230,201,.3);color:#c8e6c9;padding:2px 8px;border-radius:3px;font-weight:600">In Skins</span>
-          <span id="entryLegendNoShow" style="background:rgba(255,205,210,.2);color:#ffcdd2;padding:2px 8px;border-radius:3px;font-weight:600">No Show</span>
-          <span id="entryLegendSub" style="background:rgba(179,229,252,.2);color:#b3e5fc;padding:2px 8px;border-radius:3px;font-weight:600">Sub</span>
-          <span style="color:#ff8a80;font-weight:600;padding:2px 4px">Red # = CTP</span>
-        </div>
-        <button id="psSortToggleBtn" onclick="togglePsSort()" style="display:none;margin-left:8px;padding:4px 14px;font-size:12px;font-weight:600;border:1px solid var(--gold);border-radius:6px;cursor:pointer;background:#fff8e1;color:#7a4b00">Sort by Score</button>
-        <button id="psClearAllBtn" onclick="clearAllPsScores()" style="display:none;margin-left:8px;padding:4px 14px;font-size:12px;font-weight:600;border:1px solid #ef9a9a;border-radius:6px;cursor:pointer;background:#ffebee;color:#b71c1c">🗑 Clear All PS Scores</button>
-        <button id="entryCollapseBtn" onclick="toggleEntryCard()" style="margin-left:8px;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
-      </div>
-      <div id="entryCardBody">
-
-    <div style="overflow-x:auto">
-      <table id="entryGrid" style="border-collapse:collapse;font-size:13px;min-width:900px;table-layout:fixed;width:100%">
-        <thead id="entryHead"></thead>
-        <tbody id="entryBody"></tbody>
-      </table>
-    </div>
-    <div id="psBreakdownPanel" style="display:none;margin-top:16px"></div>
-    <div id="eoyPayPrompt" style="display:none;margin-top:14px"></div>
-    </div><!-- /entryCardBody -->
-    </div><!-- /card -->
-
-    <div class="controls" id="scoresDateControls" style="display:none;margin-top:20px">
-      <div class="filter-group">
-        <label>Date</label>
-        <select id="scoresDate"></select>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-header">
-        <span>Scores</span>
-        <span class="subtitle" id="scoresSubtitle"></span>
-        <button id="scoresSortByNetBtn" onclick="document.getElementById('scoresSortByNet').checked=!document.getElementById('scoresSortByNet').checked;loadScores();const on=document.getElementById('scoresSortByNet').checked;this.style.background=on?'var(--gold)':'rgba(255,255,255,.15)';this.style.color=on?'#3a2000':'white';this.textContent=on?'Sort by Match':'Sort by Net'" style="margin-left:auto;padding:4px 14px;font-size:12px;font-weight:700;background:rgba(255,255,255,.15);color:white;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer;font-family:'DM Sans',sans-serif;letter-spacing:.3px">Sort by Net</button>
-        <input type="checkbox" id="scoresSortByNet" style="display:none">
-        <button id="scoresCollapseBtn" onclick="toggleScoresCard()" style="margin-left:8px;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
-      </div>
-      <div id="scoresCardBody">
-        <div class="table-wrap"><table id="scoresTable">
-          <thead><tr><th>Player</th><th class="num">Gross</th><th class="num">Net</th><th class="num">PHdcp</th><th class="num">Hdcp</th></tr></thead>
-          <tbody></tbody>
-        </table></div>
-      </div>
-    </div>
-    <div id="regularBreakdownPanel" style="display:none;margin-top:16px"></div>
-  </div>
-
-  <!-- MATCHES -->
-  <div class="section" id="tab-matches">
-    <div class="controls" style="justify-content:space-between;align-items:flex-end">
-      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-        <div class="filter-group">
-          <label>Season</label>
-          <select id="matchesSeason" onchange="populateMatchesDateDropdown()"></select>
-        </div>
-        <div class="filter-group pd-own">
-          <label>Week</label>
-          <select id="matchesDate"></select>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;padding-bottom:4px">
-          <input type="checkbox" id="matchesTableView" checked onchange="loadMatches()" style="cursor:pointer;width:15px;height:15px">
-          <label for="matchesTableView" style="cursor:pointer;font-size:13px;font-family:'DM Sans',sans-serif;color:#333">Table View</label>
-        </div>
-      </div>
-    </div>
-    <div id="matchesContent"></div>
-  </div>
-
-  <!-- SKINS -->
-  <div class="section" id="tab-skins">
-    <div class="controls">
-      <div class="filter-group">
-        <label>Season</label>
-        <select id="skinsSeason" onchange="populateSkinsDateDropdown()"></select>
-      </div>
-      <div class="filter-group pd-own">
-        <label>Week</label>
-        <select id="skinsDate"></select>
-      </div>
-    </div>
-    <div id="skinsContent">
-      <div class="grid-3" id="skinStatBoxes" style="margin-bottom:20px"></div>
-      <div id="psWeekPanel" style="margin-bottom:20px"></div>
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-header">🏆 Skin Winners</div>
-          <div style="padding:12px" id="skinWinners"></div>
-        </div>
-        <div class="card">
-          <div class="card-header" style="background:#4a148c">🎯 CTP Winners</div>
-          <div style="padding:12px" id="ctpWinners"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:20px">
-      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-        <span>Participants</span>
-        <button id="skinsParticipantsToggle" onclick="toggleSkinsParticipants()" style="padding:4px 10px;border:1px solid rgba(255,255,255,.4);border-radius:4px;background:rgba(255,255,255,.12);color:white;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer">Expand</button>
-      </div>
-      <div class="table-wrap" id="skinsParticipantsWrap" style="display:none"><table id="skinsParticipants">
-        <thead><tr><th>Player</th><th class="num">Skin Paid</th><th class="num">CTP Paid</th></tr></thead>
-        <tbody></tbody>
-      </table></div>
-    </div>
-  </div>
-
-  <!-- NO-SHOWS -->
-  <div class="section" id="tab-noshows">
-    <div class="controls">
-      <div class="filter-group">
-        <label>Season</label>
-        <select id="noshowSeason"></select>
-      </div>
-      <div class="filter-group">
-        <label>View</label>
-        <select id="noshowView">
-          <option value="bydate">By Date</option>
-          <option value="byplayer">By Player</option>
-        </select>
-      </div>
-    </div>
-    <div id="noshowContent"></div>
-  </div>
-
-  <!-- HANDICAPS -->
-  <div class="section" id="tab-handicaps">
-    <div class="controls">
-      <div class="filter-group">
-        <label>Search</label>
-        <input type="text" id="hdcpSearch" placeholder="Filter player...">
-      </div>
-      <div class="filter-group pd-own">
-        <label>As Of</label>
-        <select id="hdcpAsOfDate" onchange="loadHandicaps()"></select>
-      </div>
-      <div class="filter-group" style="align-self:flex-end;padding-bottom:6px">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
-          <input type="checkbox" id="hdcpRegularsOnly" checked onchange="loadHandicaps()"> Regulars Only
-        </label>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-header">Current Handicaps</div>
-      <div class="table-wrap"><table id="hdcpTable">
-        <thead><tr><th>Player</th><th class="num">Prev Hdcp</th><th class="num">Handicap</th><th>Last 5 Scores</th><th>Formula</th><th>As Of</th></tr></thead>
-        <tbody></tbody>
-      </table></div>
-    </div>
-  </div>
-
-  <!-- PAYMENTS -->
-  <div class="section" id="tab-payments">
-    <div class="controls" style="justify-content:space-between;align-items:flex-end">
-      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-        <div class="filter-group">
-          <label>Season</label>
-          <select id="paymentsSeason"></select>
-        </div>
-        <div class="filter-group">
-          <label>Week</label>
-          <select id="paymentsDate">
-            <option value="">All Season</option>
-          </select>
-        </div>
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-          <input type="checkbox" id="paymentsRegOnly" checked> Regulars Only
-        </label>
-      </div>
-      <button onclick="openPayFromTab()" style="padding:8px 20px;background:#1565c0;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">💳 Pay Player</button>
-    </div>
-    <div id="paymentsContent" style="margin-top:16px;overflow-x:auto"></div>
-  </div>
-
-  <!-- PRIZE MONEY -->
-  <div class="section" id="tab-prizemoney">
-    <div class="controls" style="justify-content:space-between;align-items:flex-end">
-      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-        <div class="filter-group">
-          <label>Season</label>
-          <select id="prizemoneySeason" onchange="populatePrizeMoneyDates(); loadPrizeMoney();"></select>
-        </div>
-        <div class="filter-group">
-          <label>Date</label>
-          <select id="prizemoneyDate"></select>
-        </div>
-      </div>
-    </div>
-    <div id="prizemoneyContent" style="margin-top:16px;overflow-x:auto"></div>
-  </div>
-
-  <!-- SCHEDULE -->
-  <div class="section" id="tab-schedule">
-    <div class="controls">
-      <div class="filter-group">
-        <label>Season</label>
-        <select id="schedSeason"></select>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-header">Schedule</div>
-      <div class="table-wrap"><table id="schedTable">
-        <thead><tr><th>Date</th><th>Matchups</th><th class="ctr">Status</th></tr></thead>
-        <tbody></tbody>
-      </table></div>
-    </div>
-  </div>
-
-  <!-- STATS -->
-  <div class="section" id="tab-stats">
+  
+    <!-- STATS (below the Home cards: Home is one page, Stats is no longer its own tab) -->
+    <div id="homeStatsSection" style="margin-top:28px">
+      <div style="font-size:16px;font-weight:700;color:var(--green);margin:0 0 10px;padding-top:14px;border-top:2px solid var(--border)">📊 Stats</div>
 
     <!-- Sub-nav -->
     <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:8px">
@@ -1402,7 +1028,392 @@
       </div>
     </div>
 
-  </div><!-- end tab-stats -->
+  </div>
+  </div>
+
+  <!-- BOARD -->
+  <div class="section" id="tab-board">
+    <div class="card" style="margin-bottom:0">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+        <span>📋 League Board</span>
+        <button onclick="showNewPostModal()" style="padding:5px 14px;background:var(--green);color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Post</button>
+      </div>
+      <div style="padding:8px 12px;border-bottom:1px solid #eee;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#faf7f2">
+        <input id="boardSearch" type="text" placeholder="🔍 Search posts..." oninput="applyBoardFilter()"
+          style="flex:1;min-width:140px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+        <select id="boardAuthorFilter" onchange="applyBoardFilter()"
+          style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px;background:white">
+          <option value="">All authors</option>
+        </select>
+        <div id="boardCatFilter" style="display:flex;gap:4px">
+          <button onclick="setBoardCat('')"              class="board-cat-btn active" data-cat="">All</button>
+          <button onclick="setBoardCat('Announcement')"  class="board-cat-btn" data-cat="Announcement">📢</button>
+          <button onclick="setBoardCat('Rainout')"       class="board-cat-btn" data-cat="Rainout">🌧️</button>
+          <button onclick="setBoardCat('General')"       class="board-cat-btn" data-cat="General">General</button>
+        </div>
+      </div>
+      <div id="boardContent" style="padding:12px;max-height:calc(100vh - 220px);overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <!-- STANDINGS -->
+  <div class="section" id="tab-standings">
+    <div class="controls">
+      <div class="filter-group">
+        <label>Season</label>
+        <select id="standSeason"></select>
+      </div>
+      <div class="filter-group">
+        <label>View</label>
+        <select id="standView">
+          <option value="team">Team</option>
+          <option value="individual">Individual</option>
+        </select>
+      </div>
+      <div class="filter-group pd-own">
+        <label>As of Date</label>
+        <select id="standAsOf">
+          <option value="">Current</option>
+        </select>
+      </div>
+    </div>
+    <div class="half-tabs" id="halfTabs" style="display:none">
+      <div class="half-tab active" data-half="1">1st Half</div>
+      <div class="half-tab" data-half="2">2nd Half</div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span id="standTitle">Standings</span>
+        <span class="subtitle" id="standSubtitle"></span>
+        <button id="standCollapseBtn" onclick="toggleStandCard()" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
+      </div>
+      <div id="standCardBody"><div class="table-wrap"><table id="standTable">
+        <thead><tr><th class="ctr">#</th><th>Player</th><th class="ctr">Team</th><th class="ctr">Grade</th><th class="num">Points</th><th class="num">Rounds</th><th>Bar</th></tr></thead>
+        <tbody></tbody>
+      </table></div></div>
+    </div>
+  </div>
+
+  <!-- STABLEFORD -->
+  <!-- LEADERS -->
+
+  <div class="section" id="tab-stableford">
+    <div id="stablefordScreen">
+    <div class="controls">
+      <div class="filter-group">
+        <label>Season</label>
+        <select id="stablefordSeason" onchange="populateStablefordDateDropdown()"></select>
+      </div>
+      <div class="filter-group pd-own">
+        <label>Week</label>
+        <select id="stablefordDate"></select>
+      </div>
+    </div>
+    <!-- Legend -->
+    <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap;font-size:12px;font-weight:600">
+      <span style="background:#ff6f00;color:white;padding:3px 10px;border-radius:4px">Double Eagle+ (8pts)</span>
+      <span style="background:#ffd700;padding:3px 10px;border-radius:4px">Eagle (4pts)</span>
+      <span style="background:#90EE90;padding:3px 10px;border-radius:4px">Birdie (3pts)</span>
+      <span style="background:white;border:1px solid #ddd;padding:3px 10px;border-radius:4px">Par (2pts)</span>
+      <span style="background:#add8e6;padding:3px 10px;border-radius:4px">Bogey (1pt)</span>
+      <span style="background:#ffcccc;padding:3px 10px;border-radius:4px">Double Bogey+ (0pts)</span>
+    </div>
+    <div id="stablefordPsBanner"></div>
+    <div style="overflow-x:auto">
+      <table id="stablefordTable" style="border-collapse:collapse;font-size:12px;min-width:1000px;width:100%">
+        <thead id="stablefordHead"></thead>
+        <tbody id="stablefordBody"></tbody>
+      </table>
+    </div>
+    <div id="stablefordPsStandings"></div>
+
+    <!-- SF STANDINGS (regular season team standings; not shown for post season) -->
+    <div id="sfStandingsBlock">
+    <div class="controls">
+      <div class="filter-group">
+        <label>Season</label>
+        <select id="sfStandingsSeason" onchange="loadSfStandings()"></select>
+      </div>
+    </div>
+    <div class="half-tabs" id="sfHalfTabs">
+      <div class="sf-half-tab active" data-sfhalf="1" onclick="setSfHalf('1')">1st Half</div>
+      <div class="sf-half-tab" data-sfhalf="2" onclick="setSfHalf('2')">2nd Half</div>
+      <div class="sf-half-tab" data-sfhalf="all" onclick="setSfHalf('all')">Full Season</div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="card-header" id="sfStandingsHeader">SF Standings — 1st Half</div>
+      <div class="table-wrap">
+        <table id="sfStandingsTable" style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead id="sfStandingsHead"></thead>
+          <tbody id="sfStandingsBody"></tbody>
+        </table>
+      </div>
+    </div>
+    </div><!-- /sfStandingsBlock -->
+      </div>
+  </div>
+
+  <!-- SCORES VIEW -->
+  <div id="adminScores" style="display:none">
+    <!-- SCORE ENTRY -->
+    <div class="controls" style="justify-content:space-between;align-items:flex-end">
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="filter-group pd-own">
+          <label>Date</label>
+          <select id="entryDate"></select>
+        </div>
+        <input type="checkbox" id="entryPostSeason" style="display:none">
+        <div class="filter-group">
+          <label>9 Holes</label>
+          <select id="entry9">
+            <option value="Front">Front</option>
+            <option value="Back" selected>Back</option>
+          </select>
+        </div>
+        <div class="filter-group" id="futureScoreOverrideGroup" style="display:none;justify-content:center">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#b71c1c">
+            <input type="checkbox" id="futureScoreOverride" onchange="toggleFutureScoreOverride(this.checked)" style="width:15px;height:15px;cursor:pointer">
+            Local test: allow future scores
+          </label>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="entryClear" disabled title="Select a score row to clear that player only" style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;cursor:not-allowed;opacity:.45;font-family:'DM Sans',sans-serif;font-size:13px">Clear</button>
+        <button id="gallusSubmitBtn" onclick="showGallusSubmit()" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">📤 Submit Round</button>
+        <button id="groupIntakeToggle" onclick="toggleGroupIntake()" style="padding:8px 16px;background:#37474f;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">👥 Groups</button>
+      </div>
+    </div>
+
+    <!-- Group Intake Panel -->
+    <div id="groupIntakeCard" style="display:none;margin-bottom:14px">
+      <div class="card">
+        <div class="card-header">
+          👥 Group Intake
+          <span class="subtitle" id="groupIntakeSubtitle"></span>
+          <button onclick="toggleGroupIntake(false)" style="margin-left:auto;padding:4px 12px;font-size:12px;font-weight:600;background:transparent;border:1px solid rgba(255,255,255,.4);border-radius:4px;color:white;cursor:pointer">Classic Entry ↗</button>
+        </div>
+        <div id="groupIntakeBody" style="padding:14px"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:0">
+      <div class="card-header">
+        <span>Score Entry</span>
+        <span class="subtitle" id="entrySubtitle"></span>
+        <div class="report-screen-only" style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px">
+          <span style="background:#f9c74f;color:#5a3e00;padding:2px 8px;border-radius:3px;font-weight:600">Skin Win</span>
+          <span style="background:#4e9bd1;color:white;padding:2px 8px;border-radius:3px;font-weight:600">Skin Tie</span>
+          <span style="color:#c8e6c9;padding:2px 4px;font-weight:600">○ Birdie</span>
+          <span id="entryLegendSkins" style="background:rgba(200,230,201,.3);color:#c8e6c9;padding:2px 8px;border-radius:3px;font-weight:600">In Skins</span>
+          <span id="entryLegendNoShow" style="background:rgba(255,205,210,.2);color:#ffcdd2;padding:2px 8px;border-radius:3px;font-weight:600">No Show</span>
+          <span id="entryLegendSub" style="background:rgba(179,229,252,.2);color:#b3e5fc;padding:2px 8px;border-radius:3px;font-weight:600">Sub</span>
+          <span style="color:#ff8a80;font-weight:600;padding:2px 4px">Red # = CTP</span>
+        </div>
+        <button id="psSortToggleBtn" onclick="togglePsSort()" style="display:none;margin-left:8px;padding:4px 14px;font-size:12px;font-weight:600;border:1px solid var(--gold);border-radius:6px;cursor:pointer;background:#fff8e1;color:#7a4b00">Sort by Score</button>
+        <button id="psClearAllBtn" onclick="clearAllPsScores()" style="display:none;margin-left:8px;padding:4px 14px;font-size:12px;font-weight:600;border:1px solid #ef9a9a;border-radius:6px;cursor:pointer;background:#ffebee;color:#b71c1c">🗑 Clear All PS Scores</button>
+        <button id="entryCollapseBtn" onclick="toggleEntryCard()" style="margin-left:8px;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
+      </div>
+      <div id="entryCardBody">
+
+    <div style="overflow-x:auto">
+      <table id="entryGrid" style="border-collapse:collapse;font-size:13px;min-width:900px;table-layout:fixed;width:100%">
+        <thead id="entryHead"></thead>
+        <tbody id="entryBody"></tbody>
+      </table>
+    </div>
+    <div id="psBreakdownPanel" style="display:none;margin-top:16px"></div>
+    <div id="eoyPayPrompt" style="display:none;margin-top:14px"></div>
+    </div><!-- /entryCardBody -->
+    </div><!-- /card -->
+
+    <div class="controls" id="scoresDateControls" style="display:none;margin-top:20px">
+      <div class="filter-group">
+        <label>Date</label>
+        <select id="scoresDate"></select>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span>Scores</span>
+        <span class="subtitle" id="scoresSubtitle"></span>
+        <button id="scoresSortByNetBtn" onclick="document.getElementById('scoresSortByNet').checked=!document.getElementById('scoresSortByNet').checked;loadScores();const on=document.getElementById('scoresSortByNet').checked;this.style.background=on?'var(--gold)':'rgba(255,255,255,.15)';this.style.color=on?'#3a2000':'white';this.textContent=on?'Sort by Match':'Sort by Net'" style="margin-left:auto;padding:4px 14px;font-size:12px;font-weight:700;background:rgba(255,255,255,.15);color:white;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer;font-family:'DM Sans',sans-serif;letter-spacing:.3px">Sort by Net</button>
+        <input type="checkbox" id="scoresSortByNet" style="display:none">
+        <button id="scoresCollapseBtn" onclick="toggleScoresCard()" style="margin-left:8px;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
+      </div>
+      <div id="scoresCardBody">
+        <div class="table-wrap"><table id="scoresTable">
+          <thead><tr><th>Player</th><th class="num">Gross</th><th class="num">Net</th><th class="num">PHdcp</th><th class="num">Hdcp</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </div>
+    <div id="regularBreakdownPanel" style="display:none;margin-top:16px"></div>
+  </div>
+
+  <!-- MATCHES -->
+  <div class="section" id="tab-matches">
+    <div class="controls" style="justify-content:space-between;align-items:flex-end">
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="filter-group">
+          <label>Season</label>
+          <select id="matchesSeason" onchange="populateMatchesDateDropdown()"></select>
+        </div>
+        <div class="filter-group pd-own">
+          <label>Week</label>
+          <select id="matchesDate"></select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;padding-bottom:4px">
+          <input type="checkbox" id="matchesTableView" checked onchange="loadMatches()" style="cursor:pointer;width:15px;height:15px">
+          <label for="matchesTableView" style="cursor:pointer;font-size:13px;font-family:'DM Sans',sans-serif;color:#333">Table View</label>
+        </div>
+      </div>
+    </div>
+    <div id="matchesContent"></div>
+  </div>
+
+  <!-- SKINS -->
+  <div class="section" id="tab-skins">
+    <div id="skinsScreen">
+    <div class="controls">
+      <div class="filter-group">
+        <label>Season</label>
+        <select id="skinsSeason" onchange="populateSkinsDateDropdown()"></select>
+      </div>
+      <div class="filter-group pd-own">
+        <label>Week</label>
+        <select id="skinsDate"></select>
+      </div>
+    </div>
+    <div id="skinsContent">
+      <div class="grid-3" id="skinStatBoxes" style="margin-bottom:20px"></div>
+      <div id="psWeekPanel" style="margin-bottom:20px"></div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">🏆 Skin Winners</div>
+          <div style="padding:12px" id="skinWinners"></div>
+        </div>
+        <div class="card">
+          <div class="card-header" style="background:#4a148c">🎯 CTP Winners</div>
+          <div style="padding:12px" id="ctpWinners"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <span>Participants</span>
+        <button id="skinsParticipantsToggle" onclick="toggleSkinsParticipants()" style="padding:4px 10px;border:1px solid rgba(255,255,255,.4);border-radius:4px;background:rgba(255,255,255,.12);color:white;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer">Expand</button>
+      </div>
+      <div class="table-wrap" id="skinsParticipantsWrap" style="display:none"><table id="skinsParticipants">
+        <thead><tr><th>Player</th><th class="num">Skin Paid</th><th class="num">CTP Paid</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+      </div>
+  </div>
+
+  <!-- NO-SHOWS -->
+  <div class="section" id="tab-noshows">
+    <div class="controls">
+      <div class="filter-group">
+        <label>Season</label>
+        <select id="noshowSeason"></select>
+      </div>
+      <div class="filter-group">
+        <label>View</label>
+        <select id="noshowView">
+          <option value="bydate">By Date</option>
+          <option value="byplayer">By Player</option>
+        </select>
+      </div>
+    </div>
+    <div id="noshowContent"></div>
+  </div>
+
+  <!-- HANDICAPS -->
+  <div class="section" id="tab-handicaps">
+    <div class="controls">
+      <div class="filter-group">
+        <label>Search</label>
+        <input type="text" id="hdcpSearch" placeholder="Filter player...">
+      </div>
+      <div class="filter-group pd-own">
+        <label>As Of</label>
+        <select id="hdcpAsOfDate" onchange="loadHandicaps()"></select>
+      </div>
+      <div class="filter-group" style="align-self:flex-end;padding-bottom:6px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
+          <input type="checkbox" id="hdcpRegularsOnly" checked onchange="loadHandicaps()"> Regulars Only
+        </label>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">Current Handicaps</div>
+      <div class="table-wrap"><table id="hdcpTable">
+        <thead><tr><th>Player</th><th class="num">Prev Hdcp</th><th class="num">Handicap</th><th>Last 5 Scores</th><th>Formula</th><th>As Of</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- PAYMENTS -->
+  <div class="section" id="tab-payments">
+    <div class="controls" style="justify-content:space-between;align-items:flex-end">
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="filter-group">
+          <label>Season</label>
+          <select id="paymentsSeason"></select>
+        </div>
+        <div class="filter-group">
+          <label>Week</label>
+          <select id="paymentsDate">
+            <option value="">All Season</option>
+          </select>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="paymentsRegOnly" checked> Regulars Only
+        </label>
+      </div>
+      <button onclick="openPayFromTab()" style="padding:8px 20px;background:#1565c0;color:white;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer">💳 Pay Player</button>
+    </div>
+    <div id="paymentsContent" style="margin-top:16px;overflow-x:auto"></div>
+  </div>
+
+  <!-- PRIZE MONEY -->
+  <div class="section" id="tab-prizemoney">
+    <div class="controls" style="justify-content:space-between;align-items:flex-end">
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="filter-group">
+          <label>Season</label>
+          <select id="prizemoneySeason" onchange="populatePrizeMoneyDates(); loadPrizeMoney();"></select>
+        </div>
+        <div class="filter-group">
+          <label>Date</label>
+          <select id="prizemoneyDate"></select>
+        </div>
+      </div>
+    </div>
+    <div id="prizemoneyContent" style="margin-top:16px;overflow-x:auto"></div>
+  </div>
+
+  <!-- SCHEDULE -->
+  <div class="section" id="tab-schedule">
+    <div class="controls">
+      <div class="filter-group">
+        <label>Season</label>
+        <select id="schedSeason"></select>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">Schedule</div>
+      <div class="table-wrap"><table id="schedTable">
+        <thead><tr><th>Date</th><th>Matchups</th><th class="ctr">Status</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- end tab-stats -->
 
   <!-- HELP -->
   <div class="section" id="tab-help">
@@ -1417,30 +1428,22 @@
   <!-- SQL -->
   <!-- ADMIN -->
   <div class="section" id="tab-scorecard"></div>
+  <div class="section" id="tab-ps_entry"></div>
   <div class="section" id="tab-ps_scores"></div>
+  <div class="section" id="tab-ps_skinsview"></div>
+  <div class="section" id="tab-ps_stableford"></div>
   <div class="section" id="tab-ps_skins"></div>
   <div class="section" id="tab-ps_earned"></div>
 
   <div class="section" id="tab-admin">
     <div class="admin-nav">
       <button onclick="showAdminSection('gallus')" id="adminBtnGallus" class="admin-btn">📥 Gallus Queue</button>
-      <button onclick="showAdminSection('sql')" id="adminGroupSql" class="admin-btn">🔍 SQL</button>
-      <button onclick="showAdminSection('players')" id="adminGroupTables" class="admin-btn">🗂️ Table Maintenance</button>
-      <button onclick="showAdminSection('loginactivity')" id="adminGroupLogging" class="admin-btn">📜 Logging</button>
-      <button onclick="showAdminSection('pdfs')" id="adminBtnPdfs" class="admin-btn">📄 PDFs</button>
-      <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-btn">🌧 Rain Out</button>
-      <button onclick="showAdminSection('broadcast')" id="adminBtnBroadcast" class="admin-btn">📣 Broadcast</button>
-      <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-btn">💾 Backups</button>
-      <button onclick="showAdminSection('proposals')" id="adminBtnProposals" class="admin-btn">📋 Proposals</button>
-      <button onclick="showAdminSection('changelog')" id="adminBtnChangelog" class="admin-btn">📝 Changelog</button>
-      <button onclick="showAdminSection('backlog')" id="adminBtnBacklog" class="admin-btn">🗒️ Backlog</button>
-      <button onclick="showAdminSection('newseason')" id="adminBtnNewseason" class="admin-btn">🌱 New Season</button>
-      <button onclick="showAdminSection('expenses')" id="adminBtnExpenses" class="admin-btn">💰 Expenses</button>
-      <button onclick="showAdminSection('awards')" id="adminBtnAwards" class="admin-btn">🏆 Award Prizes</button>
-      <button onclick="showAdminSection('balance')" id="adminBtnBalance" class="admin-btn">📒 Balance Sheet</button>
-      <button onclick="showAdminSection('pageviews')" id="adminBtnPageviewsTop" class="admin-btn">📊 Usage</button>
-      <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-btn" style="display:none">🔁 Sync</button>
-      <button onclick="showAdminSection('compare');setTimeout(()=>{const s=document.getElementById('compareDateSel');if(s&&s.value)runCompareWithLive();},100)" id="adminBtnCompare" class="admin-btn" style="display:none">📊 Compare Live</button>
+      <button onclick="showAdminSection(adminGroupDefault('tables'))" id="adminGroupTables" class="admin-btn">🗂️ Table Maintenance</button>
+      <button onclick="showAdminSection(adminGroupDefault('messages'))" id="adminGroupMessages" class="admin-btn">📣 Messages</button>
+      <button onclick="showAdminSection(adminGroupDefault('money'))" id="adminGroupMoney" class="admin-btn">💰 Money</button>
+      <button onclick="showAdminSection(adminGroupDefault('logging'))" id="adminGroupLogging" class="admin-btn">📜 Logging</button>
+      <button onclick="showAdminSection(adminGroupDefault('notes'))" id="adminGroupNotes" class="admin-btn">📝 Notes</button>
+      <button onclick="showAdminSection(adminGroupDefault('developer'))" id="adminGroupDeveloper" class="admin-btn">🛠️ Developer</button>
       <button onclick="triggerRedeploy()" id="adminBtnRedeploy" class="admin-btn dev-only" style="color:#e65100">🚀 Redeploy</button>
     </div>
 
@@ -1448,8 +1451,21 @@
       <button onclick="showAdminSection('players')" id="adminBtnPlayers" class="admin-subbtn">👥 Players</button>
       <button onclick="showAdminSection('teams')" id="adminBtnTeams" class="admin-subbtn">⛳ Teams</button>
       <button onclick="showAdminSection('subs')" id="adminBtnSubs" class="admin-subbtn">🔄 Subs</button>
-      <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-subbtn">⚙️ League Settings</button>
       <button onclick="showAdminSection('carriers')" id="adminBtnCarriers" class="admin-subbtn">📶 Carriers</button>
+      <button onclick="showAdminSection('newseason')" id="adminBtnNewseason" class="admin-subbtn">🌱 New Season</button>
+    </div>
+
+    <div id="adminSubnavMessages" class="admin-subnav">
+      <button onclick="showAdminSection('rainout')" id="adminBtnRainout" class="admin-subbtn">🌧 Rain Out</button>
+      <button onclick="showAdminSection('broadcast')" id="adminBtnBroadcast" class="admin-subbtn">📣 Broadcast</button>
+      <button onclick="showAdminSection('pdfs')" id="adminBtnPdfs" class="admin-subbtn">📄 PDFs</button>
+      <button onclick="showAdminSection('proposals')" id="adminBtnProposals" class="admin-subbtn">📋 Proposals</button>
+    </div>
+
+    <div id="adminSubnavMoney" class="admin-subnav">
+      <button onclick="showAdminSection('expenses')" id="adminBtnExpenses" class="admin-subbtn">💰 Expenses</button>
+      <button onclick="showAdminSection('awards')" id="adminBtnAwards" class="admin-subbtn">🏆 Award Prizes</button>
+      <button onclick="showAdminSection('balance')" id="adminBtnBalance" class="admin-subbtn">📒 Balance Sheet</button>
     </div>
 
     <div id="adminSubnavLogging" class="admin-subnav">
@@ -1458,6 +1474,19 @@
       <button onclick="showAdminSection('emaillog')" id="adminBtnEmaillog" class="admin-subbtn">✉️ Emails Sent</button>
       <button onclick="showAdminSection('pageviews')" id="adminBtnPageviews" class="admin-subbtn">📊 Usage</button>
       <button onclick="showAdminSection('whoson')" id="adminBtnWhoson" class="admin-subbtn">🟢 Who's On</button>
+    </div>
+
+    <div id="adminSubnavNotes" class="admin-subnav">
+      <button onclick="showAdminSection('changelog')" id="adminBtnChangelog" class="admin-subbtn">📝 Changelog</button>
+      <button onclick="showAdminSection('backlog')" id="adminBtnBacklog" class="admin-subbtn">🗒️ Backlog</button>
+    </div>
+
+    <div id="adminSubnavDeveloper" class="admin-subnav">
+      <button onclick="showAdminSection('sql')" id="adminBtnSql" class="admin-subbtn">🔍 SQL</button>
+      <button onclick="showAdminSection('leaguesettings')" id="adminBtnLeaguesettings" class="admin-subbtn">⚙️ League Settings</button>
+      <button onclick="showAdminSection('backups')" id="adminBtnBackups" class="admin-subbtn">💾 Backups</button>
+      <button onclick="showAdminSection('compare');setTimeout(()=>{const s=document.getElementById('compareDateSel');if(s&&s.value)runCompareWithLive();},100)" id="adminBtnCompare" class="admin-subbtn" style="display:none">📊 Compare Live</button>
+      <button onclick="showAdminSection('sync')" id="adminBtnSync" class="admin-subbtn" style="display:none">🔁 Sync</button>
     </div>
 
     <!-- AWARD PRIZES (Admin section): everything we assign or pay to winners -->
@@ -1496,7 +1525,7 @@
       <div class="card-header">Other prize actions</div>
       <div style="padding:12px;display:flex;gap:10px;flex-wrap:wrap">
         <button onclick="switchTab('prizemoney')" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">💰 Pay from Kitty / refunds (Prize Money)</button>
-        <button onclick="switchTab('skins')" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">🎯 Post-season Skins: Calculate / Restate (Skins/CTPs)</button>
+        <button onclick="switchTab('ps_skinsview')" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">🎯 Post-season Skins: Calculate / Restate (Post Season > Skins/CTPs)</button>
       </div>
     </div>
   </div>
@@ -2902,7 +2931,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.14';
+const APP_VERSION = '20261018.15';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3772,7 +3801,11 @@ function switchTab(tabName) {
     location.reload(true);
     return;
   }
+  if (tabName === 'stats') tabName = 'home';                         // Stats now lives on the Home page
   const targetTab = canAccessTab(tabName) ? tabName : 'home';
+  const curTab = document.querySelector('.tab.active')?.dataset.tab;
+  if (typeof entryDirty !== 'undefined' && entryDirty && curTab && curTab !== targetTab && ['scorecard', 'ps_entry'].includes(curTab) && ['scorecard', 'ps_entry'].includes(targetTab)
+      && !confirm('Switch Scores tabs? Unsaved scorecard changes will be discarded.')) return;
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
   document.querySelector(`.tab[data-tab="${targetTab}"]`)?.classList.add('active');
@@ -3780,7 +3813,7 @@ function switchTab(tabName) {
   syncTabGroups();
   pvTrack(targetTab);
   if (db) {
-    if (targetTab === 'scorecard' && DB_UPDATE_PENDING) refreshScoresForExternalDbUpdate();
+    if ((targetTab === 'scorecard' || targetTab === 'ps_entry') && DB_UPDATE_PENDING) refreshScoresForExternalDbUpdate();
     else refreshTab(targetTab);
   }
   try { syncPlayDateBar(); } catch (e) {}
@@ -4153,6 +4186,12 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.15', 'October 18, 2026', [
+    ['enhancement', 'Post Season > Scores: post-season scores get their own tab', 'Post Season has a new Scores tab (first in the group) with the score grid for each season\'s post season: pick the season, enter or view its scores, payments and skins. Play > Scores is now the regular season only, and the Play round-date bar no longer lists post-season nights. Gallus imports open the tab that matches the card\'s night. PR #136.', 1],
+    ['enhancement', 'Home shows Stats on the same page', 'Stats is no longer a second tab under Home: the Stats (Individual, Rankings, Leaders, Head to Head) now sit below the Home cards on one page, and the extra row of tabs is gone. Usage still counts Stats separately. PR #136.', 2],
+    ['enhancement', 'Skins/CTPs and Stableford for both regular season and post season', 'Post Season has its own Skins/CTPs and Stableford tabs for each season\'s two post-season nights (the Stableford team standings stay in Play). Play > Skins/CTPs and Play > Stableford now list regular season nights only. The Award Prizes shortcut for post-season skins opens Post Season > Skins/CTPs. PR #136.', 3],
+    ['enhancement', 'Admin tabs consolidated into groups', 'The Admin tab\'s 18 buttons are now Gallus Queue, Table Maintenance (Players, Teams, Subs, Carriers, New Season), Messages (Rain Out, Broadcast, PDFs, Proposals), Money (Expenses, Award Prizes, Balance Sheet), Logging, Notes (Changelog, Backlog) and Developer (SQL, League Settings, Backups, Compare Live; Redeploy beside it). The developer-only screens are together, and the Developer button is hidden from anyone who cannot open any of them. A group button returns to the screen you last used in it. PR #136.', 4],
   ]);
   ensureVersion('20261018.14', 'October 18, 2026', [
     ['bugfix', 'Broadcast: Refresh also updates the answered count', 'The Refresh button in Answers reloaded only the names; the "(0/1 answered)" count in the drop-down stayed old until you left the screen. It now reloads both. PR #135.', 1],
@@ -6280,14 +6319,15 @@ function playDateEntryDate(date, psList) {   // Score Entry has one post-season 
   return p ? String(p.week1) : String(date);
 }
 function playDatePsList() {
-  return query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`).map(r => parsePostSeasonDates(r.PostSeasonDt)).filter(Boolean);
+  return [];                                   // Play is the regular season only; post season has its own tabs (Post Season > Scores)
 }
 function syncPlayDateBar() {
   const bar = document.getElementById('playDateBar'), sel = document.getElementById('playDateSel'); if (!bar || !sel) return;
   const tab = document.querySelector('.tab.active')?.dataset.tab, ownId = PLAY_DATE_TAB_SELECT[tab];
   if (!ownId || !db) { bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
-  const opts = playDateBuildOptions(query(`SELECT DISTINCT Date as d FROM Schedule WHERE League="Hugh's"`).map(r => r.d), playDatePsList());
+  const psNights = getPostSeasonDateSet();     // post season is not part of Play
+  const opts = playDateBuildOptions(query(`SELECT DISTINCT Date as d FROM Schedule WHERE League="Hugh's"`).map(r => r.d).filter(d => !psNights.has(String(d))), playDatePsList());
   const label = o => fmtDate(o.date) + (o.ps ? ` — Post Season Wk ${o.ps}` : '');
   const own = String(document.getElementById(ownId)?.value || '');
   const has = d => opts.some(o => o.date === String(d));
@@ -6341,10 +6381,11 @@ function onPlayDatePicked(value) {
 }
 function refreshTab(tab) {
   if (!db) return;
-  if (tab === 'home') loadHome();
+  if (tab === 'home') { loadHome(); loadPlayerStats(); }          // Stats sits under the Home cards
+  if (tab === 'stats') switchTab('home');                           // Stats is no longer its own tab
   if (tab === 'standings') loadStandings();
-  if (tab === 'stableford') { loadStablefordTab(); loadSfStandings(true); }
-  if (tab === 'skins') { initSkinsTab(); loadCtpsTab(); }
+  if (tab === 'stableford' || tab === 'ps_stableford') { placeDualScreen(tab); loadStablefordTab(); if (tab === 'stableford') loadSfStandings(true); }
+  if (tab === 'skins' || tab === 'ps_skinsview') { placeDualScreen(tab); initSkinsTab(); loadCtpsTab(); }
   if (tab === 'noshows') loadNoShows();
   if (tab === 'handicaps') loadHandicaps();
   if (tab === 'matches') loadMatchesTab();
@@ -6356,7 +6397,7 @@ function refreshTab(tab) {
   if (tab === 'board') { loadBoard(); markBoardSeen(); }
   if (tab === 'help') loadHelpTab();
   if (tab === 'whatsnew') loadWhatsNewTab();
-  if (tab === 'scorecard') { if (!courseData) initEntry(); else reRenderEntry(); playDateApplyEntry(); }
+  if (tab === 'scorecard' || tab === 'ps_entry') { placeEntryFor(tab); if (!courseData) initEntry(); else reRenderEntry(); if (tab === 'scorecard') playDateApplyEntry(); }
   if (tab === 'scores' || tab === 'entry') switchTab('scorecard');
   if (tab === 'stats') loadPlayerStats();
   if (tab === 'ps_scores') loadPsScores();
@@ -8632,9 +8673,10 @@ function loadLeaders() {
 
 function loadStablefordTab() {
   if (!db) return;
-  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+  const post = SCREEN_MODE.stableford === 'post';
+  const seasons = post ? psSeasonsList() : query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
   const seasonSel = document.getElementById('stablefordSeason');
-  const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
+  const currentSeason = post ? seasons[0] : query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
   seasonSel.value = currentSeason;
   playDateFollowSeason(seasonSel);
@@ -8645,7 +8687,9 @@ function populateStablefordDateDropdown() {
   const season = document.getElementById('stablefordSeason').value;
   const dates  = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="Hugh's" AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' AND Gross IS NOT NULL AND Gross != 0 ORDER BY Date DESC`);
   const sel = document.getElementById('stablefordDate');
-  sel.innerHTML = dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
+  const post = SCREEN_MODE.stableford === 'post', psNights = new Set(psNightsFor(season));
+  const shown = dates.filter(r => psNights.has(String(r.sDate || r.Date)) === post);          // Play: regular nights; Post Season: post-season nights
+  sel.innerHTML = shown.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}${post ? ` — Post Season Wk ${String(r.sDate||r.Date) === psNights.values().next().value ? 2 : 1}` : ''}</option>`).join('');
   if (!sel.dataset.listener) {
     sel.addEventListener('change', loadStableford);
     sel.dataset.listener = '1';
@@ -8791,6 +8835,7 @@ function jumpToStableford(season, date) {
   document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
   document.querySelector('[data-tab="stableford"]')?.classList.add('active');
   document.getElementById('tab-stableford')?.classList.add('active');
+  placeDualScreen('stableford');                       // the team standings link is regular season
   syncTabGroups();
 
   // Pre-set season/date before the tab's load function runs
@@ -9236,9 +9281,10 @@ function loadStableford() {
 }
 
 function initSkinsTab() {
-  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+  const post = SCREEN_MODE.skins === 'post';
+  const seasons = post ? psSeasonsList() : query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
   const seasonSel = document.getElementById('skinsSeason');
-  const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
+  const currentSeason = post ? seasons[0] : query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
   seasonSel.value = currentSeason;
   playDateFollowSeason(seasonSel);
@@ -9262,8 +9308,9 @@ function populateSkinsDateDropdown(loadAfter = true) {
     SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League="Hugh's"), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     ORDER BY sDate DESC`);
   // Post-season nights have no per-night 'Skin' buy-in (their buy-in is EOY Skins), so add them explicitly, newest first, as the CTP list does
-  const skinKeys = getCtpDateKeys(skinDates.map(r => r.sDate), season);
-  skSel.innerHTML = skinKeys.map(d => `<option value="${d}">${fmtDate(d)}</option>`).join('');
+  const post = SCREEN_MODE.skins === 'post', psNights = new Set(psNightsFor(season));
+  const skinKeys = post ? psNightsFor(season) : getCtpDateKeys(skinDates.map(r => r.sDate), season).filter(d => !psNights.has(String(d)));   // Play: regular nights; Post Season: that season's two post-season nights
+  skSel.innerHTML = skinKeys.map((d, i) => `<option value="${d}">${fmtDate(d)}${post ? ` — Post Season Wk ${skinKeys.length - i}` : ''}</option>`).join('');
   playDateApply('skinsDate');
   if (loadAfter) loadSkins();
 }
@@ -11938,9 +11985,15 @@ function loadSchedule() {
 
 // ── ADMIN TAB ──
 const ADMIN_SECTIONS = ['players','teams','subs','sql','pdfs','rainout','sync','gallus','serverlog','backups','leaguesettings','loginactivity','changelog','expenses','compare','pageviews','whoson','emaillog','proposals','awards','balance','backlog','newseason','carriers','broadcast'];
+// Admin sections are grouped under a few buttons; the developer-only screens sit together in Developer. A group button is hidden
+// from anyone who cannot open any of its screens.
 const ADMIN_GROUPS = {
-  tables: ['players','teams','subs','leaguesettings','carriers'],
-  logging: ['loginactivity','serverlog','pageviews','whoson','emaillog']
+  tables: ['players','teams','subs','carriers','newseason'],
+  messages: ['rainout','broadcast','pdfs','proposals'],
+  money: ['expenses','awards','balance'],
+  logging: ['loginactivity','serverlog','emaillog','pageviews','whoson'],
+  notes: ['changelog','backlog'],
+  developer: ['sql','leaguesettings','backups','compare','sync']
 };
 
 function adminIdSuffix(section) {
@@ -11948,9 +12001,22 @@ function adminIdSuffix(section) {
 }
 
 function adminGroupForSection(section) {
-  if (ADMIN_GROUPS.tables.includes(section)) return 'tables';
-  if (ADMIN_GROUPS.logging.includes(section)) return 'logging';
-  return section;
+  return Object.keys(ADMIN_GROUPS).find(g => ADMIN_GROUPS[g].includes(section)) || section;
+}
+function adminSectionVisible(section) {              // is this screen's button shown to the person using the app?
+  const b = document.getElementById(`adminBtn${adminIdSuffix(section)}`);
+  return !b || b.style.display !== 'none';
+}
+// A group button opens the screen you last used in it, else its first one you can see.
+function adminGroupDefault(group) {
+  const last = (window._adminLastInGroup || {})[group], list = ADMIN_GROUPS[group] || [];
+  return (last && adminSectionVisible(last) ? last : list.find(adminSectionVisible)) || list[0];
+}
+function syncAdminGroupButtons() {                   // hide a group nobody could open anything in (for example Developer, for an admin)
+  Object.keys(ADMIN_GROUPS).forEach(g => {
+    const btn = document.getElementById(`adminGroup${g.charAt(0).toUpperCase() + g.slice(1)}`);
+    if (btn) btn.style.display = ADMIN_GROUPS[g].some(adminSectionVisible) ? '' : 'none';
+  });
 }
 
 // ── Admin ▸ New Season: the setup checklist (it used to be a Help section) ──
@@ -12248,32 +12314,22 @@ function showAdminSection(section) {
   pvTrack('admin', section);
   const group = adminGroupForSection(section);
 
-  // Subnav sections use admin-subbtn; all others use admin-btn
-  const SUBNAV_SECTIONS = new Set([...ADMIN_GROUPS.tables, ...ADMIN_GROUPS.logging]);
+  // Grouped sections are pills in their group's second row (admin-subbtn); Gallus Queue stands alone (admin-btn)
+  const SUBNAV_SECTIONS = new Set(Object.values(ADMIN_GROUPS).flat());
   function _adminBtnBase(s) { return SUBNAV_SECTIONS.has(s) ? 'admin-subbtn' : 'admin-btn'; }
+  if (group !== section) (window._adminLastInGroup = window._adminLastInGroup || {})[group] = section;
 
   ADMIN_SECTIONS.forEach(s => {
     document.getElementById(`admin${adminIdSuffix(s)}`).style.display = s===section?'block':'none';
     const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
     if (btn) btn.className = _adminBtnBase(s) + (s===section?' active-admin-btn':'');
   });
-
-  document.getElementById('adminSubnavTables')?.classList.toggle('active-admin-subnav', group === 'tables');
-  document.getElementById('adminSubnavLogging')?.classList.toggle('active-admin-subnav', group === 'logging');
-
-  ['Sql','Tables','Logging'].forEach(g => {
-    const btn = document.getElementById(`adminGroup${g}`);
-    if (btn) btn.className = 'admin-btn' + (group === g.toLowerCase() || (g === 'Sql' && section === 'sql') ? ' active-admin-btn' : '');
+  Object.keys(ADMIN_GROUPS).forEach(g => {
+    const cap = g.charAt(0).toUpperCase() + g.slice(1);
+    document.getElementById(`adminSubnav${cap}`)?.classList.toggle('active-admin-subnav', group === g);
+    const gb = document.getElementById(`adminGroup${cap}`);
+    if (gb) gb.className = 'admin-btn' + (group === g ? ' active-admin-btn' : '');
   });
-  ['pdfs','rainout','broadcast','sync','gallus','backups','changelog','backlog','newseason','expenses','compare','proposals'].forEach(s => {
-    const btn = document.getElementById(`adminBtn${adminIdSuffix(s)}`);
-    if (btn) btn.className = 'admin-btn' + (s===section?' active-admin-btn':'');
-  });
-  // Usage has two buttons (top-level tab + logging subnav pill)
-  const pvTop = document.getElementById('adminBtnPageviewsTop');
-  const pvSub = document.getElementById('adminBtnPageviews');
-  if (pvTop) pvTop.className = 'admin-btn' + (section==='pageviews'?' active-admin-btn':'');
-  if (pvSub) pvSub.className = 'admin-subbtn' + (section==='pageviews'?' active-admin-btn':'');
 
   if (section==='players') loadAdminPlayers();
   if (section==='teams')   loadAdminTeams();
@@ -13011,6 +13067,7 @@ function loadAdminTab() {
   const isSandboxEnv = isSandboxHost() || location.port === '8446';
   const compareBtn = document.getElementById('adminBtnCompare');
   if (compareBtn) compareBtn.style.display = isSandboxEnv ? '' : 'none';
+  syncAdminGroupButtons();
 }
 
 // ── PLAYERS ──
@@ -13270,7 +13327,7 @@ function activeTabName() {
 }
 async function refreshScoresForExternalDbUpdate() {
   if (!DB_UPDATE_PENDING || !db || SCORE_DB_REFRESH_IN_PROGRESS) return false;
-  if (activeTabName() !== 'scorecard') return false;
+  if (!['scorecard', 'ps_entry'].includes(activeTabName())) return false;
   // Personal test sandbox uses its own DB file — never swap in the shared DB
   if (typeof _isTestMode === 'function' && _isTestMode()) return false;
   if (_saveInProgress || _savePending || entryDirty) {
@@ -13318,7 +13375,7 @@ async function checkServerVersion() {
       } else if (dbModified > SERVER_DB_MODIFIED) {
         SERVER_DB_MODIFIED = dbModified;
         DB_UPDATE_PENDING = true;
-        if (activeTabName() === 'scorecard') refreshScoresForExternalDbUpdate();
+        if (['scorecard', 'ps_entry'].includes(activeTabName())) refreshScoresForExternalDbUpdate();
         else if (typeof reRenderEntry === 'function') reRenderEntry();
       }
     }
@@ -14481,6 +14538,7 @@ function pvTabKey(tab, subNav) { return subNav ? `${tab} › ${subNav}` : tab; }
 function pvTabLabel(tab) {
   let text = '';
   try { text = (document.querySelector(`.tab[data-tab="${tab}"]`)?.textContent || '').replace(/^[^A-Za-z0-9]+/, '').trim(); } catch (e) {}
+  if (!text && tab === 'stats') text = 'Stats';          // Stats is part of the Home page now, no tab of its own
   return text || tab;
 }
 function pvDisplayKey(tab, subNav) { return subNav ? `${pvTabLabel(tab)} › ${subNav}` : pvTabLabel(tab); }
@@ -14492,7 +14550,7 @@ function pvKnownTabKeys(level) {
     if (level === 'player' && ADMIN_ONLY_TABS.has(t)) return;
     keys.push({ tab: t, sub: null });
     if (t === 'admin') ADMIN_SECTIONS.forEach(a => { if (level !== 'admin' || !PV_DEV_ONLY_SECTIONS.includes(a)) keys.push({ tab: 'admin', sub: a }); });
-    if (t === 'stats') PV_STATS_VIEWS.forEach(v => keys.push({ tab: 'stats', sub: v }));
+    if (t === 'home') { keys.push({ tab: 'stats', sub: null }); PV_STATS_VIEWS.forEach(v => keys.push({ tab: 'stats', sub: v })); }   // Stats is part of the Home page, still counted on its own
   });
   return keys;
 }
@@ -17432,9 +17490,8 @@ async function confirmPhotoImport() {
 
   document.getElementById('gallusVerifyModal').style.display = 'none';
 
-  // Navigate to scores entry under admin
-  switchTab('admin');
-  showAdminSection('scores');
+  // Navigate to the score grid you are already on (regular season or post season)
+  gotoScoreEntry();
   if (!courseData) await initEntry(); else reRenderEntry();
 
   await doGallusConfirm();
@@ -18443,9 +18500,8 @@ async function importGallusEntry(id, url) {
 
   await _showGallusToast('⏳ Loading round data…');
 
-  // Navigate to scores entry under admin
-  switchTab('admin');
-  showAdminSection('scores');
+  // Navigate to the score grid for this card's night: Play > Scores, or Post Season > Scores for a post-season night
+  gotoScoreEntry(gi.Date ? gallusEntryDateFor(gi.Date) : null);
   if (!courseData) await initEntry(); else reRenderEntry();
 
   if (gi.Date) {
@@ -20013,8 +20069,6 @@ function applyRoleAccess() {
   if (lsBtn) lsBtn.style.display = role === 'developer' ? '' : 'none';
   const laBtn = document.getElementById('adminBtnLoginactivity');
   if (laBtn) laBtn.style.display = (role === 'developer' || role === 'admin') ? '' : 'none';
-  const loggingGroupBtn = document.getElementById('adminGroupLogging');
-  if (loggingGroupBtn) loggingGroupBtn.style.display = (role === 'developer' || role === 'admin') ? '' : 'none';
   const backupBtn = document.getElementById('adminBtnBackups');
   if (backupBtn) backupBtn.style.display = role === 'developer' ? '' : 'none';
   const redeployBtn = document.getElementById('adminBtnRedeploy');
@@ -20050,14 +20104,15 @@ function applyRoleAccess() {
   });
   syncTabGroups();
 
-  // Hide SQL button for non-developers
-  const sqlBtn = document.getElementById('adminGroupSql');
+  // SQL is developer only
+  const sqlBtn = document.getElementById('adminBtnSql');
   if (sqlBtn) sqlBtn.style.display = role === 'developer' ? '' : 'none';
 
   // Show Compare Live button in sandbox environment (must be here AND in loadAdminTab to cover both paths)
   const _isSandboxEnv = isSandboxHost() || location.port === '8446';
   const _compareBtn = document.getElementById('adminBtnCompare');
   if (_compareBtn) _compareBtn.style.display = _isSandboxEnv ? '' : 'none';
+  syncAdminGroupButtons();                      // a group with nothing you can open is hidden
 
   // Show/hide entry save/clear buttons based on role
   const entrySaveBtn  = document.getElementById('entrySave');
@@ -23123,9 +23178,58 @@ function isDatePostSeason(dateStr) {
   return false;
 }
 
+// The score grid is one piece of the page that lives in either the Play > Scores tab (regular season nights only) or the
+// Post Season > Scores tab (one entry per season's post season). ENTRY_MODE says which, and the date list follows it.
+let ENTRY_MODE = 'regular';
+const ENTRY_TABS = { regular: 'scorecard', post: 'ps_entry' };
+// Skins/CTPs and Stableford exist twice: under Play (regular season nights only) and under Post Season (post-season nights only).
+// It is one piece of the page that lives under whichever of the two tabs is open; SCREEN_MODE says which.
+const DUAL_SCREENS = { skins: { el: 'skinsScreen', regular: 'skins', post: 'ps_skinsview' }, stableford: { el: 'stablefordScreen', regular: 'stableford', post: 'ps_stableford' } };
+const SCREEN_MODE = { skins: 'regular', stableford: 'regular' };
+function dualScreenOf(tab) { return Object.keys(DUAL_SCREENS).find(k => DUAL_SCREENS[k].regular === tab || DUAL_SCREENS[k].post === tab) || null; }
+function placeDualScreen(tab) {
+  const key = dualScreenOf(tab); if (!key) return false;
+  const cfg = DUAL_SCREENS[key], mode = tab === cfg.post ? 'post' : 'regular';
+  const host = document.getElementById('tab-' + cfg[mode]), el = document.getElementById(cfg.el); if (!host || !el) return false;
+  if (el.parentNode !== host) host.appendChild(el);
+  const changed = SCREEN_MODE[key] !== mode; SCREEN_MODE[key] = mode;
+  const sf = document.getElementById('sfStandingsBlock'); if (key === 'stableford' && sf) sf.style.display = mode === 'post' ? 'none' : '';   // team standings are regular season only
+  return changed;
+}
+function psSeasonsList() { return query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL AND PostSeasonDt != '' ORDER BY Season DESC`).map(r => r.Season); }
+function psNightsFor(season) {               // that season's post-season nights, newest first
+  const ps = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
+  return ps ? [String(ps.week2), String(ps.week1)] : [];
+}
+// Open the score grid: for a given night its own tab, otherwise the one you are on if it is a score tab, else Play > Scores.
+function gotoScoreEntry(date) {
+  const cur = document.querySelector('.tab.active')?.dataset.tab;
+  switchTab(date ? entryTabFor(date) : (cur === ENTRY_TABS.post ? ENTRY_TABS.post : ENTRY_TABS.regular));
+}
+function entryTabFor(date) { return isDatePostSeason(String(date)) ? ENTRY_TABS.post : ENTRY_TABS.regular; }   // which tab shows a given night's scores
+// Put the score grid under the tab being opened. Changing mode starts the grid afresh (its date list is different).
+function placeEntryFor(tab) {
+  const mode = tab === ENTRY_TABS.post ? 'post' : 'regular';
+  const host = document.getElementById('tab-' + ENTRY_TABS[mode]), grid = document.getElementById('adminScores');
+  if (!host || !grid) return false;
+  const changed = mode !== ENTRY_MODE;
+  if (grid.parentNode !== host) host.appendChild(grid);
+  ENTRY_MODE = mode;
+  if (changed) {
+    entryState = {}; entryStateDate = null; entryStateFb = null; entryDirty = false; selectedEntrySlotKey = null; entryManual9 = false;
+    activeEntryPostSeasonContext = null;
+    document.getElementById('postSeasonBanner')?.remove(); document.getElementById('entryFutureBanner')?.remove();
+    const g = document.getElementById('entryGrid'); if (g) { g.dataset.postSeason = '0'; delete g.dataset.postSeasonSeason; }
+    const head = document.getElementById('entryHead'), body = document.getElementById('entryBody'); if (head) head.innerHTML = ''; if (body) body.innerHTML = '';
+    if (db) { try { populateEntryDates(); } catch (e) { console.warn('entry dates:', e); } }
+  }
+  return changed;
+}
+
 function populateEntryDates() {
   const sel  = document.getElementById('entryDate');
   const prev = sel.value;
+  const postMode = ENTRY_MODE === 'post';
 
   // Always get post-season dates from SeasonSettings
   const psRows = query(`SELECT Season, PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL ORDER BY Season DESC`);
@@ -23149,9 +23253,9 @@ function populateEntryDates() {
   const allDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" ORDER BY Date DESC`).map(r=>r.sDate);
   const regularDates = allDates.filter(d => !psDateSet.has(d));
 
-  // Group every date (regular + post season) under its own year, newest first
+  // Group every date of this mode (regular nights, or each season's post season) under its own year, newest first
   const byYear = {};
-  [...regularDates.map(String), ...psLabels.keys()].forEach(d => {
+  [...(postMode ? [] : regularDates.map(String)), ...(postMode ? psLabels.keys() : [])].forEach(d => {
     const yr = d.substring(0,4);
     if (!byYear[yr]) byYear[yr] = new Set();
     byYear[yr].add(d);
@@ -23169,10 +23273,10 @@ function populateEntryDates() {
   sel.innerHTML = htmlParts.join('');
 
   // Restore previous selection or pick best match
-  if (prev && (psLabels.has(String(prev)) || regularDates.includes(prev))) {
+  if (prev && (postMode ? psLabels.has(String(prev)) : regularDates.includes(prev))) {
     sel.value = prev;
-  } else if (psDates.length) {
-    sel.value = psDates[0].date;
+  } else if (postMode) {
+    if (psDates.length) sel.value = psDates[0].date;
   } else if (regularDates.length) {
     const todayInt = (() => { const d = new Date(); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); })();
     const best = regularDates.reduce((a,b) => Math.abs(parseInt(b)-todayInt) < Math.abs(parseInt(a)-todayInt) ? b : a);
@@ -23182,6 +23286,7 @@ function populateEntryDates() {
   // Keep post-season mode in sync with whatever date ended up selected
   const psInput = document.getElementById('entryPostSeason');
   if (psInput) psInput.checked = isDatePostSeason(sel.value);
+  const sub = document.getElementById('entrySubtitle'); if (sub && !sel.options.length) sub.textContent = postMode ? 'No post season has been set up yet' : '';
 }
 
 function initEntry() {

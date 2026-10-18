@@ -11,7 +11,7 @@ const sections = JSON.parse('[' + src.match(/const ADMIN_SECTIONS = \[([^\]]*)\]
 assert(sections.includes('players') && !sections.includes('scores'), "'scores' is no longer an admin section");
 function world(remembered) {
   const calls = [];
-  const c = vm.createContext({ db: {}, ADMIN_SECTIONS: sections, window: { _adminSection: remembered }, isSandboxHost: () => false, loadAdminPlayers() {}, location: { port: '' },
+  const c = vm.createContext({ db: {}, syncAdminGroupButtons() {}, ADMIN_SECTIONS: sections, window: { _adminSection: remembered }, isSandboxHost: () => false, loadAdminPlayers() {}, location: { port: '' },
     showAdminSection: s => calls.push(s), document: { getElementById: id => ({ addEventListener() {}, style: {} }) } });
   vm.runInContext(extract('loadAdminTab'), c); c.loadAdminTab();
   return calls;

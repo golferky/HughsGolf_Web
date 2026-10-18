@@ -63,8 +63,8 @@ const inserts = r => r.calls.filter(c => /INSERT INTO Scores/.test(c.sql));
   r = await run({ ps: false, card: 'Front' });
   assert.strictEqual(inserts(r).length, 1); assert.strictEqual(inserts(r)[0].args[3], 'Front'); assert.strictEqual(inserts(r)[0].args[2], '20260922');
   assert(r.calls.some(c => c.sql === 'MATCHES') && r.calls.some(c => c.sql === 'SKINS') && !r.calls.some(c => c.sql === 'EOY'), 'league-night path unchanged');
-  // wiring: the Skins tab date list now includes the post-season nights
-  assert(/const skinKeys = getCtpDateKeys\(skinDates\.map\(r => r\.sDate\), season\);/.test(src) && /skSel\.innerHTML = skinKeys\.map\(/.test(src));
+  // wiring: Post Season > Skins/CTPs lists the post-season nights; Play > Skins/CTPs the regular ones
+  assert(/getCtpDateKeys\(skinDates\.map\(r => r\.sDate\), season\)\.filter\(d => !psNights\.has\(String\(d\)\)\)/.test(src) && /post \? psNightsFor\(season\)/.test(src) && /skSel\.innerHTML = skinKeys\.map\(/.test(src));
   assert(/^\d{8}\.\d+$/.test(src.match(/const APP_VERSION = '([^']+)';/)[1]) && ((v) => v[0] > '20261007' || (v[0] === '20261007' && +v[1] >= 1))(src.match(/const APP_VERSION = '([^']+)';/)[1].split('.')));
   console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });

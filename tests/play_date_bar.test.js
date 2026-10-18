@@ -1,4 +1,4 @@
-// Round date bar: shown on the dated Play tabs only, lists regular + post-season dates, drives the tab you are on.
+// Round date bar: shown on the dated Play tabs only, lists the regular season nights (post season is not part of Play), drives the tab you are on.
 const fs = require('fs'), assert = require('assert');
 let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {}
 const src = fs.readFileSync(__dirname + '/../HughsGolf.html', 'utf8');
@@ -36,15 +36,15 @@ const path = require('path');
   const state = () => p.evaluate(() => ({ shown: getComputedStyle(document.getElementById('playDateBar')).display, value: document.getElementById('playDateSel').value, opts: [...document.getElementById('playDateSel').options].map(o => o.textContent) }));
   await p.evaluate(() => __active('matches')); let s = await state();
   assert.strictEqual(s.shown, 'flex'); assert.strictEqual(s.value, '20260922', 'shows the tab\'s own date');
-  assert.deepStrictEqual(s.opts, ['10/06/2026 — Post Season Wk 2', '09/29/2026 — Post Season Wk 1', '09/22/2026', '09/15/2026']);
+  assert.deepStrictEqual(s.opts, ['09/22/2026', '09/15/2026'], 'no post-season nights in Play');
   // Standings: shown, and its As of follows the picked date by showing the last round on or before it
   await p.evaluate(() => { document.getElementById('standSeason').innerHTML = '<option value="2026">2026</option>'; document.getElementById('standSeason').value = '2026';
     document.getElementById('standAsOf').innerHTML = '<option value="">Current</option><option value="20260922">9/22</option><option value="20260915">9/15</option>'; document.getElementById('standAsOf').value = ''; window.populateStandAsOf = () => {}; });
   await p.evaluate(() => __active('standings')); s = await state();
   assert.strictEqual(s.shown, 'flex', 'Standings has the date bar too');
-  await p.evaluate(() => { window.__calls = []; onPlayDatePicked('20261006'); });   // a post-season night: standings after the latest regular round
-  assert.deepStrictEqual(await p.evaluate(() => [window.__calls.slice(), window._playDate, playDateApplyStandings(), document.getElementById('standAsOf').value]), [['refresh:standings'], '20261006', true, '20260922']);
-  assert.strictEqual((await state()).value, '20261006', 'the bar keeps showing the date that was picked');
+  await p.evaluate(() => { window.__calls = []; onPlayDatePicked('20260922'); });   // a round night: standings as of it
+  assert.deepStrictEqual(await p.evaluate(() => [window.__calls.slice(), window._playDate, playDateApplyStandings(), document.getElementById('standAsOf').value]), [['refresh:standings'], '20260922', true, '20260922']);
+  assert.strictEqual((await state()).value, '20260922', 'the bar keeps showing the date that was picked');
   await p.evaluate(() => { window._playDate = '20260916'; playDateApplyStandings(); }); assert.strictEqual(await p.evaluate(() => document.getElementById('standAsOf').value), '20260915', 'nearest earlier round');
   await p.evaluate(() => { window._playDate = '20260101'; document.getElementById('standAsOf').value = ''; playDateApplyStandings(); }); assert.strictEqual(await p.evaluate(() => document.getElementById('standAsOf').value), '', 'before any round: leave Current');
   await p.evaluate(() => { window._playDate = null; });
@@ -52,16 +52,16 @@ const path = require('path');
   // picking a date reloads the tab you are on and remembers it for the others
   await p.evaluate(() => { window.__calls = []; __active('matches'); onPlayDatePicked('20260915'); });
   assert.deepStrictEqual(await p.evaluate(() => [window.__calls.slice(), window._playDate]), [['refresh:matches'], '20260915']);
-  // Score Entry: Week 2 opens the one post-season entry; an unsaved scorecard asks first
-  await p.evaluate(() => { __active('scorecard'); window.__changed = 0; document.getElementById('entryDate').addEventListener('change', () => window.__changed++); window.confirm = () => (window.__asked = (window.__asked || 0) + 1, false); entryDirty = true; onPlayDatePicked('20261006'); });
+  // Score Entry: picking a night opens it; an unsaved scorecard asks first
+  await p.evaluate(() => { __active('scorecard'); window.__changed = 0; document.getElementById('entryDate').addEventListener('change', () => window.__changed++); window.confirm = () => (window.__asked = (window.__asked || 0) + 1, false); entryDirty = true; onPlayDatePicked('20260929'); });
   assert.deepStrictEqual(await p.evaluate(() => [document.getElementById('entryDate').value, window.__changed, window.__asked]), ['20260922', 0, 1], 'declined: nothing changes');
-  await p.evaluate(() => { window.confirm = () => true; onPlayDatePicked('20261006'); });
-  assert.deepStrictEqual(await p.evaluate(() => [document.getElementById('entryDate').value, window.__changed, entryDirty, window._playDate]), ['20260929', 1, false, '20261006']);
+  await p.evaluate(() => { window.confirm = () => true; onPlayDatePicked('20260929'); });
+  assert.deepStrictEqual(await p.evaluate(() => [document.getElementById('entryDate').value, window.__changed, entryDirty, window._playDate]), ['20260929', 1, false, '20260929']);
   // opening Scores after the date was changed elsewhere: follows it; an unsaved scorecard asks first (declining keeps the Scores date)
-  assert(/if \(tab === 'scorecard'\) \{ if \(!courseData\) initEntry\(\); else reRenderEntry\(\); playDateApplyEntry\(\); \}/.test(src), 'wired into refreshTab');
+  assert(/if \(tab === 'scorecard' \|\| tab === 'ps_entry'\) \{ placeEntryFor\(tab\); if \(!courseData\) initEntry\(\); else reRenderEntry\(\); if \(tab === 'scorecard'\) playDateApplyEntry\(\); \}/.test(src), 'wired into refreshTab');
   const entryState2 = () => p.evaluate(() => [document.getElementById('entryDate').value, window.__changed, window._playDate, entryDirty]);
-  await p.evaluate(() => { document.getElementById('entryDate').value = '20260922'; window.__changed = 0; entryDirty = false; window._playDate = '20261006'; window.confirm = () => { throw new Error('no prompt expected'); }; playDateApplyEntry(); });
-  assert.deepStrictEqual(await entryState2(), ['20260929', 1, '20261006', false], 'clean scorecard: follows (Week 2 -> the post-season entry)');
+  await p.evaluate(() => { document.getElementById('entryDate').value = '20260922'; window.__changed = 0; entryDirty = false; window._playDate = '20260929'; window.confirm = () => { throw new Error('no prompt expected'); }; playDateApplyEntry(); });
+  assert.deepStrictEqual(await entryState2(), ['20260929', 1, '20260929', false], 'clean scorecard: follows the Round date');
   await p.evaluate(() => { document.getElementById('entryDate').value = '20260922'; window.__changed = 0; entryDirty = true; window._playDate = '20260929'; window.confirm = () => false; playDateApplyEntry(); });
   assert.deepStrictEqual(await entryState2(), ['20260922', 0, '20260922', true], 'unsaved + declined: stays, shared date follows the Scores date');
   await p.evaluate(() => { window._playDate = '20260929'; window.confirm = () => true; playDateApplyEntry(); });
@@ -75,8 +75,8 @@ const path = require('path');
   let u = await ui(); assert.strictEqual(u.btn, '09/15/2026  ▾'); assert.strictEqual(u.open, 'none'); assert.strictEqual(u.expanded, 'false');
   await p.click('#playDateBtn'); u = await ui();
   assert.strictEqual(u.open, 'block'); assert.strictEqual(u.expanded, 'true');
-  assert.deepStrictEqual(u.heads, ['▶ 2027 | 2 dates', '▼ 2026 | 4 dates'], u.heads.join('|'));
-  assert.deepStrictEqual(u.opts, ['10/06/2026 — Post Season Wk 2', '09/29/2026 — Post Season Wk 1', '09/22/2026', '09/15/2026']);
+  assert.deepStrictEqual(u.heads, ['▶ 2027 | 2 dates', '▼ 2026 | 2 dates'], u.heads.join('|'));
+  assert.deepStrictEqual(u.opts, ['09/22/2026', '09/15/2026']);
   assert(u.opts.includes('09/15/2026') && !u.opts.includes('04/13/2027'), 'only the picked season is open');
   await p.click('#playDatePanel [role=button]:has-text("2027")'); u = await ui();
   assert(u.opts.includes('04/13/2027') && u.opts.includes('04/20/2027') && u.opts.includes('09/15/2026'), 'both open'); assert.strictEqual(u.heads[0].startsWith('▼ 2027'), true, u.heads[0]);

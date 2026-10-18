@@ -6,7 +6,7 @@ assert(!/help_newseason/.test(src), 'no longer a Help accordion item');
 assert(/ADMIN_SECTIONS = \[[^\]]*'newseason'/.test(src), 'section registered');
 assert(/id="adminBtnNewseason"/.test(src) && /id="adminNewseason"/.test(src) && /id="newSeasonBody"/.test(src));
 assert(/if \(section==='newseason'\)\s+loadNewSeasonSetup\(\)/.test(src));
-assert(/'backlog','newseason','expenses'/.test(src), 'button highlight list includes it');
+assert(/tables: \['players','teams','subs','carriers','newseason'\]/.test(src), 'it is a pill in the Table Maintenance group');
 const el = { innerHTML: '' };
 const ctx = vm.createContext({ newSeasonFormHtml: () => '<form>', scheduleBuildFormHtml: () => '', document: { getElementById: id => id === 'newSeasonBody' ? el : null } });
 ['newSeasonSetupHtml', 'loadNewSeasonSetup'].forEach(f => vm.runInContext(extract(f), ctx));
