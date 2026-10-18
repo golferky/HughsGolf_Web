@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261018.8-sandbox'
+VERSION    = '20261018.9-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1538,8 +1538,10 @@ def _send_permission_request(name, email, phone, carrier, added_by, token):
     body = (f"Hi {name.split()[0]},\n\n{added_by} added you to the Hugh's Golf League (Boone Links) list of possible subs.\n\n"
             f"Before anyone contacts you, please tell us if that's OK and how to reach you:\n{link}\n\n"
             f"If you'd rather not be contacted, use the same link and choose \"Do not contact me\". You won't hear from us again.")
-    plan = delivery_plan('simple', phone, carrier, email, '')
-    res = deliver(plan, f"{added_by} added you as a possible sub for Hugh's Golf League. OK to contact you? {link}", "Hugh's Golf", email_body=body)
+    plan = _broadcast_plan(delivery_plan('simple', phone, carrier, email, ''), True)      # the link goes in the email: carriers drop texts with links
+    text = (f"{added_by} added you as a possible sub for Hugh's Golf League. OK to contact you? {link}" if plan['link_in_text']
+            else f"{added_by} added you as a possible sub for Hugh's Golf League. OK to contact you? Please check your email to answer.")
+    res = deliver(plan, text, "Hugh's Golf", email_body=body)
     return link, 'email' in res['sent'], 'text' in res['sent']
 
 
@@ -1607,6 +1609,7 @@ def send_rainout_text():
             plan, err = _contact_plan(cur, name, 'urgent')                 # rainouts: see delivery_plan
             if not plan:
                 failed.append({'player': name, 'reason': err}); continue
+            plan = _broadcast_plan(plan, True)                              # the confirm link goes in the email: carriers drop texts with links
             members_json = json.dumps(members_of.get(name, [])) if kind else None
             cur.execute("SELECT Token FROM RainoutNotice WHERE Date=? AND Player=? AND Test=? AND COALESCE(Kind,'')=?", (date, name, 1 if test else 0, kind))
             row = cur.fetchone()   # re-sending reuses the player's link so a confirmation is never lost
@@ -1616,19 +1619,26 @@ def send_rainout_text():
                             (token, date, name, message, now, actor, 1 if test else 0, kind, members_json))
             elif kind:
                 cur.execute("UPDATE RainoutNotice SET Members=? WHERE Token=?", (members_json, token))
+            link = f"{base}/r/{token}"
+            tag = 'TEST: ' if test else ''
             if kind:
-                text = ('TEST: ' if test else '') + f"{message} You're the point person for {', '.join(members_of[name])}: please let them know. Tap to confirm and tick off who you told: {base}/r/{token}"
+                who = ', '.join(members_of[name])
+                text = tag + (f"{message} You're the point person for {who}: please let them know. Tap to confirm and tick off who you told: {link}" if plan['link_in_text']
+                              else f"{message} You're the point person for {who}: please check your email to confirm and tick off who you told.")
+                email_body = f"{message}\n\nYou're the point person for {who}: please let them know. Tap to confirm and tick off who you told:\n{link}\n\nHugh's Golf League"
             else:
-                text = ('TEST: ' if test else '') + f"{message} Please tap to confirm - no need to reply: {base}/r/{token}"
-            todo.append((name, plan, text))
+                text = tag + (f"{message} Please tap to confirm - no need to reply: {link}" if plan['link_in_text']
+                              else f"{message} Please check your email to confirm - no need to reply.")
+                email_body = f"{message}\n\nPlease tap to confirm - no need to reply:\n{link}\n\nHugh's Golf League"
+            todo.append((name, plan, text, tag + email_body))
         conn.commit(); conn.close()
     # 2) Send with no lock and no open transaction.
     via = {}
-    for name, plan, text in todo:
+    for name, plan, text, email_body in todo:
         if simulated:
             sent.append(name); via[name] = ['simulated']
             continue
-        res = deliver(plan, text, "Hugh's Golf")
+        res = deliver(plan, text, ('TEST: ' if test else '') + "Hugh's Golf League notice", email_body=email_body)
         if res['ok']:
             sent.append(name); via[name] = res['sent']
         else:

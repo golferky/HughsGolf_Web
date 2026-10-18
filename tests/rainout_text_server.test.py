@@ -51,9 +51,11 @@ assert j['ok'] and j['simulated'] and not sent_to
 assert j['sent'] == ['Cell One', 'Mail Only', 'Prefers Email', 'Fallback'] and [f['player'] for f in j['failed']] == ['No Contact', 'Ghost'], j
 # a test goes to the logged-in officer only, really sent even in the sandbox, with its own link and a TEST prefix
 j = post({**body, 'test': True}).get_json()
-assert j['test'] and not j['simulated'] and j['sent'] == ['Boss Admin'] and len(sent_to) == 1
-assert sent_to[0][0] == '5025550199@txt.att.net' and sent_to[0][1].startswith('TEST: Rain out tonight')
-tlink = re.search(r'/r/([0-9a-f]{16})', sent_to[0][1]).group(1)
+assert j['test'] and not j['simulated'] and j['sent'] == ['Boss Admin'] and len(sent_to) == 2
+# the officer has a cell number and an email: the text only says to check the email, and the email carries the link (carriers drop texts with links)
+assert sent_to[0][0] == '5025550199@txt.att.net' and sent_to[0][1] == 'TEST: Rain out tonight Please check your email to confirm - no need to reply.' and '/r/' not in sent_to[0][1]
+assert sent_to[1][0] == 'boss@x.com' and sent_to[1][1].startswith('TEST: Rain out tonight')
+tlink = re.search(r'/r/([0-9a-f]{16})', sent_to[1][1]).group(1)
 sent_to.clear()
 # live: real, individual sends (gateway for texters, email for email-only / no-cell), each with its own confirm link
 app.VERSION = '20261010.6'
@@ -61,7 +63,8 @@ j = post(body).get_json()
 assert not j['simulated'] and j['sent'] == ['Cell One', 'Mail Only', 'Prefers Email', 'Fallback']
 assert [a for a, _ in sent_to] == ['5025550101@vtext.com', 'm@x.com', 'pe@x.com', 'fb@x.com'], sent_to
 toks = [re.search(r'https://hughsgolf\.example\.org/r/([0-9a-f]{16})', t).group(1) for _, t in sent_to]
-assert len(set(toks)) == 4 and all(t.startswith('Rain out tonight Please tap to confirm - no need to reply:') for _, t in sent_to)
+assert len(set(toks)) == 4 and all(t.startswith(('Rain out tonight Please tap to confirm - no need to reply:', 'Rain out tonight\n\nPlease tap to confirm - no need to reply:\nhttps://')) for _, t in sent_to)
+assert sent_to[0][1].startswith('Rain out tonight Please tap'), 'no email on file: the link has to be in the text'
 # status: nobody confirmed yet (the test row is not counted)
 st = lambda: cl.get('/rainout-status?date=20261013', headers=H).get_json()['rows']
 assert [r['player'] for r in st()] == ['Cell One', 'Fallback', 'Mail Only', 'Prefers Email'] and not any(r['confirmedAt'] for r in st())
