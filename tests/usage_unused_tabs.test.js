@@ -6,7 +6,7 @@ function extract(name) {
   let d = 0, j = src.indexOf('{', i);
   for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; if (src[k] === '}' && --d === 0) return src.slice(i, k + 1); }
 }
-const labels = { home: 'Home', admin: '⚙ Admin', scorecard: '📝 Scores', noshows: 'Attendance', whatsnew: '📋 Change History', payments: 'Payments', stats: '📊 Stats' };
+const labels = { home: 'Home', admin: '⚙ Admin', scorecard: '📝 Scores', noshows: 'Attendance', whatsnew: '📋 Change History', payments: 'Payments' };      // Stats is part of Home now (no tab of its own, but still counted)
 const tabs = Object.keys(labels);
 const c = vm.createContext({ ADMIN_SECTIONS: ['players', 'sql', 'leaguesettings', 'backups', 'sync', 'pdfs'], PV_STATS_VIEWS: ['individual', 'h2h'],
   PV_DEV_ONLY_SECTIONS: ['leaguesettings', 'backups', 'sql', 'sync'], ADMIN_ONLY_TABS: new Set(['admin', 'payments', 'schedule']),
@@ -33,9 +33,10 @@ const adm = keys('admin');
 assert(adm.includes('admin › players') && adm.includes('admin › pdfs') && adm.includes('payments'), 'admins: admin screens');
 ['admin › sql', 'admin › leaguesettings', 'admin › backups', 'admin › sync'].forEach(k => assert(!adm.includes(k), 'admins never see developer-only ' + k));
 const pl = keys('player');
-assert.deepStrictEqual(pl, ['home', 'scorecard', 'noshows', 'whatsnew', 'stats', 'stats › individual', 'stats › h2h'], 'players: no Admin, Payments or Schedule screens at all');
+assert.deepStrictEqual(pl, ['home', 'stats', 'stats › individual', 'stats › h2h', 'scorecard', 'noshows', 'whatsnew'], 'players: no Admin, Payments or Schedule screens at all');
 // unused = reachable minus used; no duplicates
-assert.deepStrictEqual(J(c.pvUnusedKeys(c.pvKnownTabKeys('player'), ['home', 'stats › h2h'])).map(k => c.pvTabKey(k.tab, k.sub)), ['scorecard', 'noshows', 'whatsnew', 'stats', 'stats › individual']);
+assert.deepStrictEqual(J(c.pvUnusedKeys(c.pvKnownTabKeys('player'), ['home', 'stats › h2h'])).map(k => c.pvTabKey(k.tab, k.sub)), ['stats', 'stats › individual', 'scorecard', 'noshows', 'whatsnew']);
+assert.strictEqual(c.pvTabLabel('stats'), 'Stats', 'Stats keeps its friendly name');
 assert.deepStrictEqual(J(c.pvUnusedKeys([{ tab: 'a', sub: null }, { tab: 'a', sub: null }], [])).length, 1, 'no duplicates');
 assert.deepStrictEqual(J(c.pvUnusedKeys(c.pvKnownTabKeys('player'), pl)), [], 'everything used: nothing listed');
 // wiring: used rows and unused rows both use the friendly name; the level comes from the chosen player first, then the Level filter

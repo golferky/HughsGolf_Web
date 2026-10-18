@@ -716,7 +716,6 @@
   <div class="subtabs" id="subTabs">
     <div class="subtab-group" data-group="home">
       <div class="tab active" data-tab="home">🏠 Home</div>
-      <div class="tab" data-tab="stats">📊 Stats</div>
     </div>
     <div class="subtab-group" data-group="play" style="display:none">
       <div class="tab" data-tab="scorecard" id="scorecardTabBtn">📝 Scores</div>
@@ -879,6 +878,155 @@
         </div>
       </div>
     </div>
+  
+    <!-- STATS (below the Home cards: Home is one page, Stats is no longer its own tab) -->
+    <div id="homeStatsSection" style="margin-top:28px">
+      <div style="font-size:16px;font-weight:700;color:var(--green);margin:0 0 10px;padding-top:14px;border-top:2px solid var(--border)">📊 Stats</div>
+
+    <!-- Sub-nav -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:8px">
+      <button id="statsNavIndividual" onclick="switchStatsView('individual')" style="padding:6px 18px;border:none;border-radius:6px 6px 0 0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:var(--green);color:white">👤 Individual</button>
+      <button id="statsNavRankings"   onclick="switchStatsView('rankings')"   style="padding:6px 18px;border:none;border-radius:6px 6px 0 0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:#e8e0d0;color:var(--green)">🏆 Rankings</button>
+      <button id="statsNavLeaders"    onclick="switchStatsView('leaders')"    style="padding:6px 18px;border:none;border-radius:6px 6px 0 0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:#e8e0d0;color:var(--green)">🎖 Leaders</button>
+      <button id="statsNavH2H"        onclick="switchStatsView('h2h')"        style="padding:6px 18px;border:none;border-radius:6px 6px 0 0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:#e8e0d0;color:var(--green)">⚔️ Head to Head</button>
+    </div>
+
+    <!-- Individual view -->
+    <div id="statsIndividualView">
+    <div class="controls">
+      <div class="filter-group">
+        <label>Player</label>
+        <select id="statsPlayer" onchange="loadPlayerStats()"></select>
+      </div>
+      <div class="filter-group">
+        <label>Season</label>
+        <select id="statsSeason" onchange="loadPlayerStats()">
+          <option value="">All Seasons</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Summary boxes -->
+    <div id="statsSummary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+    <!-- Front 9 per-hole -->
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-header">
+        <span>Front 9 — Per Hole Averages</span>
+        <button onclick="toggleStatsCard('statsFrontBody','statsFrontBtn')" id="statsFrontBtn" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
+      </div>
+      <div id="statsFrontBody" class="table-wrap"></div>
+    </div>
+
+    <!-- Back 9 per-hole -->
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-header">
+        <span>Back 9 — Per Hole Averages</span>
+        <button onclick="toggleStatsCard('statsBackBody','statsBackBtn')" id="statsBackBtn" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
+      </div>
+      <div id="statsBackBody" class="table-wrap"></div>
+    </div>
+
+    <!-- Year recap -->
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-header">
+        <span>Year by Year Summary</span>
+        <button onclick="toggleStatsCard('statsYearBody','statsYearBtn')" id="statsYearBtn" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
+      </div>
+      <div id="statsYearBody" class="table-wrap"></div>
+    </div>
+
+    <!-- Score history -->
+    <div class="card">
+      <div class="card-header">
+        <span>Score History</span>
+        <select id="statsHistoryFilter" onchange="renderStatsHistory()" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);color:white;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer">
+          <option value="">Career</option>
+        </select>
+        <select id="statsHistoryType" onchange="renderStatsHistory()" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);color:white;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer">
+          <option value="">All Rounds</option>
+          <option value="regular">Regular Season</option>
+          <option value="postseason">Post Season</option>
+        </select>
+        <button onclick="toggleStatsCard('statsHistoryBody','statsHistoryBtn')" id="statsHistoryBtn" style="padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
+      </div>
+      <div id="statsHistoryBody" style="padding:8px 0"></div>
+    </div>
+  </div><!-- end statsIndividualView -->
+
+    <!-- Rankings view -->
+    <div id="statsRankingsView" style="display:none">
+      <div class="controls">
+        <div class="filter-group">
+          <label>Season</label>
+          <select id="rankingsSeason" onchange="loadRankings()">
+            <option value="">Career</option>
+          </select>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">🏆 League Rankings</div>
+        <div id="rankingsBody" class="table-wrap"></div>
+      </div>
+    </div>
+
+    <!-- Leaders view -->
+    <div id="statsLeadersView" style="display:none">
+      <div class="controls">
+        <div class="filter-group">
+          <label>Period</label>
+          <select id="leadersPeriod" onchange="loadLeaders()">
+            <option value="career">Career (All-Time)</option>
+          </select>
+        </div>
+        <div class="filter-group" style="align-self:flex-end;padding-bottom:6px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
+            <input type="checkbox" id="leadersRegularsOnly" checked onchange="loadLeaders()"> Regulars Only
+          </label>
+        </div>
+        <div class="filter-group" style="align-self:flex-end;padding-bottom:6px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
+            <input type="checkbox" id="leadersShowAll" onchange="loadLeaders()"> Show All (instead of Top 25)
+          </label>
+        </div>
+      </div>
+      <div id="leadersGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px"></div>
+    </div>
+
+    <!-- Head to Head view -->
+    <div id="statsH2HView" style="display:none">
+      <div class="controls">
+        <div class="filter-group">
+          <label>Player</label>
+          <select id="h2hPlayer" onchange="loadH2H()"></select>
+        </div>
+        <div class="filter-group">
+          <label>Season</label>
+          <select id="h2hSeason" onchange="loadH2H()">
+            <option value="">All Seasons</option>
+          </select>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header" style="display:flex;align-items:center;gap:10px">
+          <span id="h2hCardHeader">⚔️ Head to Head Record</span>
+          <button onclick="toggleStatsCard('h2hBody','h2hToggleBtn')" id="h2hToggleBtn" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer">Collapse</button>
+        </div>
+        <div id="h2hBody" class="table-wrap" style="padding:8px 0"></div>
+      </div>
+      <div class="card" id="h2hAllCard" style="display:none;margin-top:16px">
+        <div class="card-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span id="h2hAllHeader">📊 All Players — Overall Record</span>
+          <label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;letter-spacing:0;cursor:pointer">
+            <input type="checkbox" id="h2hShowSubs" onchange="loadH2H()" style="width:15px;height:15px;cursor:pointer"> Include subs
+          </label>
+          <button onclick="toggleStatsCard('h2hAllBody','h2hAllToggleBtn')" id="h2hAllToggleBtn" style="padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer">Collapse</button>
+        </div>
+        <div id="h2hAllBody" class="table-wrap" style="padding:8px 0"></div>
+      </div>
+    </div>
+
+  </div>
   </div>
 
   <!-- BOARD -->
@@ -1257,153 +1405,7 @@
     </div>
   </div>
 
-  <!-- STATS -->
-  <div class="section" id="tab-stats">
-
-    <!-- Sub-nav -->
-    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:8px">
-      <button id="statsNavIndividual" onclick="switchStatsView('individual')" style="padding:6px 18px;border:none;border-radius:6px 6px 0 0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:var(--green);color:white">👤 Individual</button>
-      <button id="statsNavRankings"   onclick="switchStatsView('rankings')"   style="padding:6px 18px;border:none;border-radius:6px 6px 0 0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:#e8e0d0;color:var(--green)">🏆 Rankings</button>
-      <button id="statsNavLeaders"    onclick="switchStatsView('leaders')"    style="padding:6px 18px;border:none;border-radius:6px 6px 0 0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:#e8e0d0;color:var(--green)">🎖 Leaders</button>
-      <button id="statsNavH2H"        onclick="switchStatsView('h2h')"        style="padding:6px 18px;border:none;border-radius:6px 6px 0 0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:#e8e0d0;color:var(--green)">⚔️ Head to Head</button>
-    </div>
-
-    <!-- Individual view -->
-    <div id="statsIndividualView">
-    <div class="controls">
-      <div class="filter-group">
-        <label>Player</label>
-        <select id="statsPlayer" onchange="loadPlayerStats()"></select>
-      </div>
-      <div class="filter-group">
-        <label>Season</label>
-        <select id="statsSeason" onchange="loadPlayerStats()">
-          <option value="">All Seasons</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Summary boxes -->
-    <div id="statsSummary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
-
-    <!-- Front 9 per-hole -->
-    <div class="card" style="margin-bottom:12px">
-      <div class="card-header">
-        <span>Front 9 — Per Hole Averages</span>
-        <button onclick="toggleStatsCard('statsFrontBody','statsFrontBtn')" id="statsFrontBtn" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
-      </div>
-      <div id="statsFrontBody" class="table-wrap"></div>
-    </div>
-
-    <!-- Back 9 per-hole -->
-    <div class="card" style="margin-bottom:12px">
-      <div class="card-header">
-        <span>Back 9 — Per Hole Averages</span>
-        <button onclick="toggleStatsCard('statsBackBody','statsBackBtn')" id="statsBackBtn" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
-      </div>
-      <div id="statsBackBody" class="table-wrap"></div>
-    </div>
-
-    <!-- Year recap -->
-    <div class="card" style="margin-bottom:12px">
-      <div class="card-header">
-        <span>Year by Year Summary</span>
-        <button onclick="toggleStatsCard('statsYearBody','statsYearBtn')" id="statsYearBtn" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
-      </div>
-      <div id="statsYearBody" class="table-wrap"></div>
-    </div>
-
-    <!-- Score history -->
-    <div class="card">
-      <div class="card-header">
-        <span>Score History</span>
-        <select id="statsHistoryFilter" onchange="renderStatsHistory()" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);color:white;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer">
-          <option value="">Career</option>
-        </select>
-        <select id="statsHistoryType" onchange="renderStatsHistory()" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);color:white;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer">
-          <option value="">All Rounds</option>
-          <option value="regular">Regular Season</option>
-          <option value="postseason">Post Season</option>
-        </select>
-        <button onclick="toggleStatsCard('statsHistoryBody','statsHistoryBtn')" id="statsHistoryBtn" style="padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:none;border-radius:6px;cursor:pointer">Collapse</button>
-      </div>
-      <div id="statsHistoryBody" style="padding:8px 0"></div>
-    </div>
-  </div><!-- end statsIndividualView -->
-
-    <!-- Rankings view -->
-    <div id="statsRankingsView" style="display:none">
-      <div class="controls">
-        <div class="filter-group">
-          <label>Season</label>
-          <select id="rankingsSeason" onchange="loadRankings()">
-            <option value="">Career</option>
-          </select>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header">🏆 League Rankings</div>
-        <div id="rankingsBody" class="table-wrap"></div>
-      </div>
-    </div>
-
-    <!-- Leaders view -->
-    <div id="statsLeadersView" style="display:none">
-      <div class="controls">
-        <div class="filter-group">
-          <label>Period</label>
-          <select id="leadersPeriod" onchange="loadLeaders()">
-            <option value="career">Career (All-Time)</option>
-          </select>
-        </div>
-        <div class="filter-group" style="align-self:flex-end;padding-bottom:6px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
-            <input type="checkbox" id="leadersRegularsOnly" checked onchange="loadLeaders()"> Regulars Only
-          </label>
-        </div>
-        <div class="filter-group" style="align-self:flex-end;padding-bottom:6px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
-            <input type="checkbox" id="leadersShowAll" onchange="loadLeaders()"> Show All (instead of Top 25)
-          </label>
-        </div>
-      </div>
-      <div id="leadersGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px"></div>
-    </div>
-
-    <!-- Head to Head view -->
-    <div id="statsH2HView" style="display:none">
-      <div class="controls">
-        <div class="filter-group">
-          <label>Player</label>
-          <select id="h2hPlayer" onchange="loadH2H()"></select>
-        </div>
-        <div class="filter-group">
-          <label>Season</label>
-          <select id="h2hSeason" onchange="loadH2H()">
-            <option value="">All Seasons</option>
-          </select>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header" style="display:flex;align-items:center;gap:10px">
-          <span id="h2hCardHeader">⚔️ Head to Head Record</span>
-          <button onclick="toggleStatsCard('h2hBody','h2hToggleBtn')" id="h2hToggleBtn" style="margin-left:auto;padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer">Collapse</button>
-        </div>
-        <div id="h2hBody" class="table-wrap" style="padding:8px 0"></div>
-      </div>
-      <div class="card" id="h2hAllCard" style="display:none;margin-top:16px">
-        <div class="card-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span id="h2hAllHeader">📊 All Players — Overall Record</span>
-          <label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;letter-spacing:0;cursor:pointer">
-            <input type="checkbox" id="h2hShowSubs" onchange="loadH2H()" style="width:15px;height:15px;cursor:pointer"> Include subs
-          </label>
-          <button onclick="toggleStatsCard('h2hAllBody','h2hAllToggleBtn')" id="h2hAllToggleBtn" style="padding:4px 14px;font-size:13px;font-weight:600;background:var(--green);color:white;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer">Collapse</button>
-        </div>
-        <div id="h2hAllBody" class="table-wrap" style="padding:8px 0"></div>
-      </div>
-    </div>
-
-  </div><!-- end tab-stats -->
+  <!-- end tab-stats -->
 
   <!-- HELP -->
   <div class="section" id="tab-help">
@@ -3774,6 +3776,7 @@ function switchTab(tabName) {
     location.reload(true);
     return;
   }
+  if (tabName === 'stats') tabName = 'home';                         // Stats now lives on the Home page
   const targetTab = canAccessTab(tabName) ? tabName : 'home';
   const curTab = document.querySelector('.tab.active')?.dataset.tab;
   if (typeof entryDirty !== 'undefined' && entryDirty && curTab && curTab !== targetTab && ['scorecard', 'ps_entry'].includes(curTab) && ['scorecard', 'ps_entry'].includes(targetTab)
@@ -4161,6 +4164,7 @@ function ensureAppChangelogTable() {
   ]);
   ensureVersion('20261018.15', 'October 18, 2026', [
     ['enhancement', 'Post Season > Scores: post-season scores get their own tab', 'Post Season has a new Scores tab (first in the group) with the score grid for each season\'s post season: pick the season, enter or view its scores, payments and skins. Play > Scores is now the regular season only, and the Play round-date bar no longer lists post-season nights. Gallus imports open the tab that matches the card\'s night. PR #136.', 1],
+    ['enhancement', 'Home shows Stats on the same page', 'Stats is no longer a second tab under Home: the Stats (Individual, Rankings, Leaders, Head to Head) now sit below the Home cards on one page, and the extra row of tabs is gone. Usage still counts Stats separately. PR #136.', 2],
   ]);
   ensureVersion('20261018.14', 'October 18, 2026', [
     ['bugfix', 'Broadcast: Refresh also updates the answered count', 'The Refresh button in Answers reloaded only the names; the "(0/1 answered)" count in the drop-down stayed old until you left the screen. It now reloads both. PR #135.', 1],
@@ -6350,7 +6354,8 @@ function onPlayDatePicked(value) {
 }
 function refreshTab(tab) {
   if (!db) return;
-  if (tab === 'home') loadHome();
+  if (tab === 'home') { loadHome(); loadPlayerStats(); }          // Stats sits under the Home cards
+  if (tab === 'stats') switchTab('home');                           // Stats is no longer its own tab
   if (tab === 'standings') loadStandings();
   if (tab === 'stableford') { loadStablefordTab(); loadSfStandings(true); }
   if (tab === 'skins') { initSkinsTab(); loadCtpsTab(); }
@@ -14490,6 +14495,7 @@ function pvTabKey(tab, subNav) { return subNav ? `${tab} › ${subNav}` : tab; }
 function pvTabLabel(tab) {
   let text = '';
   try { text = (document.querySelector(`.tab[data-tab="${tab}"]`)?.textContent || '').replace(/^[^A-Za-z0-9]+/, '').trim(); } catch (e) {}
+  if (!text && tab === 'stats') text = 'Stats';          // Stats is part of the Home page now, no tab of its own
   return text || tab;
 }
 function pvDisplayKey(tab, subNav) { return subNav ? `${pvTabLabel(tab)} › ${subNav}` : pvTabLabel(tab); }
@@ -14501,7 +14507,7 @@ function pvKnownTabKeys(level) {
     if (level === 'player' && ADMIN_ONLY_TABS.has(t)) return;
     keys.push({ tab: t, sub: null });
     if (t === 'admin') ADMIN_SECTIONS.forEach(a => { if (level !== 'admin' || !PV_DEV_ONLY_SECTIONS.includes(a)) keys.push({ tab: 'admin', sub: a }); });
-    if (t === 'stats') PV_STATS_VIEWS.forEach(v => keys.push({ tab: 'stats', sub: v }));
+    if (t === 'home') { keys.push({ tab: 'stats', sub: null }); PV_STATS_VIEWS.forEach(v => keys.push({ tab: 'stats', sub: v })); }   // Stats is part of the Home page, still counted on its own
   });
   return keys;
 }
