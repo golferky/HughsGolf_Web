@@ -26,14 +26,14 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
   await p.evaluate(() => {
     const o = document.getElementById('loginOverlay'); if (o) o.style.display = 'none';
     db = new SQL.Database();
-    db.run(`CREATE TABLE Teams (League TEXT, Year INTEGER, Player TEXT); INSERT INTO Teams VALUES ("Hugh's",2026,'Pat Example'),("Hugh's",2025,'Old Timer');
+    db.run(`CREATE TABLE Teams (League TEXT, Year INTEGER, Player TEXT); INSERT INTO Teams VALUES ("Hugh's",2026,'Pat Example'),("Hugh's",2025,'Old Timer'),("Hugh's",2027,'Next Year');
       CREATE TABLE Players (Player TEXT, IsTest TEXT); INSERT INTO Players VALUES ('Pat Example','N'),('Lee Sample','N'),('Test Account','Y');`);
     currentUser = { name: 'Boss Admin', role: 'admin' }; localStorage.setItem('hg_session_Boss Admin', 'sess');
     window.confirm = () => true; window.alert = m => { (window.__alerts = window.__alerts || []).push(m); };
     const ta = document.getElementById('tab-admin'); ta.style.display = 'block'; ta.classList.add('active'); document.getElementById('adminBroadcast').style.display = 'block'; loadBroadcastAdmin();
   });
   // the form starts from a template for next season, using the latest season's teams
-  assert.strictEqual(await p.inputValue('#bcYear'), '2026');
+  assert.strictEqual(await p.inputValue('#bcYear'), '2026'); assert.deepStrictEqual(await p.$$eval('#bcYear option', o => o.map(x => x.value)), ['2026', '2025'], 'a season that has not started is not offered');
   assert(/are you in for the 2027 season/.test(await p.inputValue('#bcMsg')) && await p.inputValue('#bcTitle') === 'Are you in for 2027?');
   assert(/Players on a 2026 team/.test(await p.innerText('#bcGroup')));
   // picking players lists everyone but test accounts

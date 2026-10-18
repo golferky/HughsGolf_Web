@@ -112,4 +112,8 @@ cl.post(f'/b/{tok["Boss Admin"]}', data={'answer': 'yes'}); assert ans('Boss Adm
 sent.clear(); r = post(action='send', title='Banquet', message='Banquet is Oct 30 at 6.', ask='', group='names', names=['Pat Player'], year=2026).get_json()
 assert r['ok'] and r['sent'] == ['Pat Player'] and not any('/b/' in s[2] for s in sent), sent
 assert post(action='send', title='', message='x', group='team').status_code == 400
+# never ask "are you in next season?" about a season more than a year ahead (this year's teams ask about next year)
+this = app.now_local().year
+r = post(action='send', test=True, title='x', message='y', ask='season', group='team', year=this + 1); assert r.status_code == 400 and 'more than a year ahead' in r.get_json()['error'], r.get_json()
+assert post(action='send', test=True, title='x', message='y', ask='rsvp', group='team', year=this + 1).status_code == 200, 'only the season question is limited'
 print('ok')

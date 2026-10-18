@@ -2902,7 +2902,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.12';
+const APP_VERSION = '20261018.13';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4153,6 +4153,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.13', 'October 18, 2026', [
+    ['bugfix', 'Broadcast: never asks about a season more than a year ahead', 'The Season drop-down only offers teams up to the current year, so "are you in for next season?" asks about next year and not the one after (it was offering 2028 once the 2027 teams existed). The server refuses it too. PR #134.', 1],
   ]);
   ensureVersion('20261018.12', 'October 18, 2026', [
     ['bugfix', 'Broadcast: a test send now shows in Answers', 'A test sent to yourself was left out of the Answers list, so your own answer never showed. Tests now appear marked TEST (you can answer from the link and see it land); they have no remind button. PR #133.', 1],
@@ -19576,7 +19579,8 @@ async function carrierPlayerClick(el, action) {
 // ── Broadcast: a freeform message to a group, optionally with a one-tap answer (the server decides who is eligible) ──
 let bcMsgTouched = false, bcOpenId = null;
 const bcPost = body => carrierCall('/broadcast', body);
-function bcYears() { try { return query(`SELECT DISTINCT Year FROM Teams WHERE League="Hugh's" ORDER BY Year DESC`).map(r => r.Year); } catch (e) { return []; } }
+// Only seasons up to this year: a "next season" question about teams of a season that has not started would ask about two years out.
+function bcYears() { try { return query(`SELECT DISTINCT Year FROM Teams WHERE League="Hugh's" AND Year <= ? ORDER BY Year DESC`, [new Date().getFullYear()]).map(r => r.Year); } catch (e) { return []; } }
 function loadBroadcastAdmin() {
   const ys = bcYears(), ysel = document.getElementById('bcYear'); if (!ysel) return;
   const keep = ysel.value; ysel.innerHTML = (ys.length ? ys : [new Date().getFullYear()]).map(y => `<option value="${y}">${y} teams</option>`).join(''); if (keep) ysel.value = keep;

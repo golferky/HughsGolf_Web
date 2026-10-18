@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261018.12-sandbox'
+VERSION    = '20261018.13-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1899,6 +1899,8 @@ def _broadcast_send(b, admin):
     remind_id = b.get('remindId')
     if not message and not remind_id or not title and not remind_id:
         return jsonify({'ok': False, 'error': 'A title and a message are required.'}), 400
+    if ask == 'season' and not remind_id and _bc_year(b) > now_local().year:
+        return jsonify({'ok': False, 'error': f'That would ask about {_bc_year(b) + 1}, more than a year ahead. Pick the {now_local().year} teams to ask about {now_local().year + 1}.'}), 400
     if not test and _is_private_host(request.host):
         return jsonify({'ok': False, 'error': 'Open the app from its public address (not the home-network address) so the links work on players\' phones.'}), 400
     base = request.host_url.rstrip('/')
