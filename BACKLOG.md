@@ -4,6 +4,14 @@ Last updated: 2026-10-18
 
 ---
 
+## 🐞 Bugs / to look at *(added Oct 18, 2026; the notes had screenshots that still need to be attached)*
+
+- [ ] **Need a Refresh button** — Which screen(s) is still to be confirmed from the screenshot. Several admin screens already have one (Balance Sheet, Server Log, Backups, Changelog, Who's On, Usage); the player-facing screens do not.
+- [ ] **Proposals disappeared** — Proposals (Home card and Admin → Proposals) no longer show. To find out: what the screen showed vs. expected, and whether this is the default "active only" filter or the proposals themselves missing from the database.
+- [ ] **Byes: what happens if a team no-shows against a bye** — A team playing a bye (odd number of teams, or the bogus "never shows" team) that does not show up, or the real team scheduled against the bogus team not showing: define the points/forfeit rule, then check the code against it.
+
+---
+
 ## 🏌️ Post-Season *(target: before first PS round, ~late Sept 2026)*
 
 - [ ] **18H Gallus seed test** — (Seed/Clear test buttons are hidden on live.) Gary to play Boone Links round Monday; then test the "Seed from 18H Gallus" button end-to-end.
