@@ -728,6 +728,8 @@
     <div class="subtab-group" data-group="postseason" style="display:none">
       <div class="tab" data-tab="ps_entry">✏️ Scores</div>
       <div class="tab" data-tab="ps_scores">🧾 Scores &amp; Standings</div>
+      <div class="tab" data-tab="ps_skinsview">📍 Skins/CTPs</div>
+      <div class="tab" data-tab="ps_stableford">🏌️ Stableford</div>
       <div class="tab" data-tab="ps_skins">🎲 Skins &amp; CTPs</div>
       <div class="tab" data-tab="ps_earned">🎁 Earned</div>
       <label class="psyear">📅 Season <select id="psYearSelect" onchange="psTabSetSeason(this.value)"></select></label>
@@ -1096,6 +1098,7 @@
   <!-- LEADERS -->
 
   <div class="section" id="tab-stableford">
+    <div id="stablefordScreen">
     <div class="controls">
       <div class="filter-group">
         <label>Season</label>
@@ -1124,7 +1127,8 @@
     </div>
     <div id="stablefordPsStandings"></div>
 
-    <!-- SF STANDINGS -->
+    <!-- SF STANDINGS (regular season team standings; not shown for post season) -->
+    <div id="sfStandingsBlock">
     <div class="controls">
       <div class="filter-group">
         <label>Season</label>
@@ -1145,6 +1149,8 @@
         </table>
       </div>
     </div>
+    </div><!-- /sfStandingsBlock -->
+      </div>
   </div>
 
   <!-- SCORES VIEW -->
@@ -1267,6 +1273,7 @@
 
   <!-- SKINS -->
   <div class="section" id="tab-skins">
+    <div id="skinsScreen">
     <div class="controls">
       <div class="filter-group">
         <label>Season</label>
@@ -1302,6 +1309,7 @@
         <tbody></tbody>
       </table></div>
     </div>
+      </div>
   </div>
 
   <!-- NO-SHOWS -->
@@ -1422,6 +1430,8 @@
   <div class="section" id="tab-scorecard"></div>
   <div class="section" id="tab-ps_entry"></div>
   <div class="section" id="tab-ps_scores"></div>
+  <div class="section" id="tab-ps_skinsview"></div>
+  <div class="section" id="tab-ps_stableford"></div>
   <div class="section" id="tab-ps_skins"></div>
   <div class="section" id="tab-ps_earned"></div>
 
@@ -1500,7 +1510,7 @@
       <div class="card-header">Other prize actions</div>
       <div style="padding:12px;display:flex;gap:10px;flex-wrap:wrap">
         <button onclick="switchTab('prizemoney')" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">💰 Pay from Kitty / refunds (Prize Money)</button>
-        <button onclick="switchTab('skins')" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">🎯 Post-season Skins: Calculate / Restate (Skins/CTPs)</button>
+        <button onclick="switchTab('ps_skinsview')" style="padding:8px 16px;background:#1565c0;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px">🎯 Post-season Skins: Calculate / Restate (Post Season > Skins/CTPs)</button>
       </div>
     </div>
   </div>
@@ -4165,6 +4175,7 @@ function ensureAppChangelogTable() {
   ensureVersion('20261018.15', 'October 18, 2026', [
     ['enhancement', 'Post Season > Scores: post-season scores get their own tab', 'Post Season has a new Scores tab (first in the group) with the score grid for each season\'s post season: pick the season, enter or view its scores, payments and skins. Play > Scores is now the regular season only, and the Play round-date bar no longer lists post-season nights. Gallus imports open the tab that matches the card\'s night. PR #136.', 1],
     ['enhancement', 'Home shows Stats on the same page', 'Stats is no longer a second tab under Home: the Stats (Individual, Rankings, Leaders, Head to Head) now sit below the Home cards on one page, and the extra row of tabs is gone. Usage still counts Stats separately. PR #136.', 2],
+    ['enhancement', 'Skins/CTPs and Stableford for both regular season and post season', 'Post Season has its own Skins/CTPs and Stableford tabs for each season\'s two post-season nights (the Stableford team standings stay in Play). Play > Skins/CTPs and Play > Stableford now list regular season nights only. The Award Prizes shortcut for post-season skins opens Post Season > Skins/CTPs. PR #136.', 3],
   ]);
   ensureVersion('20261018.14', 'October 18, 2026', [
     ['bugfix', 'Broadcast: Refresh also updates the answered count', 'The Refresh button in Answers reloaded only the names; the "(0/1 answered)" count in the drop-down stayed old until you left the screen. It now reloads both. PR #135.', 1],
@@ -6357,8 +6368,8 @@ function refreshTab(tab) {
   if (tab === 'home') { loadHome(); loadPlayerStats(); }          // Stats sits under the Home cards
   if (tab === 'stats') switchTab('home');                           // Stats is no longer its own tab
   if (tab === 'standings') loadStandings();
-  if (tab === 'stableford') { loadStablefordTab(); loadSfStandings(true); }
-  if (tab === 'skins') { initSkinsTab(); loadCtpsTab(); }
+  if (tab === 'stableford' || tab === 'ps_stableford') { placeDualScreen(tab); loadStablefordTab(); if (tab === 'stableford') loadSfStandings(true); }
+  if (tab === 'skins' || tab === 'ps_skinsview') { placeDualScreen(tab); initSkinsTab(); loadCtpsTab(); }
   if (tab === 'noshows') loadNoShows();
   if (tab === 'handicaps') loadHandicaps();
   if (tab === 'matches') loadMatchesTab();
@@ -8646,9 +8657,10 @@ function loadLeaders() {
 
 function loadStablefordTab() {
   if (!db) return;
-  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+  const post = SCREEN_MODE.stableford === 'post';
+  const seasons = post ? psSeasonsList() : query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
   const seasonSel = document.getElementById('stablefordSeason');
-  const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
+  const currentSeason = post ? seasons[0] : query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
   seasonSel.value = currentSeason;
   playDateFollowSeason(seasonSel);
@@ -8659,7 +8671,9 @@ function populateStablefordDateDropdown() {
   const season = document.getElementById('stablefordSeason').value;
   const dates  = query(`SELECT DISTINCT Date as sDate FROM Scores WHERE League="Hugh's" AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101' AND Gross IS NOT NULL AND Gross != 0 ORDER BY Date DESC`);
   const sel = document.getElementById('stablefordDate');
-  sel.innerHTML = dates.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}</option>`).join('');
+  const post = SCREEN_MODE.stableford === 'post', psNights = new Set(psNightsFor(season));
+  const shown = dates.filter(r => psNights.has(String(r.sDate || r.Date)) === post);          // Play: regular nights; Post Season: post-season nights
+  sel.innerHTML = shown.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}${post ? ` — Post Season Wk ${String(r.sDate||r.Date) === psNights.values().next().value ? 2 : 1}` : ''}</option>`).join('');
   if (!sel.dataset.listener) {
     sel.addEventListener('change', loadStableford);
     sel.dataset.listener = '1';
@@ -8805,6 +8819,7 @@ function jumpToStableford(season, date) {
   document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
   document.querySelector('[data-tab="stableford"]')?.classList.add('active');
   document.getElementById('tab-stableford')?.classList.add('active');
+  placeDualScreen('stableford');                       // the team standings link is regular season
   syncTabGroups();
 
   // Pre-set season/date before the tab's load function runs
@@ -9250,9 +9265,10 @@ function loadStableford() {
 }
 
 function initSkinsTab() {
-  const seasons = query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
+  const post = SCREEN_MODE.skins === 'post';
+  const seasons = post ? psSeasonsList() : query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND Season >= 2018 ORDER BY Season DESC`).map(r => r.Season);
   const seasonSel = document.getElementById('skinsSeason');
-  const currentSeason = query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
+  const currentSeason = post ? seasons[0] : query(`SELECT MAX(Season) as s FROM SeasonSettings`)[0]?.s;
   seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
   seasonSel.value = currentSeason;
   playDateFollowSeason(seasonSel);
@@ -9276,8 +9292,9 @@ function populateSkinsDateDropdown(loadAfter = true) {
     SELECT MIN(Date) as sDate FROM Schedule WHERE Date > COALESCE((SELECT MAX(Date) FROM Scores WHERE League="Hugh's"), 0) AND Date >= '${season}0101' AND Date < '${parseInt(season)+1}0101'
     ORDER BY sDate DESC`);
   // Post-season nights have no per-night 'Skin' buy-in (their buy-in is EOY Skins), so add them explicitly, newest first, as the CTP list does
-  const skinKeys = getCtpDateKeys(skinDates.map(r => r.sDate), season);
-  skSel.innerHTML = skinKeys.map(d => `<option value="${d}">${fmtDate(d)}</option>`).join('');
+  const post = SCREEN_MODE.skins === 'post', psNights = new Set(psNightsFor(season));
+  const skinKeys = post ? psNightsFor(season) : getCtpDateKeys(skinDates.map(r => r.sDate), season).filter(d => !psNights.has(String(d)));   // Play: regular nights; Post Season: that season's two post-season nights
+  skSel.innerHTML = skinKeys.map((d, i) => `<option value="${d}">${fmtDate(d)}${post ? ` — Post Season Wk ${skinKeys.length - i}` : ''}</option>`).join('');
   playDateApply('skinsDate');
   if (loadAfter) loadSkins();
 }
@@ -23140,6 +23157,25 @@ function isDatePostSeason(dateStr) {
 // Post Season > Scores tab (one entry per season's post season). ENTRY_MODE says which, and the date list follows it.
 let ENTRY_MODE = 'regular';
 const ENTRY_TABS = { regular: 'scorecard', post: 'ps_entry' };
+// Skins/CTPs and Stableford exist twice: under Play (regular season nights only) and under Post Season (post-season nights only).
+// It is one piece of the page that lives under whichever of the two tabs is open; SCREEN_MODE says which.
+const DUAL_SCREENS = { skins: { el: 'skinsScreen', regular: 'skins', post: 'ps_skinsview' }, stableford: { el: 'stablefordScreen', regular: 'stableford', post: 'ps_stableford' } };
+const SCREEN_MODE = { skins: 'regular', stableford: 'regular' };
+function dualScreenOf(tab) { return Object.keys(DUAL_SCREENS).find(k => DUAL_SCREENS[k].regular === tab || DUAL_SCREENS[k].post === tab) || null; }
+function placeDualScreen(tab) {
+  const key = dualScreenOf(tab); if (!key) return false;
+  const cfg = DUAL_SCREENS[key], mode = tab === cfg.post ? 'post' : 'regular';
+  const host = document.getElementById('tab-' + cfg[mode]), el = document.getElementById(cfg.el); if (!host || !el) return false;
+  if (el.parentNode !== host) host.appendChild(el);
+  const changed = SCREEN_MODE[key] !== mode; SCREEN_MODE[key] = mode;
+  const sf = document.getElementById('sfStandingsBlock'); if (key === 'stableford' && sf) sf.style.display = mode === 'post' ? 'none' : '';   // team standings are regular season only
+  return changed;
+}
+function psSeasonsList() { return query(`SELECT DISTINCT Season FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL AND PostSeasonDt != '' ORDER BY Season DESC`).map(r => r.Season); }
+function psNightsFor(season) {               // that season's post-season nights, newest first
+  const ps = parsePostSeasonDates(getSeasonSettings(season)?.PostSeasonDt);
+  return ps ? [String(ps.week2), String(ps.week1)] : [];
+}
 // Open the score grid: for a given night its own tab, otherwise the one you are on if it is a score tab, else Play > Scores.
 function gotoScoreEntry(date) {
   const cur = document.querySelector('.tab.active')?.dataset.tab;
