@@ -15,6 +15,7 @@ c.executescript("""CREATE TABLE Players (Player TEXT, Officer TEXT, ActiveSessio
   ('Pat Player','Player','sess-pat','502-555-0111','Verizon','pat@x.com','','','','Y','N'),
   ('Reg Ular','Player','s3','502-555-0121','T-Mobile','reg@x.com','','','','Y','N'),
   ('Mail Only','Player','s4','','','mo@x.com','email','','','Y','N'),
+  ('Text Only','Player','s12','502-555-0130','Verizon','','','','','Y','N'),
   ('No Contact','Player','s5','','','','','','','Y','N'),
   ('Opted Out','Player','s6','502-555-0122','Verizon','oo@x.com','','Approved','N','Y','N'),
   ('Retired Guy','Player','s7','502-555-0123','Verizon','rg@x.com','','','','N','N'),
@@ -22,7 +23,7 @@ c.executescript("""CREATE TABLE Players (Player TEXT, Officer TEXT, ActiveSessio
   ('Willing Sub','Player','s9','502-555-0125','Verizon','ws@x.com','','Approved','Y','Y','N'),
   ('Unasked Sub','Player','s10','502-555-0126','Verizon','us@x.com','','Approved','','Y','N'),
   ('Pending One','Player','s11','502-555-0127','Verizon','po@x.com','','Pending','','Y','N');
- INSERT INTO Teams VALUES ("Hugh's",2026,'Boss Admin'),("Hugh's",2026,'Pat Player'),("Hugh's",2026,'Reg Ular'),("Hugh's",2026,'Mail Only'),
+ INSERT INTO Teams VALUES ("Hugh's",2026,'Boss Admin'),("Hugh's",2026,'Pat Player'),("Hugh's",2026,'Reg Ular'),("Hugh's",2026,'Mail Only'),("Hugh's",2026,'Text Only'),
    ("Hugh's",2026,'No Contact'),("Hugh's",2026,'Opted Out'),("Hugh's",2026,'Retired Guy'),("Hugh's",2026,'Test Account'),("Hugh's",2026,'Pending One');""")
 c.commit(); c.close()
 app.ensure_schema()
@@ -39,12 +40,13 @@ assert cl.post('/broadcast', json={'admin': 'Boss Admin', 'sessionToken': 'wrong
 # who would be sent it: the 2026 roster, minus people who opted out, are not playing, are pending or have no way to be reached
 j = post(action='preview', group='team', year=2026).get_json(); assert j['ok']
 got = {r['player']: r['mode'] for r in j['recipients']}; skip = {s['player']: s['reason'] for s in j['skipped']}
-assert set(got) == {'Boss Admin', 'Pat Player', 'Reg Ular', 'Mail Only'}, got
+assert set(got) == {'Boss Admin', 'Pat Player', 'Reg Ular', 'Mail Only', 'Text Only'}, got
 assert got['Mail Only'] == 'email' and got['Reg Ular'] == 'both' and got['Pat Player'] == 'both', 'unconfirmed players are texted and emailed'
+assert {r['player']: r['linkInText'] for r in post(action='preview', group='team', year=2026, ask='season').get_json()['recipients']} == {'Boss Admin': False, 'Pat Player': False, 'Reg Ular': False, 'Mail Only': False, 'Text Only': True}
 assert skip['Opted Out'] == 'asked not to be contacted' and skip['Retired Guy'] == 'not playing' and skip['Pending One'] == 'pending player' and 'No Contact' in skip and 'Test Account' not in skip, skip
 # subs: only people outside the roster who agreed to be contacted
 j = post(action='preview', group='subs', year=2026).get_json(); assert [r['player'] for r in j['recipients']] == ['Willing Sub'] and j['skipped'] == [], j
-assert {r['player'] for r in post(action='preview', group='all', year=2026).get_json()['recipients']} == {'Boss Admin', 'Pat Player', 'Reg Ular', 'Mail Only', 'Willing Sub'}
+assert {r['player'] for r in post(action='preview', group='all', year=2026).get_json()['recipients']} == {'Boss Admin', 'Pat Player', 'Reg Ular', 'Mail Only', 'Text Only', 'Willing Sub'}
 j = post(action='preview', group='names', year=2026, names=['Unasked Sub', 'Pat Player']).get_json()
 assert [r['player'] for r in j['recipients']] == ['Pat Player'] and j['skipped'] == [{'player': 'Unasked Sub', 'reason': 'has not agreed to be contacted'}], j
 
@@ -52,24 +54,31 @@ assert [r['player'] for r in j['recipients']] == ['Pat Player'] and j['skipped']
 msg = 'Hugh\'s Golf: are you in for 2027?'
 r = post(action='send', test=True, title='Season 2027', message=msg, ask='season', group='team', year=2026).get_json()
 assert r['ok'] and r['test'] and r['sent'] == ['Boss Admin'] and not r['simulated'], r
-assert {s[0] for s in sent} == {'5025550199@tmomail.net', 'boss@x.com'} and any('TEST: ' in s[2] and '/b/' in s[2] for s in sent), sent
+txt = [s for s in sent if s[0].endswith('tmomail.net')]; eml = [s for s in sent if s[0] == 'boss@x.com']
+assert len(txt) == 1 and len(eml) == 1 and txt[0][2] == "TEST: " + msg + " Check your email to answer." and '/b/' not in txt[0][2], 'the text has no link (carriers drop them)'
+assert '/b/' in eml[0][2] and eml[0][1] == 'TEST: Season 2027', 'the email carries the link'
 assert post(action='list').get_json()['broadcasts'] == [], 'a test is not listed'
 # the sandbox never texts real players
 assert 'sandbox' in app.VERSION.lower(); sent.clear()
 r = post(action='send', title='Season 2027', message=msg, ask='season', group='team', year=2026).get_json()
-assert r['ok'] and r['simulated'] and len(r['sent']) == 4 and not sent
+assert r['ok'] and r['simulated'] and len(r['sent']) == 5 and not sent
 # a real send (not the sandbox)
 app.VERSION = '20261018.6'; sent.clear()
 r = cl.post('/broadcast', json={**A, 'action': 'send', 'title': 'Season 2027', 'message': msg, 'ask': 'season', 'group': 'team', 'year': 2026}, base_url='http://192.168.1.176:8446').get_json()
 assert not r['ok'] and 'public address' in r['error']
 sent.clear()
 r = post(action='send', title='Season 2027', message=msg, ask='season', group='team', year=2026).get_json()
-assert r['ok'] and not r['simulated'] and sorted(r['sent']) == ['Boss Admin', 'Mail Only', 'Pat Player', 'Reg Ular'] and r['via']['Mail Only'] == ['email'] and set(r['via']['Pat Player']) == {'text', 'email'}, r
-assert len(r['skipped']) == 4 and any('hughsgolf.example.org/b/' in s[2] for s in sent if s[0].endswith('vtext.com')), sent
+assert r['ok'] and not r['simulated'] and sorted(r['sent']) == ['Boss Admin', 'Mail Only', 'Pat Player', 'Reg Ular', 'Text Only'] and r['via']['Mail Only'] == ['email'] and set(r['via']['Pat Player']) == {'text', 'email'}, r
+assert r['via']['Text Only'] == ['text'], 'no email on file: the text is all they can get'
+assert len(r['skipped']) == 4
+gate = [s for s in sent if '@vtext.com' in s[0] or '@tmomail.net' in s[0]]
+assert len(gate) == 4 and sum('/b/' in s[2] for s in gate) == 1 and [s for s in gate if '/b/' in s[2]][0][0] == '5025550130@vtext.com', 'only the player with no email gets the link in the text'
+assert all('Check your email to answer' in s[2] for s in gate if '/b/' not in s[2])
+assert sum('hughsgolf.example.org/b/' in s[2] for s in sent if '@' in s[0] and not s[0].endswith(('vtext.com', 'tmomail.net'))) == 4, 'the four with an email each get their link there'
 bid = r['id']
-lst = post(action='list').get_json()['broadcasts']; assert len(lst) == 2 and lst[0]['id'] == bid and lst[0]['recipients'] == 4 and lst[0]['answered'] == 0
+lst = post(action='list').get_json()['broadcasts']; assert len(lst) == 2 and lst[0]['id'] == bid and lst[0]['recipients'] == 5 and lst[0]['answered'] == 0
 tok = {p: t for p, t in sqlite3.connect(app.DB_PATH).execute('SELECT Player, Token FROM BroadcastRecipient WHERE BroadcastId=?', (bid,))}
-assert set(tok) == {'Boss Admin', 'Mail Only', 'Pat Player', 'Reg Ular'}
+assert set(tok) == {'Boss Admin', 'Mail Only', 'Pat Player', 'Reg Ular', 'Text Only'}
 
 # the player's page: viewing answers nothing; a button records it; the answer can be changed
 page = cl.get(f'/b/{tok["Pat Player"]}'); assert page.status_code == 200 and b'are you in for 2027' in page.data and b'Yes, I&#x27;m in' in page.data
@@ -82,12 +91,12 @@ assert cl.get('/b/nope').status_code == 404
 cl.post(f'/b/{tok["Reg Ular"]}', data={'answer': 'no'})
 # the admin's view, and recording an answer for someone who told them in person
 st = post(action='status', id=bid).get_json(); assert st['ok'] and st['labels'][0] == "Yes, I'm in"
-by = {r['player']: r['answer'] for r in st['rows']}; assert by == {'Boss Admin': '', 'Mail Only': '', 'Pat Player': 'maybe', 'Reg Ular': 'no'}, by
+by = {r['player']: r['answer'] for r in st['rows']}; assert by == {'Boss Admin': '', 'Mail Only': '', 'Pat Player': 'maybe', 'Reg Ular': 'no', 'Text Only': ''}, by
 assert post(action='answer', id=bid, player='Mail Only', answer='yes').status_code == 200 and ans('Mail Only')[0] == 'yes'
 assert post(action='answer', id=bid, player='Nobody', answer='yes').status_code == 404 and post(action='answer', id=bid, player='Mail Only', answer='zzz').status_code == 400
 # remind: only the people who have not answered, with the same links
 sent.clear()
-r = post(action='send', remindId=bid).get_json(); assert r['ok'] and r['sent'] == ['Boss Admin'] and r['id'] == bid, r
+r = post(action='send', remindId=bid).get_json(); assert r['ok'] and sorted(r['sent']) == ['Boss Admin', 'Text Only'] and r['id'] == bid, r
 assert any(tok['Boss Admin'] in s[2] for s in sent)
 # closing stops answers
 assert post(action='close', id=bid).status_code == 200

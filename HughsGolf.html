@@ -1918,7 +1918,7 @@
           </div>
           <div id="bcNamesBox" style="display:none;border:1px solid #ddd;border-radius:6px;padding:8px 10px;margin-bottom:10px;max-height:180px;overflow:auto;font-size:12px"></div>
           <textarea id="bcMsg" rows="3" maxlength="300" oninput="bcMsgTouched=true" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;font-family:inherit"></textarea>
-          <div style="font-size:11px;color:#777;margin:4px 0 8px">Up to 300 characters. With a question, each text ends with “Tap to answer: &lt;their link&gt;”.</div>
+          <div style="font-size:11px;color:#777;margin:4px 0 8px">Up to 300 characters. With a question, the email carries each player's own link and the text says “Check your email to answer” (carriers often drop texts that contain a link). Someone with no email gets the link in the text, which may not arrive.</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
             <button onclick="bcPreview()" style="padding:8px 16px;background:white;color:#1b5e20;border:1px solid #1b5e20;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">👀 Preview who gets it</button>
             <button onclick="bcSend(true)" style="padding:8px 16px;background:#6a1b9a;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer">🧪 Send a test to me only</button>
@@ -2901,7 +2901,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.7';
+const APP_VERSION = '20261018.8';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4140,6 +4140,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.8', 'October 18, 2026', [
+    ['bugfix', 'Broadcast: the answer link now goes in the email, not the text', 'A test showed T-Mobile does not deliver a text from the app that contains a link (a plain text arrives). With a question, each player\'s own link is now in the email and the text says to check their email; a player with no email still gets the link in the text, and the preview lists them. A test email is marked TEST. PR #129.', 1],
   ]);
   ensureVersion('20261018.7', 'October 18, 2026', [
     ['enhancement', 'Reminder to add your photo', 'When you log in without a photo, a popup asks you to add one (it opens My Profile on the photo button). You are asked at most three times, once per login, and never again once you have a photo or after the third reminder. PR #128.', 1],
@@ -19563,7 +19566,7 @@ function bcBody(extra) {
 }
 function bcSummary(rec) {
   const n = m => rec.filter(r => m.includes(r.mode)).length;
-  return { both: n(['both']), text: n(['text', 'text-first']), email: n(['email']), total: rec.length };
+  return { both: n(['both']), text: n(['text', 'text-first']), email: n(['email']), total: rec.length, linkText: rec.filter(r => r.linkInText).map(r => r.player) };
 }
 async function bcPreview() {
   const out = document.getElementById('bcResult'); out.textContent = 'Checking…';
@@ -19572,6 +19575,7 @@ async function bcPreview() {
   const s = bcSummary(j.recipients);
   out.innerHTML = `<div style="border:1px solid #ddd;border-radius:6px;padding:8px 10px"><b>${s.total} people will get it</b>: ${s.both} by text and email (their number is not confirmed yet), ${s.text} by text, ${s.email} by email only.
     <div style="margin-top:4px;color:#2e7d32">${j.recipients.map(r => escapeHtml(r.player)).join(', ') || 'Nobody.'}</div>
+    ${s.linkText.length ? `<div style="margin-top:6px;color:#e65100">No email on file, so the link is in their text and may not arrive: ${s.linkText.map(escapeHtml).join(', ')}.</div>` : ''}
     ${j.skipped.length ? `<div style="margin-top:6px;color:#c62828">Left out (${j.skipped.length}): ${j.skipped.map(x => escapeHtml(x.player) + ' (' + escapeHtml(x.reason) + ')').join(', ')}</div>` : ''}</div>`;
   return j;
 }
@@ -19583,7 +19587,7 @@ async function bcSend(test) {
     const j = await bcPreview(); if (!j) return;
     if (!j.recipients.length) { alert('Nobody would get this. Change who it goes to.'); return; }
     const s = bcSummary(j.recipients);
-    if (!confirm(`Send this to ${s.total} people (${s.both} by text and email, ${s.text} by text, ${s.email} by email)?\n\n${b.message}${b.ask ? '\n\n(each text ends with their own answer link)' : ''}\n\nThis cannot be taken back.`)) return;
+    if (!confirm(`Send this to ${s.total} people (${s.both} by text and email, ${s.text} by text, ${s.email} by email)?\n\n${b.message}${b.ask ? '\n\n(the email has their own answer link)' : ''}\n\nThis cannot be taken back.`)) return;
   } else if (!confirm('Send this test only to you (real text and email to your own number)?')) return;
   out.textContent = 'Sending…';
   const j = await bcPost({ action: 'send', test: !!test, ...b, ...extra });
