@@ -2902,7 +2902,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.10';
+const APP_VERSION = '20261018.11';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4153,6 +4153,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.11', 'October 18, 2026', [
+    ['bugfix', 'Byes: a no-show against a bye team now loses the team point', 'Playing a bye team (a team with no players, or whose players are named "Bye ..."): both of you play and you take all 3 points; if one of you does not show you get 1 point and the bye team gets the other match and the team point; if neither shows the bye team gets all 3. Before, the team point wrongly stayed with the team that had a no-show. The Help rules say so too. PR #132.', 1],
   ]);
   ensureVersion('20261018.10', 'October 18, 2026', [
     ['enhancement', 'Refresh button', 'A ↻ button next to the database time at the top fetches the latest league data (new board posts, scores and changes other people made) and redraws the screen you are on, without reloading the page. It will not run while you have unsaved score changes. PR #131.', 1],
@@ -5950,6 +5953,7 @@ async function loadHelpTab() {
         <li>1 point — winner of the team match (combined net score)</li>
         <li>A tie splits the point — each team receives ½ point</li>
         <li>A no-show forfeits both the individual and team match</li>
+        <li>Playing a bye: if you both play you take all 3 points. If one of you does not show, you get 1 point (the player who showed wins their match) and the bye team gets the other match and the team point. If neither of you shows, the bye team gets all 3.</li>
       </ul>
 
       <p style="margin:0 0 4px;font-weight:700;color:#1b4d2e">Maximum Hole Score</p>
@@ -8200,13 +8204,25 @@ function calcMatchPoints(t1players, t2players, scores, t1, t2, subs={}) {
   const t1net = net1a === 999 && net1b === 999 ? 999 : net1a === 999 ? net1b + 999 : net1b === 999 ? net1a + 999 : net1a + net1b;
   const t2net = net2a === 999 && net2b === 999 ? 999 : net2a === 999 ? net2b + 999 : net2b === 999 ? net2a + 999 : net2a + net2b;
   const [tpts1, tpts2] = calcPts(t1net, t2net);
-
-  return {
+  const out = {
     A: { pts1: ptsA1, pts2: ptsA2 },
     B: { pts1: ptsB1, pts2: ptsB2 },
     t1net, t2net,
     t1tpts: tpts1, t2tpts: tpts2
   };
+
+  // A bye team never shows up (a team with no players, or whose players are named "Bye ..."). Whoever plays it wins each match they turn up
+  // for; a match they do not turn up for goes to the bye team, and so does the team point unless both of them played.
+  const isBye = p => { const n = [p['A'], p['B']].filter(Boolean); return !n.length || n.every(x => /^bye\b/i.test(x)); };
+  const bye1 = isBye(t1players), bye2 = isBye(t2players);
+  if (bye1 !== bye2) {
+    const realNetA = bye2 ? net1a : net2a, realNetB = bye2 ? net1b : net2b;
+    const setPts = (grade, realShowed) => { const r = realShowed ? 1 : 0; out[grade] = bye2 ? { pts1: r, pts2: 1 - r } : { pts1: 1 - r, pts2: r }; };
+    setPts('A', realNetA !== 999); setPts('B', realNetB !== 999);
+    const teamR = realNetA !== 999 && realNetB !== 999 ? 1 : 0;
+    out.t1tpts = bye2 ? teamR : 1 - teamR; out.t2tpts = bye2 ? 1 - teamR : teamR;
+  }
+  return out;
 }
 
 async function calcMatchesForDate(date) {

@@ -8,7 +8,7 @@ Last updated: 2026-10-18
 
 - [x] **Need a Refresh button** — A ↻ button next to the database time at the top now fetches the latest data and redraws the current screen (PR #131).
 - [ ] **Proposals disappeared** — The proposals and suggestion-box tables were only ever created in the browser's copy of the database, never on the server, so a proposal saved to a server without them was lost on the next reload. The server now creates both tables at startup (PR #131). Still to do: look in older backups (Admin → Backups) for the lost proposals and re-enter them.
-- [ ] **Byes: what happens if a team no-shows against a bye** — A team playing a bye (odd number of teams, or the bogus "never shows" team) that does not show up, or the real team scheduled against the bogus team not showing: define the points/forfeit rule, then check the code against it.
+- [x] **Byes: a no-show against a bye team** — Rule: both play = 3 points; one no-show = 1 point and the bye team gets the other match and the team point; neither shows = bye team gets all 3. Added to the Help rules and the scoring (PR #132). A bye team is a team with no players, or players named "Bye ...".
 
 ---
 
