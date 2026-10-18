@@ -57,7 +57,11 @@ assert r['ok'] and r['test'] and r['sent'] == ['Boss Admin'] and not r['simulate
 txt = [s for s in sent if s[0].endswith('tmomail.net')]; eml = [s for s in sent if s[0] == 'boss@x.com']
 assert len(txt) == 1 and len(eml) == 1 and txt[0][2] == "TEST: " + msg + " Check your email to answer." and '/b/' not in txt[0][2], 'the text has no link (carriers drop them)'
 assert '/b/' in eml[0][2] and eml[0][1] == 'TEST: Season 2027', 'the email carries the link'
-assert post(action='list').get_json()['broadcasts'] == [], 'a test is not listed'
+tl = post(action='list').get_json()['broadcasts']; assert len(tl) == 1 and tl[0]['test'] is True and tl[0]['recipients'] == 1, 'a test is listed, marked as a test'
+tid = tl[0]['id']; ttok = sqlite3.connect(app.DB_PATH).execute('SELECT Token FROM BroadcastRecipient WHERE BroadcastId=?', (tid,)).fetchone()[0]
+cl.post(f'/b/{ttok}', data={'answer': 'yes'})
+ts = post(action='status', id=tid).get_json(); assert ts['ok'] and ts['broadcast']['test'] is True and [(r['player'], r['answer']) for r in ts['rows']] == [('Boss Admin', 'yes')], 'your own test answer shows up'
+assert post(action='send', remindId=tid).status_code == 400, 'a test cannot be reminded'
 # the sandbox never texts real players
 assert 'sandbox' in app.VERSION.lower(); sent.clear()
 r = post(action='send', title='Season 2027', message=msg, ask='season', group='team', year=2026).get_json()
@@ -76,7 +80,7 @@ assert len(gate) == 4 and sum('/b/' in s[2] for s in gate) == 1 and [s for s in 
 assert all('Check your email to answer' in s[2] for s in gate if '/b/' not in s[2])
 assert sum('hughsgolf.example.org/b/' in s[2] for s in sent if '@' in s[0] and not s[0].endswith(('vtext.com', 'tmomail.net'))) == 4, 'the four with an email each get their link there'
 bid = r['id']
-lst = post(action='list').get_json()['broadcasts']; assert len(lst) == 2 and lst[0]['id'] == bid and lst[0]['recipients'] == 5 and lst[0]['answered'] == 0
+lst = post(action='list').get_json()['broadcasts']; assert len(lst) == 3 and lst[0]['id'] == bid and [b['test'] for b in lst] == [False, False, True] and lst[0]['recipients'] == 5 and lst[0]['answered'] == 0
 tok = {p: t for p, t in sqlite3.connect(app.DB_PATH).execute('SELECT Player, Token FROM BroadcastRecipient WHERE BroadcastId=?', (bid,))}
 assert set(tok) == {'Boss Admin', 'Mail Only', 'Pat Player', 'Reg Ular', 'Text Only'}
 
