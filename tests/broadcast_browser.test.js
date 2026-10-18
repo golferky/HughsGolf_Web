@@ -45,7 +45,7 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
   const pc = calls.find(c => c.action === 'preview'); assert(pc && pc.group === 'team' && pc.year === 2026 && JSON.stringify(pc.names) === '["Pat Example"]', JSON.stringify(pc));
   // a test goes through the send action with test=true; the real send previews first, then sends
   await p.click('#adminBroadcast >> text=Send a test to me only'); await p.waitForFunction(() => /Test sent to you/.test(document.getElementById('bcResult').innerText));
-  assert(calls.at(-1).action === 'send' && calls.at(-1).test === true && calls.at(-1).ask === 'season');
+  const ts = calls.filter(c => c.action === 'send').at(-1); assert(ts && ts.test === true && ts.ask === 'season');
   await p.click('#adminBroadcast >> text=Send to everyone in the list'); await p.waitForFunction(() => /3 sent/.test(document.getElementById('bcResult').innerText));
   assert(calls.some(c => c.action === 'send' && c.test === false && /2027 season/.test(c.message) && c.title === 'Are you in for 2027?'));
   // the answers panel groups people by answer, and records one by hand

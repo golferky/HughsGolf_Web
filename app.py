@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261018.11-sandbox'
+VERSION    = '20261018.12-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1975,9 +1975,10 @@ def _broadcast_list():
     try:
         cur = conn.cursor()
         cur.execute("""SELECT B.Id, B.Title, B.Ask, B.Year, B.CreatedAt, B.CreatedBy, COALESCE(B.ClosedAt,''),
-              COUNT(R.Token), SUM(CASE WHEN COALESCE(R.Answer,'')!='' THEN 1 ELSE 0 END)
-              FROM Broadcast B LEFT JOIN BroadcastRecipient R ON R.BroadcastId=B.Id WHERE COALESCE(B.Test,0)=0 GROUP BY B.Id ORDER BY B.Id DESC LIMIT 50""")
-        rows = [dict(zip(('id', 'title', 'ask', 'year', 'createdAt', 'createdBy', 'closedAt', 'recipients', 'answered'), r)) for r in cur.fetchall()]
+              COUNT(R.Token), SUM(CASE WHEN COALESCE(R.Answer,'')!='' THEN 1 ELSE 0 END), COALESCE(B.Test,0)
+              FROM Broadcast B LEFT JOIN BroadcastRecipient R ON R.BroadcastId=B.Id GROUP BY B.Id ORDER BY B.Id DESC LIMIT 50""")
+        rows = [dict(zip(('id', 'title', 'ask', 'year', 'createdAt', 'createdBy', 'closedAt', 'recipients', 'answered', 'test'), r)) for r in cur.fetchall()]
+        for r in rows: r['test'] = bool(r['test'])
     finally:
         conn.close()
     for r in rows: r['answered'] = r['answered'] or 0
@@ -1987,7 +1988,7 @@ def _broadcast_status(b):
     conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
     try:
         cur = conn.cursor()
-        cur.execute('SELECT Id, Title, Message, Ask, Year, CreatedAt, CreatedBy, COALESCE(ClosedAt,\'\') FROM Broadcast WHERE Id=? AND COALESCE(Test,0)=0', (b.get('id'),))
+        cur.execute('SELECT Id, Title, Message, Ask, Year, CreatedAt, CreatedBy, COALESCE(ClosedAt,\'\'), COALESCE(Test,0) FROM Broadcast WHERE Id=?', (b.get('id'),))
         r = cur.fetchone()
         if not r:
             return jsonify({'ok': False, 'error': 'No such broadcast.'}), 404
@@ -1995,7 +1996,7 @@ def _broadcast_status(b):
         rows = [dict(zip(('player', 'answer', 'note', 'answeredAt', 'via', 'sentAt'), x)) for x in cur.fetchall()]
     finally:
         conn.close()
-    head = dict(zip(('id', 'title', 'message', 'ask', 'year', 'createdAt', 'createdBy', 'closedAt'), r))
+    head = dict(zip(('id', 'title', 'message', 'ask', 'year', 'createdAt', 'createdBy', 'closedAt', 'test'), r)); head['test'] = bool(head['test'])
     return jsonify({'ok': True, 'broadcast': head, 'rows': rows, 'labels': list(_BROADCAST_ASKS.get(head['ask'], ('Yes', 'No', 'Not sure')))})
 
 def _broadcast_change(b, admin, action):
@@ -2003,7 +2004,7 @@ def _broadcast_change(b, admin, action):
         conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
         try:
             cur = conn.cursor()
-            cur.execute('SELECT Id, Title FROM Broadcast WHERE Id=? AND COALESCE(Test,0)=0', (b.get('id'),))
+            cur.execute('SELECT Id, Title FROM Broadcast WHERE Id=?', (b.get('id'),))
             r = cur.fetchone()
             if not r:
                 return jsonify({'ok': False, 'error': 'No such broadcast.'}), 404

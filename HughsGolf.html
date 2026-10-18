@@ -2902,7 +2902,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.11';
+const APP_VERSION = '20261018.12';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4153,6 +4153,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.12', 'October 18, 2026', [
+    ['bugfix', 'Broadcast: a test send now shows in Answers', 'A test sent to yourself was left out of the Answers list, so your own answer never showed. Tests now appear marked TEST (you can answer from the link and see it land); they have no remind button. PR #133.', 1],
   ]);
   ensureVersion('20261018.11', 'October 18, 2026', [
     ['bugfix', 'Byes: a no-show against a bye team now loses the team point', 'Playing a bye team (a team with no players, or whose players are named "Bye ..."): both of you play and you take all 3 points; if one of you does not show you get 1 point and the bye team gets the other match and the team point; if neither shows the bye team gets all 3. Before, the team point wrongly stayed with the team that had a no-show. The Help rules say so too. PR #132.', 1],
@@ -19636,7 +19639,7 @@ async function bcSend(test) {
   out.innerHTML = (j.simulated ? '<b>Sandbox: nothing was actually sent to players.</b> ' : '') + (j.test ? '🧪 Test sent to you. Tap its link on your phone to see the answer page. ' : '✓ ') + `${j.sent.length} sent`
     + (j.failed.length ? ` · <span style="color:#c62828">failed: ${j.failed.map(f => escapeHtml(f.player) + ' (' + escapeHtml(f.reason) + ')').join(', ')}</span>` : '')
     + (j.skipped.length ? ` · left out: ${j.skipped.map(x => escapeHtml(x.player)).join(', ')}` : '');
-  if (!test) { bcOpenId = j.id; bcLoadList(j.id); }
+  bcOpenId = j.id; bcLoadList(j.id);
 }
 async function bcLoadList(selectId) {
   const box = document.getElementById('bcAnswers'); if (!box) return;
@@ -19645,7 +19648,7 @@ async function bcLoadList(selectId) {
   if (!j.broadcasts.length) { box.innerHTML = '<div style="font-size:13px;color:#555">Nothing sent yet.</div>'; return; }
   const id = selectId && j.broadcasts.some(b => b.id === selectId) ? selectId : j.broadcasts[0].id; bcOpenId = id;
   box.innerHTML = `<div style="margin-bottom:10px"><select id="bcPick" onchange="bcOpenId=parseInt(this.value);bcShow(bcOpenId)" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:13px">`
-    + j.broadcasts.map(b => `<option value="${b.id}"${b.id === id ? ' selected' : ''}>${escapeHtml(b.createdAt)} · ${escapeHtml(b.title)} (${b.answered}/${b.recipients} answered${b.closedAt ? ', closed' : ''})</option>`).join('') + `</select></div><div id="bcDetail"></div>`;
+    + j.broadcasts.map(b => `<option value="${b.id}"${b.id === id ? ' selected' : ''}>${b.test ? '🧪 TEST · ' : ''}${escapeHtml(b.createdAt)} · ${escapeHtml(b.title)} (${b.answered}/${b.recipients} answered${b.closedAt ? ', closed' : ''})</option>`).join('') + `</select></div><div id="bcDetail"></div>`;
   bcShow(id);
 }
 async function bcShow(id) {
@@ -19657,11 +19660,11 @@ async function bcShow(id) {
   const names = list => list.map(r => `<span title="${escapeHtml(r.answeredAt)}">${escapeHtml(r.player)}${r.note ? ` <i style="color:#666">“${escapeHtml(r.note)}”</i>` : ''}</span>`).join(', ') || '—';
   const sel = r => `<select data-p="${escapeHtml(r.player)}" onchange="bcRecord(this)" style="font-size:11px;padding:2px"><option value="">record an answer…</option><option value="yes">${escapeHtml(L.yes)}</option><option value="no">${escapeHtml(L.no)}</option><option value="maybe">${escapeHtml(L.maybe)}</option></select>`;
   const sect = (color, label, list) => `<div style="margin:8px 0"><b style="color:${color}">${escapeHtml(label)} (${list.length})</b><div style="font-size:13px;margin-top:2px">${names(list)}</div></div>`;
-  box.innerHTML = `<div style="font-size:13px;color:#555;margin-bottom:6px">“${escapeHtml(b.message)}” — sent ${escapeHtml(b.createdAt)} by ${escapeHtml(b.createdBy)}${b.closedAt ? ` · <b>closed ${escapeHtml(b.closedAt)}</b>` : ''}</div>`
+  box.innerHTML = `<div style="font-size:13px;color:#555;margin-bottom:6px">${b.test ? '<b style="color:#6a1b9a">🧪 TEST — sent only to you. Tap its link and answer to see it appear here.</b> ' : ''}“${escapeHtml(b.message)}” — sent ${escapeHtml(b.createdAt)} by ${escapeHtml(b.createdBy)}${b.closedAt ? ` · <b>closed ${escapeHtml(b.closedAt)}</b>` : ''}</div>`
     + (b.ask ? sect('#2e7d32', L.yes, grp('yes')) + sect('#c62828', L.no, grp('no')) + sect('#e65100', L.maybe, grp('maybe')) : '')
     + `<div style="margin:8px 0"><b style="color:#555">${b.ask ? 'No answer yet' : 'Sent to'} (${none.length + (b.ask ? 0 : rows.length - none.length)})</b>
        <div style="font-size:13px;margin-top:4px">${(b.ask ? none : rows).map(r => `<div style="margin:3px 0">${escapeHtml(r.player)} <span style="color:#999;font-size:11px">${escapeHtml(r.via || 'not sent')}</span>${b.ask ? ' ' + sel(r) : ''}</div>`).join('') || '—'}</div></div>`
-    + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${b.ask && none.length && !b.closedAt ? `<button onclick="bcRemind(${b.id}, ${none.length})" style="padding:7px 14px;background:#e65100;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">🔁 Remind the ${none.length} who haven't answered</button>` : ''}
+    + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${b.ask && none.length && !b.closedAt && !b.test ? `<button onclick="bcRemind(${b.id}, ${none.length})" style="padding:7px 14px;background:#e65100;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">🔁 Remind the ${none.length} who haven't answered</button>` : ''}
        ${b.ask ? `<button onclick="bcClose(${b.id}, ${b.closedAt ? 'false' : 'true'})" style="padding:7px 14px;border:1px solid #888;background:white;border-radius:6px;cursor:pointer;font-size:13px">${b.closedAt ? 'Reopen the question' : 'Close the question'}</button>` : ''}
        <button onclick="bcShow(${b.id})" style="padding:7px 14px;border:1px solid #ccc;background:white;border-radius:6px;cursor:pointer;font-size:13px">↻ Refresh</button></div>`;
 }
