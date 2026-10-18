@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261018.6-sandbox'
+VERSION    = '20261018.7-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -2474,6 +2474,36 @@ def carrier_admin():
         res.update(player=player, confirmed=b_confirmed or '')
     return jsonify(res)
 
+PHOTO_REMINDER_MAX = 3
+
+@app.route('/photo-reminder', methods=['POST'])
+def photo_reminder():
+    """Called once per login. Says whether to ask this player to add a photo, and counts it: after PHOTO_REMINDER_MAX reminders (or once
+    they have a photo) the answer is no. The count lives on the player so it follows them from phone to computer."""
+    body = request.get_json(silent=True) or {}
+    player = str(body.get('player') or '').strip(); token = str(body.get('sessionToken') or '').strip()
+    with DB_WRITE_LOCK:
+        conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
+        try:
+            cur = conn.cursor()
+            if not _session_matches(cur, player, token):
+                return jsonify({'ok': False, 'error': 'Please sign in again.'}), 403
+            cols = _table_cols(cur, 'Players')
+            if 'PhotoKey' not in cols:
+                return jsonify({'ok': True, 'show': False})
+            if 'PhotoReminders' not in cols:
+                cur.execute('ALTER TABLE Players ADD COLUMN PhotoReminders INTEGER DEFAULT 0')
+            cur.execute("SELECT COALESCE(PhotoKey,''), COALESCE(PhotoReminders,0) FROM Players WHERE Player=?", (player,))
+            r = cur.fetchone()
+            if not r or r[0] or r[1] >= PHOTO_REMINDER_MAX:
+                return jsonify({'ok': True, 'show': False})
+            cur.execute('UPDATE Players SET PhotoReminders=? WHERE Player=?', (r[1] + 1, player))
+            conn.commit()
+            return jsonify({'ok': True, 'show': True, 'count': r[1] + 1, 'max': PHOTO_REMINDER_MAX, 'modifiedMs': db_modified_ms()})
+        finally:
+            conn.close()
+
+
 @app.route('/carrier-test', methods=['POST'])
 def carrier_test():
     """Send one test text to a player's number through a carrier's gateway. The admin confirms with the player that it arrived,
@@ -4082,6 +4112,9 @@ def ensure_schema():
         if 'PhotoKey' not in _table_cols(cur, 'Players'):            # random key of the player's photo file (see /upload-my-photo)
             cur.execute('ALTER TABLE Players ADD COLUMN PhotoKey TEXT')
             print(f'[{now_local():%H:%M:%S}] Schema check: added Players.PhotoKey')
+        if 'PhotoReminders' not in _table_cols(cur, 'Players'):      # how many times a player has been asked to add a photo (see /photo-reminder)
+            cur.execute('ALTER TABLE Players ADD COLUMN PhotoReminders INTEGER DEFAULT 0')
+            print(f'[{now_local():%H:%M:%S}] Schema check: added Players.PhotoReminders')
         if 'CellConfirmed' not in _table_cols(cur, 'Players'):       # 'date|digits|carrier' of the last test text that arrived for this player
             cur.execute('ALTER TABLE Players ADD COLUMN CellConfirmed TEXT')
             print(f'[{now_local():%H:%M:%S}] Schema check: added Players.CellConfirmed')

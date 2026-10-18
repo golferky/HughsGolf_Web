@@ -16,14 +16,14 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
   const run = (haveAll) => p.evaluate((haveAll) => {
     db = new SQL.Database(); const sent = []; serverRun = async (sql) => { sent.push(sql); };
     const ss = haveAll ? ', ChampPlaces INTEGER, StandPlace1 REAL, StandPlace2 REAL, StandPlace3 REAL, Byes INTEGER' : '';
-    db.run(`CREATE TABLE Players (Player TEXT${haveAll ? ', PhotoKey TEXT' : ''}); CREATE TABLE LeagueSettings (League TEXT${haveAll ? ', StartWeek TEXT' : ''}); CREATE TABLE SeasonSettings (League TEXT, Season INTEGER${ss}); CREATE TABLE AppChangelog (ID INTEGER PRIMARY KEY AUTOINCREMENT, Version TEXT, ReleaseDate TEXT, Category TEXT, Item TEXT, SortOrder INTEGER, Notes TEXT${haveAll ? ', AddedBy TEXT, AddedAt TEXT' : ''})`);
+    db.run(`CREATE TABLE Players (Player TEXT${haveAll ? ', PhotoKey TEXT, PhotoReminders INTEGER' : ''}); CREATE TABLE LeagueSettings (League TEXT${haveAll ? ', StartWeek TEXT' : ''}); CREATE TABLE SeasonSettings (League TEXT, Season INTEGER${ss}); CREATE TABLE AppChangelog (ID INTEGER PRIMARY KEY AUTOINCREMENT, Version TEXT, ReleaseDate TEXT, Category TEXT, Item TEXT, SortOrder INTEGER, Notes TEXT${haveAll ? ', AddedBy TEXT, AddedAt TEXT' : ''})`);
     ensureAppChangelogTable();
     return { alters: sent.filter(s => /^ALTER TABLE/.test(s)), localHas: ['ChampPlaces', 'Byes'].every(c => hasDbColumn('SeasonSettings', c)) && hasDbColumn('AppChangelog', 'AddedBy') };
   }, haveAll);
   const complete = await run(true);
   assert.deepStrictEqual(complete.alters, [], 'columns present: nothing sent to the server');
   const old = await run(false);
-  assert.strictEqual(old.alters.length, 9, 'columns missing (SeasonSettings x5 + LeagueSettings.StartWeek + Players.PhotoKey + AddedBy + AddedAt; Notes present): each sent once: ' + JSON.stringify(old.alters));
+  assert.strictEqual(old.alters.length, 10, 'columns missing (SeasonSettings x5 + LeagueSettings.StartWeek + Players.PhotoKey + PhotoReminders + AddedBy + AddedAt; Notes present): each sent once: ' + JSON.stringify(old.alters));
   assert(old.localHas, 'and added to the local copy');
   assert.deepStrictEqual(errs, [], errs.join('; '));
   await b.close(); console.log('ok');
