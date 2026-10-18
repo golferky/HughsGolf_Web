@@ -727,6 +727,7 @@
       <div class="tab" data-tab="stableford">⛳ Stableford</div>
     </div>
     <div class="subtab-group" data-group="postseason" style="display:none">
+      <div class="tab" data-tab="ps_entry">✏️ Scores</div>
       <div class="tab" data-tab="ps_scores">🧾 Scores &amp; Standings</div>
       <div class="tab" data-tab="ps_skins">🎲 Skins &amp; CTPs</div>
       <div class="tab" data-tab="ps_earned">🎁 Earned</div>
@@ -1417,6 +1418,7 @@
   <!-- SQL -->
   <!-- ADMIN -->
   <div class="section" id="tab-scorecard"></div>
+  <div class="section" id="tab-ps_entry"></div>
   <div class="section" id="tab-ps_scores"></div>
   <div class="section" id="tab-ps_skins"></div>
   <div class="section" id="tab-ps_earned"></div>
@@ -2902,7 +2904,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.14';
+const APP_VERSION = '20261018.15';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3773,6 +3775,9 @@ function switchTab(tabName) {
     return;
   }
   const targetTab = canAccessTab(tabName) ? tabName : 'home';
+  const curTab = document.querySelector('.tab.active')?.dataset.tab;
+  if (typeof entryDirty !== 'undefined' && entryDirty && curTab && curTab !== targetTab && ['scorecard', 'ps_entry'].includes(curTab) && ['scorecard', 'ps_entry'].includes(targetTab)
+      && !confirm('Switch Scores tabs? Unsaved scorecard changes will be discarded.')) return;
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
   document.querySelector(`.tab[data-tab="${targetTab}"]`)?.classList.add('active');
@@ -3780,7 +3785,7 @@ function switchTab(tabName) {
   syncTabGroups();
   pvTrack(targetTab);
   if (db) {
-    if (targetTab === 'scorecard' && DB_UPDATE_PENDING) refreshScoresForExternalDbUpdate();
+    if ((targetTab === 'scorecard' || targetTab === 'ps_entry') && DB_UPDATE_PENDING) refreshScoresForExternalDbUpdate();
     else refreshTab(targetTab);
   }
   try { syncPlayDateBar(); } catch (e) {}
@@ -4153,6 +4158,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261018.15', 'October 18, 2026', [
+    ['enhancement', 'Post Season > Scores: post-season scores get their own tab', 'Post Season has a new Scores tab (first in the group) with the score grid for each season\'s post season: pick the season, enter or view its scores, payments and skins. Play > Scores is now the regular season only, and the Play round-date bar no longer lists post-season nights. Gallus imports open the tab that matches the card\'s night. PR #136.', 1],
   ]);
   ensureVersion('20261018.14', 'October 18, 2026', [
     ['bugfix', 'Broadcast: Refresh also updates the answered count', 'The Refresh button in Answers reloaded only the names; the "(0/1 answered)" count in the drop-down stayed old until you left the screen. It now reloads both. PR #135.', 1],
@@ -6280,14 +6288,15 @@ function playDateEntryDate(date, psList) {   // Score Entry has one post-season 
   return p ? String(p.week1) : String(date);
 }
 function playDatePsList() {
-  return query(`SELECT PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL`).map(r => parsePostSeasonDates(r.PostSeasonDt)).filter(Boolean);
+  return [];                                   // Play is the regular season only; post season has its own tabs (Post Season > Scores)
 }
 function syncPlayDateBar() {
   const bar = document.getElementById('playDateBar'), sel = document.getElementById('playDateSel'); if (!bar || !sel) return;
   const tab = document.querySelector('.tab.active')?.dataset.tab, ownId = PLAY_DATE_TAB_SELECT[tab];
   if (!ownId || !db) { bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
-  const opts = playDateBuildOptions(query(`SELECT DISTINCT Date as d FROM Schedule WHERE League="Hugh's"`).map(r => r.d), playDatePsList());
+  const psNights = getPostSeasonDateSet();     // post season is not part of Play
+  const opts = playDateBuildOptions(query(`SELECT DISTINCT Date as d FROM Schedule WHERE League="Hugh's"`).map(r => r.d).filter(d => !psNights.has(String(d))), playDatePsList());
   const label = o => fmtDate(o.date) + (o.ps ? ` — Post Season Wk ${o.ps}` : '');
   const own = String(document.getElementById(ownId)?.value || '');
   const has = d => opts.some(o => o.date === String(d));
@@ -6356,7 +6365,7 @@ function refreshTab(tab) {
   if (tab === 'board') { loadBoard(); markBoardSeen(); }
   if (tab === 'help') loadHelpTab();
   if (tab === 'whatsnew') loadWhatsNewTab();
-  if (tab === 'scorecard') { if (!courseData) initEntry(); else reRenderEntry(); playDateApplyEntry(); }
+  if (tab === 'scorecard' || tab === 'ps_entry') { placeEntryFor(tab); if (!courseData) initEntry(); else reRenderEntry(); if (tab === 'scorecard') playDateApplyEntry(); }
   if (tab === 'scores' || tab === 'entry') switchTab('scorecard');
   if (tab === 'stats') loadPlayerStats();
   if (tab === 'ps_scores') loadPsScores();
@@ -13270,7 +13279,7 @@ function activeTabName() {
 }
 async function refreshScoresForExternalDbUpdate() {
   if (!DB_UPDATE_PENDING || !db || SCORE_DB_REFRESH_IN_PROGRESS) return false;
-  if (activeTabName() !== 'scorecard') return false;
+  if (!['scorecard', 'ps_entry'].includes(activeTabName())) return false;
   // Personal test sandbox uses its own DB file — never swap in the shared DB
   if (typeof _isTestMode === 'function' && _isTestMode()) return false;
   if (_saveInProgress || _savePending || entryDirty) {
@@ -13318,7 +13327,7 @@ async function checkServerVersion() {
       } else if (dbModified > SERVER_DB_MODIFIED) {
         SERVER_DB_MODIFIED = dbModified;
         DB_UPDATE_PENDING = true;
-        if (activeTabName() === 'scorecard') refreshScoresForExternalDbUpdate();
+        if (['scorecard', 'ps_entry'].includes(activeTabName())) refreshScoresForExternalDbUpdate();
         else if (typeof reRenderEntry === 'function') reRenderEntry();
       }
     }
@@ -17432,9 +17441,8 @@ async function confirmPhotoImport() {
 
   document.getElementById('gallusVerifyModal').style.display = 'none';
 
-  // Navigate to scores entry under admin
-  switchTab('admin');
-  showAdminSection('scores');
+  // Navigate to the score grid you are already on (regular season or post season)
+  gotoScoreEntry();
   if (!courseData) await initEntry(); else reRenderEntry();
 
   await doGallusConfirm();
@@ -18443,9 +18451,8 @@ async function importGallusEntry(id, url) {
 
   await _showGallusToast('⏳ Loading round data…');
 
-  // Navigate to scores entry under admin
-  switchTab('admin');
-  showAdminSection('scores');
+  // Navigate to the score grid for this card's night: Play > Scores, or Post Season > Scores for a post-season night
+  gotoScoreEntry(gi.Date ? gallusEntryDateFor(gi.Date) : null);
   if (!courseData) await initEntry(); else reRenderEntry();
 
   if (gi.Date) {
@@ -23123,9 +23130,39 @@ function isDatePostSeason(dateStr) {
   return false;
 }
 
+// The score grid is one piece of the page that lives in either the Play > Scores tab (regular season nights only) or the
+// Post Season > Scores tab (one entry per season's post season). ENTRY_MODE says which, and the date list follows it.
+let ENTRY_MODE = 'regular';
+const ENTRY_TABS = { regular: 'scorecard', post: 'ps_entry' };
+// Open the score grid: for a given night its own tab, otherwise the one you are on if it is a score tab, else Play > Scores.
+function gotoScoreEntry(date) {
+  const cur = document.querySelector('.tab.active')?.dataset.tab;
+  switchTab(date ? entryTabFor(date) : (cur === ENTRY_TABS.post ? ENTRY_TABS.post : ENTRY_TABS.regular));
+}
+function entryTabFor(date) { return isDatePostSeason(String(date)) ? ENTRY_TABS.post : ENTRY_TABS.regular; }   // which tab shows a given night's scores
+// Put the score grid under the tab being opened. Changing mode starts the grid afresh (its date list is different).
+function placeEntryFor(tab) {
+  const mode = tab === ENTRY_TABS.post ? 'post' : 'regular';
+  const host = document.getElementById('tab-' + ENTRY_TABS[mode]), grid = document.getElementById('adminScores');
+  if (!host || !grid) return false;
+  const changed = mode !== ENTRY_MODE;
+  if (grid.parentNode !== host) host.appendChild(grid);
+  ENTRY_MODE = mode;
+  if (changed) {
+    entryState = {}; entryStateDate = null; entryStateFb = null; entryDirty = false; selectedEntrySlotKey = null; entryManual9 = false;
+    activeEntryPostSeasonContext = null;
+    document.getElementById('postSeasonBanner')?.remove(); document.getElementById('entryFutureBanner')?.remove();
+    const g = document.getElementById('entryGrid'); if (g) { g.dataset.postSeason = '0'; delete g.dataset.postSeasonSeason; }
+    const head = document.getElementById('entryHead'), body = document.getElementById('entryBody'); if (head) head.innerHTML = ''; if (body) body.innerHTML = '';
+    if (db) { try { populateEntryDates(); } catch (e) { console.warn('entry dates:', e); } }
+  }
+  return changed;
+}
+
 function populateEntryDates() {
   const sel  = document.getElementById('entryDate');
   const prev = sel.value;
+  const postMode = ENTRY_MODE === 'post';
 
   // Always get post-season dates from SeasonSettings
   const psRows = query(`SELECT Season, PostSeasonDt FROM SeasonSettings WHERE League="Hugh's" AND PostSeasonDt IS NOT NULL ORDER BY Season DESC`);
@@ -23149,9 +23186,9 @@ function populateEntryDates() {
   const allDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" ORDER BY Date DESC`).map(r=>r.sDate);
   const regularDates = allDates.filter(d => !psDateSet.has(d));
 
-  // Group every date (regular + post season) under its own year, newest first
+  // Group every date of this mode (regular nights, or each season's post season) under its own year, newest first
   const byYear = {};
-  [...regularDates.map(String), ...psLabels.keys()].forEach(d => {
+  [...(postMode ? [] : regularDates.map(String)), ...(postMode ? psLabels.keys() : [])].forEach(d => {
     const yr = d.substring(0,4);
     if (!byYear[yr]) byYear[yr] = new Set();
     byYear[yr].add(d);
@@ -23169,10 +23206,10 @@ function populateEntryDates() {
   sel.innerHTML = htmlParts.join('');
 
   // Restore previous selection or pick best match
-  if (prev && (psLabels.has(String(prev)) || regularDates.includes(prev))) {
+  if (prev && (postMode ? psLabels.has(String(prev)) : regularDates.includes(prev))) {
     sel.value = prev;
-  } else if (psDates.length) {
-    sel.value = psDates[0].date;
+  } else if (postMode) {
+    if (psDates.length) sel.value = psDates[0].date;
   } else if (regularDates.length) {
     const todayInt = (() => { const d = new Date(); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); })();
     const best = regularDates.reduce((a,b) => Math.abs(parseInt(b)-todayInt) < Math.abs(parseInt(a)-todayInt) ? b : a);
@@ -23182,6 +23219,7 @@ function populateEntryDates() {
   // Keep post-season mode in sync with whatever date ended up selected
   const psInput = document.getElementById('entryPostSeason');
   if (psInput) psInput.checked = isDatePostSeason(sel.value);
+  const sub = document.getElementById('entrySubtitle'); if (sub && !sel.options.length) sub.textContent = postMode ? 'No post season has been set up yet' : '';
 }
 
 function initEntry() {

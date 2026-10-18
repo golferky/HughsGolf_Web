@@ -33,13 +33,14 @@ a.showAdminSection('scores');
 assert.deepStrictEqual(calls, [['switchTab', 'scorecard']], "showAdminSection('scores') just opens the Scores tab");
 // refreshTab loads the grid when the Scores tab is opened
 const log = [];
-const r = vm.createContext({ db: {}, courseData: null, initEntry: () => log.push('initEntry'), reRenderEntry: () => log.push('reRender'), playDateApplyEntry: () => log.push('playDate'), switchTab: t => log.push('switchTab:' + t), setTimeout: () => {}, highlightCurrentPlayer() {} });
+const r = vm.createContext({ db: {}, courseData: null, placeEntryFor: tab => log.push('place:' + tab), initEntry: () => log.push('initEntry'), reRenderEntry: () => log.push('reRender'), playDateApplyEntry: () => log.push('playDate'), switchTab: t => log.push('switchTab:' + t), setTimeout: () => {}, highlightCurrentPlayer() {} });
 vm.runInContext(extract('refreshTab'), r);
-r.refreshTab('scorecard'); assert.deepStrictEqual(log, ['initEntry', 'playDate'], 'entry opens, then follows the Round date');
-r.courseData = {}; log.length = 0; r.refreshTab('scorecard'); assert.deepStrictEqual(log, ['reRender', 'playDate']);
+r.refreshTab('scorecard'); assert.deepStrictEqual(log, ['place:scorecard', 'initEntry', 'playDate'], 'entry opens, then follows the Round date');
+log.length = 0; r.refreshTab('ps_entry'); assert.deepStrictEqual(log, ['place:ps_entry', 'initEntry'], 'the post season score tab has its own grid and no Round date');
+r.courseData = {}; log.length = 0; r.refreshTab('scorecard'); assert.deepStrictEqual(log, ['place:scorecard', 'reRender', 'playDate']);
 log.length = 0; r.refreshTab('scores'); assert.deepStrictEqual(log, ['switchTab:scorecard'], 'legacy "scores" tab name redirects');
 // external DB refresh watches the new tab name
-assert(/activeTabName\(\) !== 'scorecard'/.test(src) && /targetTab === 'scorecard' && DB_UPDATE_PENDING/.test(src));
+assert(/\['scorecard', 'ps_entry'\]\.includes\(activeTabName\(\)\)/.test(src) && /\(targetTab === 'scorecard' \|\| targetTab === 'ps_entry'\) && DB_UPDATE_PENDING/.test(src));
 
 // -- players see it read-only: no edit controls
 assert(/groupsBtn\.style\.display = isOfficer \? '' : 'none'/.test(src), 'Groups button is officer-only');
