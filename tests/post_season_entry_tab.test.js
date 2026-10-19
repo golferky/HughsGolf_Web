@@ -28,7 +28,7 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
   assert.deepStrictEqual(await opts(), ['09/22/2026', '09/15/2026', '09/16/2025'], 'regular nights only');
   // Post Season > Scores: one entry per season, newest first, and the grid moves there
   const changed = await p.evaluate(() => placeEntryFor('ps_entry')); assert.strictEqual(changed, true);
-  assert.strictEqual(await where(), 'tab-ps_entry'); assert.deepStrictEqual(await opts(), ['2026 Post Season', '2025 Post Season']);
+  assert.strictEqual(await where(), 'tab-ps_entry'); assert.deepStrictEqual(await opts(), ['2026', '2025']);
   assert.strictEqual(await p.evaluate(() => document.getElementById('entryDate').value), '20260929', 'the latest season is selected');
   assert.strictEqual(await p.evaluate(() => document.getElementById('entryPostSeason').checked), true);
   // and back: starts afresh on a regular night; a state left by the other tab is cleared

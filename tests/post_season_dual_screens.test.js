@@ -33,9 +33,9 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
   assert.deepStrictEqual(await opts('skinsDate'), ['09/22/2026', '09/15/2026'], 'Play: regular nights only');
   await p.evaluate(() => refreshTab('ps_skinsview'));
   assert.strictEqual(await where('skinsScreen'), 'tab-ps_skinsview'); assert.deepStrictEqual(await opts('skinsSeason'), ['2026', '2025'], 'Post Season: seasons that have one');
-  assert.deepStrictEqual(await opts('skinsDate'), ['10/06/2026 — Post Season Wk 2', '09/29/2026 — Post Season Wk 1']);
+  assert.deepStrictEqual(await opts('skinsDate'), ['10/06/2026 — Week 2', '09/29/2026 — Week 1']);
   await p.evaluate(() => { document.getElementById('skinsSeason').value = '2025'; populateSkinsDateDropdown(); });
-  assert.deepStrictEqual(await opts('skinsDate'), ['10/07/2025 — Post Season Wk 2', '09/30/2025 — Post Season Wk 1'], 'each season has its own post-season nights');
+  assert.deepStrictEqual(await opts('skinsDate'), ['10/07/2025 — Week 2', '09/30/2025 — Week 1'], 'each season has its own post-season nights');
   await p.evaluate(() => refreshTab('skins')); assert.strictEqual(await where('skinsScreen'), 'tab-skins'); assert.deepStrictEqual(await opts('skinsDate'), ['09/22/2026', '09/15/2026'], 'and back to Play');
   // Stableford: nights from the scores, and the team standings only for the regular season
   await p.evaluate(() => refreshTab('stableford'));
@@ -43,7 +43,7 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
   assert.strictEqual(await p.evaluate(() => document.getElementById('sfStandingsBlock').style.display), '');
   await p.evaluate(() => refreshTab('ps_stableford'));
   assert.strictEqual(await where('stablefordScreen'), 'tab-ps_stableford'); assert.deepStrictEqual(await opts('stablefordSeason'), ['2026', '2025']);
-  assert.deepStrictEqual(await opts('stablefordDate'), ['10/06/2026 — Post Season Wk 2', '09/29/2026 — Post Season Wk 1']);
+  assert.deepStrictEqual(await opts('stablefordDate'), ['10/06/2026 — Week 2', '09/29/2026 — Week 1']);
   assert.strictEqual(await p.evaluate(() => document.getElementById('sfStandingsBlock').style.display), 'none', 'no team standings for post season');
   assert.strictEqual(await p.evaluate(() => window.loaded.includes('sfstand') && window.loaded.lastIndexOf('sfstand') > window.loaded.lastIndexOf('sf')), false, 'the post-season tab does not load the team standings');
   await p.evaluate(() => jumpToStableford(2026, '20260915'));

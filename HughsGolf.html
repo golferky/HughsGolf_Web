@@ -2932,7 +2932,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261019.2';
+const APP_VERSION = '20261019.3';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4187,6 +4187,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261019.3', 'October 19, 2026', [
+    ['enhancement', 'Post Season date boxes drop the words "Post Season"', 'The Date box on Post Season > Scores now lists just the year (2027, 2026, ...), and the Week boxes on Skins/CTPs and Stableford say "Week 1" / "Week 2", since the tab already says Post Season. PR #139.', 1],
   ]);
   ensureVersion('20261019.2', 'October 19, 2026', [
     ['enhancement', 'Post Season: tab names and season box', 'The Season box at the far right of the Post Season tab bar is gone. Standings, Skins & CTPs and Earned each have their own Season box in their header, and Scores, Skins/CTPs and Stableford pick the season in their own date box. "Scores & Standings" is now just "Standings". PR #138.', 1],
@@ -8696,7 +8699,7 @@ function populateStablefordDateDropdown() {
   const sel = document.getElementById('stablefordDate');
   const post = SCREEN_MODE.stableford === 'post', psNights = new Set(psNightsFor(season));
   const shown = dates.filter(r => psNights.has(String(r.sDate || r.Date)) === post);          // Play: regular nights; Post Season: post-season nights
-  sel.innerHTML = shown.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}${post ? ` — Post Season Wk ${String(r.sDate||r.Date) === psNights.values().next().value ? 2 : 1}` : ''}</option>`).join('');
+  sel.innerHTML = shown.map(r => `<option value="${r.sDate||r.Date}">${fmtDate(r.sDate||r.Date)}${post ? ` — Week ${String(r.sDate||r.Date) === psNights.values().next().value ? 2 : 1}` : ''}</option>`).join('');
   if (!sel.dataset.listener) {
     sel.addEventListener('change', loadStableford);
     sel.dataset.listener = '1';
@@ -9317,7 +9320,7 @@ function populateSkinsDateDropdown(loadAfter = true) {
   // Post-season nights have no per-night 'Skin' buy-in (their buy-in is EOY Skins), so add them explicitly, newest first, as the CTP list does
   const post = SCREEN_MODE.skins === 'post', psNights = new Set(psNightsFor(season));
   const skinKeys = post ? psNightsFor(season) : getCtpDateKeys(skinDates.map(r => r.sDate), season).filter(d => !psNights.has(String(d)));   // Play: regular nights; Post Season: that season's two post-season nights
-  skSel.innerHTML = skinKeys.map((d, i) => `<option value="${d}">${fmtDate(d)}${post ? ` — Post Season Wk ${skinKeys.length - i}` : ''}</option>`).join('');
+  skSel.innerHTML = skinKeys.map((d, i) => `<option value="${d}">${fmtDate(d)}${post ? ` — Week ${skinKeys.length - i}` : ''}</option>`).join('');
   playDateApply('skinsDate');
   if (loadAfter) loadSkins();
 }
@@ -23254,7 +23257,7 @@ function populateEntryDates() {
     const d1 = `${p[2]}${p[0].padStart(2,'0')}${p[1].padStart(2,'0')}`;
     const d2 = String(parsePostSeasonDates(r.PostSeasonDt).week2);
     psDateSet.add(d1); psDateSet.add(d2);
-    psLabels.set(d1, 'Post Season');   // one entry: the grid covers Wk 1 (holes 1-9) and Wk 2 (holes 10-18)
+    psLabels.set(d1, '');   // (the tab is already Post Season, so the box just says the year) one entry: the grid covers Wk 1 (holes 1-9) and Wk 2 (holes 10-18)
   });
 
   const allDates = query(`SELECT Date as sDate FROM Schedule WHERE League="Hugh's" ORDER BY Date DESC`).map(r=>r.sDate);
@@ -23271,7 +23274,7 @@ function populateEntryDates() {
   const htmlParts = Object.keys(byYear).sort((a,b)=>b-a).map(yr => {
     const opts = [...byYear[yr]].sort((a,b)=>b-a).map(d =>
       psLabels.has(d)
-        ? `<option value="${d}">${d.substring(0,4)} ${psLabels.get(d)}</option>`
+        ? `<option value="${d}">${(d.substring(0,4) + ' ' + psLabels.get(d)).trim()}</option>`
         : `<option value="${d}">${fmtDate(d)}</option>`
     ).join('');
     return `<optgroup label="${yr}">${opts}</optgroup>`;
