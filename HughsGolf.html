@@ -566,6 +566,8 @@
 #playersTable tbody tr.player-row { cursor: pointer; }
 #playersTable tbody tr.player-row:hover { background: #f3f8ef; }
 .filter-group.pd-own { display: none; }
+/* The Round date bar picks the date on the Play tabs; the Post Season tabs have no such bar, so their own date/week boxes stay visible */
+#tab-ps_entry .filter-group.pd-own, #tab-ps_skinsview .filter-group.pd-own, #tab-ps_stableford .filter-group.pd-own { display: flex; }
 </style>
 </head>
 <body>
@@ -4191,6 +4193,7 @@ function ensureAppChangelogTable() {
     ['enhancement', 'Post Season > Scores: post-season scores get their own tab', 'Post Season has a new Scores tab (first in the group) with the score grid for each season\'s post season: pick the season, enter or view its scores, payments and skins. Play > Scores is now the regular season only, and the Play round-date bar no longer lists post-season nights. Gallus imports open the tab that matches the card\'s night. PR #136.', 1],
     ['enhancement', 'Home shows Stats on the same page', 'Stats is no longer a second tab under Home: the Stats (Individual, Rankings, Leaders, Head to Head) now sit below the Home cards on one page, and the extra row of tabs is gone. Usage still counts Stats separately. PR #136.', 2],
     ['enhancement', 'Skins/CTPs and Stableford for both regular season and post season', 'Post Season has its own Skins/CTPs and Stableford tabs for each season\'s two post-season nights (the Stableford team standings stay in Play). Play > Skins/CTPs and Play > Stableford now list regular season nights only. The Award Prizes shortcut for post-season skins opens Post Season > Skins/CTPs. PR #136.', 3],
+    ['bugfix', 'Post Season tabs show their own date box', 'The Date / Week boxes are hidden on Play (the Round date bar picks the night there). The Post Season Scores, Skins/CTPs and Stableford tabs have no such bar, so their boxes are now visible and you can pick the season\'s night. PR #136.', 5],
     ['enhancement', 'Admin tabs consolidated into groups', 'The Admin tab\'s 18 buttons are now Gallus Queue, Table Maintenance (Players, Teams, Subs, Carriers, New Season), Messages (Rain Out, Broadcast, PDFs, Proposals), Money (Expenses, Award Prizes, Balance Sheet), Logging, Notes (Changelog, Backlog) and Developer (SQL, League Settings, Backups, Compare Live; Redeploy beside it). The developer-only screens are together, and the Developer button is hidden from anyone who cannot open any of them. A group button returns to the screen you last used in it. PR #136.', 4],
   ]);
   ensureVersion('20261018.14', 'October 18, 2026', [
