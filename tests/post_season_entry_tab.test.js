@@ -49,6 +49,13 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
   assert.deepStrictEqual(await p.evaluate(() => [...document.getElementById('playDateSel').options].map(o => o.textContent)), ['09/22/2026', '09/15/2026', '09/16/2025'], 'Play dates: no post season');
   await p.evaluate(() => { document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'ps_entry')); syncPlayDateBar(); });
   assert.strictEqual(await p.evaluate(() => getComputedStyle(document.getElementById('playDateBar')).display), 'none');
+  // the Post Season tabs have no Round date bar, so their own date / week boxes are visible (they are hidden under Play)
+  await p.evaluate(() => { document.querySelectorAll('.section').forEach(s => s.classList.remove('active')); });
+  const shown = id => p.evaluate(id => getComputedStyle(document.getElementById(id)).display, id);
+  await p.evaluate(() => { document.getElementById('tab-ps_entry').classList.add('active'); placeEntryFor('ps_entry'); });
+  assert.notStrictEqual(await p.evaluate(() => getComputedStyle(document.getElementById('entryDate').closest('.filter-group')).display), 'none', 'the post-season Scores date box is visible');
+  await p.evaluate(() => { document.getElementById('tab-ps_entry').classList.remove('active'); document.getElementById('tab-scorecard').classList.add('active'); placeEntryFor('scorecard'); });
+  assert.strictEqual(await p.evaluate(() => getComputedStyle(document.getElementById('entryDate').closest('.filter-group')).display), 'none', 'under Play it stays hidden (the Round date bar picks the night)');
   assert.deepStrictEqual(errs, [], errs.join('; '));
   await b.close(); console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });

@@ -48,6 +48,13 @@ let chromium = null; try { ({ chromium } = require('playwright')); } catch (e) {
   assert.strictEqual(await p.evaluate(() => window.loaded.includes('sfstand') && window.loaded.lastIndexOf('sfstand') > window.loaded.lastIndexOf('sf')), false, 'the post-season tab does not load the team standings');
   await p.evaluate(() => jumpToStableford(2026, '20260915'));
   assert.strictEqual(await where('stablefordScreen'), 'tab-stableford', 'the team standings link goes to the regular Stableford');
+  // the post-season week boxes are visible (hidden under Play, where the Round date bar picks the night)
+  await p.evaluate(() => refreshTab('ps_skinsview')); await p.evaluate(() => { document.querySelectorAll('.section').forEach(s => s.classList.remove('active')); document.getElementById('tab-ps_skinsview').classList.add('active'); });
+  assert.notStrictEqual(await p.evaluate(() => getComputedStyle(document.getElementById('skinsDate').closest('.filter-group')).display), 'none', 'post-season Skins/CTPs week box');
+  await p.evaluate(() => { refreshTab('ps_stableford'); document.querySelectorAll('.section').forEach(s => s.classList.remove('active')); document.getElementById('tab-ps_stableford').classList.add('active'); });
+  assert.notStrictEqual(await p.evaluate(() => getComputedStyle(document.getElementById('stablefordDate').closest('.filter-group')).display), 'none', 'post-season Stableford week box');
+  await p.evaluate(() => { refreshTab('skins'); document.querySelectorAll('.section').forEach(s => s.classList.remove('active')); document.getElementById('tab-skins').classList.add('active'); });
+  assert.strictEqual(await p.evaluate(() => getComputedStyle(document.getElementById('skinsDate').closest('.filter-group')).display), 'none', 'under Play it stays hidden');
   assert.deepStrictEqual(errs, [], errs.join('; '));
   await b.close(); console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });
