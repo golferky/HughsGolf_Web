@@ -2933,7 +2933,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261018.15';
+const APP_VERSION = '20261019.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4189,11 +4189,13 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
   ]);
+  ensureVersion('20261019.1', 'October 19, 2026', [
+    ['bugfix', 'Post Season tabs show their own date box', 'The Date / Week boxes are hidden on Play (the Round date bar picks the night there). The Post Season Scores, Skins/CTPs and Stableford tabs have no such bar, so their boxes are now visible and you can pick the season\'s night. PR #137.', 1],
+  ]);
   ensureVersion('20261018.15', 'October 18, 2026', [
     ['enhancement', 'Post Season > Scores: post-season scores get their own tab', 'Post Season has a new Scores tab (first in the group) with the score grid for each season\'s post season: pick the season, enter or view its scores, payments and skins. Play > Scores is now the regular season only, and the Play round-date bar no longer lists post-season nights. Gallus imports open the tab that matches the card\'s night. PR #136.', 1],
     ['enhancement', 'Home shows Stats on the same page', 'Stats is no longer a second tab under Home: the Stats (Individual, Rankings, Leaders, Head to Head) now sit below the Home cards on one page, and the extra row of tabs is gone. Usage still counts Stats separately. PR #136.', 2],
     ['enhancement', 'Skins/CTPs and Stableford for both regular season and post season', 'Post Season has its own Skins/CTPs and Stableford tabs for each season\'s two post-season nights (the Stableford team standings stay in Play). Play > Skins/CTPs and Play > Stableford now list regular season nights only. The Award Prizes shortcut for post-season skins opens Post Season > Skins/CTPs. PR #136.', 3],
-    ['bugfix', 'Post Season tabs show their own date box', 'The Date / Week boxes are hidden on Play (the Round date bar picks the night there). The Post Season Scores, Skins/CTPs and Stableford tabs have no such bar, so their boxes are now visible and you can pick the season\'s night. PR #136.', 5],
     ['enhancement', 'Admin tabs consolidated into groups', 'The Admin tab\'s 18 buttons are now Gallus Queue, Table Maintenance (Players, Teams, Subs, Carriers, New Season), Messages (Rain Out, Broadcast, PDFs, Proposals), Money (Expenses, Award Prizes, Balance Sheet), Logging, Notes (Changelog, Backlog) and Developer (SQL, League Settings, Backups, Compare Live; Redeploy beside it). The developer-only screens are together, and the Developer button is hidden from anyone who cannot open any of them. A group button returns to the screen you last used in it. PR #136.', 4],
   ]);
   ensureVersion('20261018.14', 'October 18, 2026', [
