@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261020.1-sandbox'
+VERSION    = '20261021.1-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -1291,11 +1291,33 @@ def verify_reset():
     return jsonify({'ok': True})
 
 
+LOGIN_TEXT_GAP_MINUTES = 30
+_LOGIN_TEXT_LAST = {}                                         # player -> when we last texted about their login
+
+def _login_text_on(officer, setting):
+    """Does this officer get a text when someone logs in? The developer unless they said no; an admin only if they said yes."""
+    officer = str(officer or '').strip().lower(); setting = str(setting or '').strip().upper()
+    if officer == 'developer':
+        return setting != 'N'
+    return officer in ('admin', 'president', 'secretary') and setting == 'Y'
+
+def _login_text_recipients(cur, who_logged_in):
+    """[(name, sms address)] of the officers to text about a login: opted in, with a cell number and a carrier that can be texted."""
+    cols = _table_cols(cur, 'Players')
+    cur.execute(f"SELECT Player, Officer, Phone, CellCarrier, {'LoginTexts' if 'LoginTexts' in cols else 'NULL'} FROM Players WHERE COALESCE(Phone,'')!='' AND COALESCE(CellCarrier,'')!=''")
+    out = []
+    for name, officer, phone, carrier, setting in cur.fetchall():
+        if name == who_logged_in or not _login_text_on(officer, setting):
+            continue
+        addr, _err = sms_address(phone, carrier)
+        if addr:
+            out.append((name, addr))
+    return out
+
 @app.route('/notify-login', methods=['POST'])
 def notify_login():
-    """Email the developer whenever someone logs in. On a player's first-ever
-    login, also send a distinct email subject and a text via the developer's
-    carrier SMS gateway."""
+    """Email the developer whenever someone logs in (a different subject on a player's first-ever login), and text everyone who has login
+    texts on: the developer unless they turned it off in My Profile, any admin who turned it on."""
     body = request.get_json() or {}
     player      = body.get('player', 'Unknown')
     role        = body.get('role', 'unknown')
@@ -1361,37 +1383,26 @@ def notify_login():
 
     if first_login:
         ensure_first_login_audit()
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cur = conn.cursor()
-            cur.execute("SELECT Phone, CellCarrier FROM Players WHERE Officer='Developer' LIMIT 1")
-            dev_row = cur.fetchone()
-            conn.close()
-        except Exception as e:
-            dev_row = None
-            errors.append(f'Developer lookup failed: {e}')
-
-        if dev_row and dev_row['Phone'] and dev_row['CellCarrier']:
-            addr, err = sms_address(dev_row['Phone'], dev_row['CellCarrier'])
-            if addr:
-                try:
-                    sms_body = f"HughsGolf: {player} ({role}) just logged in for the first time!"
-                    sms_msg = MIMEText(sms_body)
-                    sms_msg['From'] = gmail_user
-                    sms_msg['To'] = addr
-                    sms_msg['Subject'] = "HughsGolf"
-                    with _AuditSMTP('smtp.gmail.com', 465) as server:
-                        server.login(gmail_user, gmail_pw)
-                        server.send_message(sms_msg)
-                    sent_to.append('sms')
-                except Exception as e:
-                    print(f'notify_login sms error: {e}')
-                    errors.append(f'SMS failed: {e}')
+    # A text to everyone who wants one when somebody logs in (the developer unless they turned it off in My Profile; an admin who turned it on).
+    # Not to the person logging in, and a person who keeps reloading texts at most once every LOGIN_TEXT_GAP_MINUTES (a first login always texts).
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        recipients = _login_text_recipients(cur, player)
+        conn.close()
+    except Exception as e:
+        recipients = []
+        errors.append(f'Login-text lookup failed: {e}')
+    nowts = time.time()
+    if recipients and (first_login or nowts - _LOGIN_TEXT_LAST.get(player, 0) >= LOGIN_TEXT_GAP_MINUTES * 60):
+        _LOGIN_TEXT_LAST[player] = nowts
+        where = '[sandbox] ' if 'sandbox' in VERSION.lower() else ''
+        sms_body = f"HughsGolf: {where}{player} ({role}) just logged in for the first time!" if first_login else f"HughsGolf: {where}{player} ({role}) logged in."
+        for who, addr in recipients:
+            if _send_mail([addr], 'HughsGolf', sms_body):
+                sent_to.append('sms')
             else:
-                errors.append(err)
-        else:
-            errors.append('Developer phone/carrier not set in Players table')
+                errors.append(f'SMS to {who} failed')
 
     print(f'[{now_local():%H:%M:%S}] notify_login for {player}: first_login={first_login}, sent={",".join(sent_to) or "none"}')
     return jsonify({'ok': len(errors) == 0, 'sentTo': sent_to, 'errors': errors})
@@ -2228,6 +2239,9 @@ def update_my_profile():
     contact = str(body.get('contact') or '').strip()
     if contact not in ('', 'email', 'text', 'both', 'none'):
         return jsonify({'ok': False, 'error': 'Bad contact choice.'}), 400
+    login_texts = str(body.get('loginTexts') or '').upper()
+    if login_texts not in ('', 'Y', 'N'):
+        return jsonify({'ok': False, 'error': 'Bad login-text choice.'}), 400
     with DB_WRITE_LOCK:
         conn = sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT_SECONDS)
         try:
@@ -2239,8 +2253,12 @@ def update_my_profile():
                 row = cur.fetchone()
             if not row or not row[0] or not _hmac.compare_digest(str(row[0]), token):
                 return jsonify({'ok': False, 'error': 'Please sign in again, then try once more.'}), 403
-            cur.execute('SELECT Email, Phone, CellCarrier FROM Players WHERE Player=?', (player,))
-            cur_email, cur_phone, cur_carrier = cur.fetchone()
+            cur.execute('SELECT Email, Phone, CellCarrier, Officer FROM Players WHERE Player=?', (player,))
+            cur_email, cur_phone, cur_carrier, cur_officer = cur.fetchone()
+            if login_texts and str(cur_officer or '').strip().lower() in _ADMIN_ROLES:        # only officers have this choice
+                if 'LoginTexts' not in cols:
+                    cur.execute('ALTER TABLE Players ADD COLUMN LoginTexts TEXT'); cols = set(cols) | {'LoginTexts'}
+                changes['LoginTexts'] = login_texts
             email_now = changes.get('Email', cur_email or '')
             phone_now = changes.get('Phone', cur_phone or '')
             carrier_now = changes.get('CellCarrier', cur_carrier or '')
@@ -2265,7 +2283,7 @@ def update_my_profile():
             if changed:
                 _log_row(cur, 'profile_update', f'{player} updated their profile ({", ".join(changed)})', f'ip={_audit_ip()}')
             conn.commit()
-            shown = [c for c in ('Email', 'Phone', 'CellCarrier', 'EmailStats', 'TextStats', 'ContactOK', 'ContactMethod', 'BlockSubs') if c in cols]
+            shown = [c for c in ('Email', 'Phone', 'CellCarrier', 'EmailStats', 'TextStats', 'ContactOK', 'ContactMethod', 'BlockSubs', 'LoginTexts') if c in cols]
             cur.execute('SELECT ' + ', '.join(f'"{c}"' for c in shown) + ' FROM Players WHERE Player=?', (player,))
             saved = dict(zip(shown, cur.fetchone()))
         finally:
@@ -4157,6 +4175,9 @@ def ensure_schema():
         if 'PhotoKey' not in _table_cols(cur, 'Players'):            # random key of the player's photo file (see /upload-my-photo)
             cur.execute('ALTER TABLE Players ADD COLUMN PhotoKey TEXT')
             print(f'[{now_local():%H:%M:%S}] Schema check: added Players.PhotoKey')
+        if 'LoginTexts' not in _table_cols(cur, 'Players'):          # 'Y' / 'N': an officer's choice to be texted when someone logs in
+            cur.execute('ALTER TABLE Players ADD COLUMN LoginTexts TEXT')
+            print(f'[{now_local():%H:%M:%S}] Schema check: added Players.LoginTexts')
         if 'PhotoReminders' not in _table_cols(cur, 'Players'):      # how many times a player has been asked to add a photo (see /photo-reminder)
             cur.execute('ALTER TABLE Players ADD COLUMN PhotoReminders INTEGER DEFAULT 0')
             print(f'[{now_local():%H:%M:%S}] Schema check: added Players.PhotoReminders')

@@ -2932,7 +2932,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261020.1';
+const APP_VERSION = '20261021.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4103,6 +4103,7 @@ function ensureAppChangelogTable() {
   ensureCol('SeasonSettings', 'StandPlace3', 'REAL DEFAULT 90');
   ensureCol('SeasonSettings', 'Byes', 'INTEGER DEFAULT 0');          // in LS_MID_SEASON_OK, so it must exist
   ensureCol('Players', 'PhotoKey', 'TEXT');                          // random key of the player's photo file (see /upload-my-photo)
+  ensureCol('Players', 'LoginTexts', 'TEXT');                         // an officer's choice (Y/N) to be texted when someone logs in
   ensureCol('Players', 'PhotoReminders', 'INTEGER DEFAULT 0');       // how many times the player was asked to add a photo (see /photo-reminder)
   ensureCol('LeagueSettings', 'StartWeek', "TEXT DEFAULT '2nd'");   // which league day of April the season starts on (1st/2nd/3rd/4th/Last)
   // Backfill from LeagueParms if available and StandPlace1 is still null
@@ -4188,9 +4189,10 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
   ]);
-  ensureVersion('20261020.1', 'October 20, 2026', [
-    ['enhancement', 'Post Season date boxes drop the words "Post Season"', 'The Date box on Post Season > Scores now lists just the year (2027, 2026, ...), and the Week boxes on Skins/CTPs and Stableford say "Week 1" / "Week 2", since the tab already says Post Season. PR #139.', 1],
+  ensureVersion('20261021.1', 'October 21, 2026', [
+    ['enhancement', 'Text me when someone logs in (with an off switch)', 'The developer now gets a text whenever someone logs in, not only on a first login; an admin can turn it on for themselves. My Profile has a "Text me when someone logs in" box for officers (on by default for the developer). The person logging in is never texted about themselves, a person who keeps reloading triggers at most one text every 30 minutes, and the sandbox marks its texts "[sandbox]". PR #139.', 1],
     ['enhancement', 'League Settings is back under Table Maintenance', 'League Settings moved from the Developer group to Table Maintenance, next to Subs and Carriers. It is still shown to the developer only. PR #139.', 2],
+    ['enhancement', 'Post Season date boxes drop the words "Post Season"', 'The Date box on Post Season > Scores now lists just the year (2027, 2026, ...), and the Week boxes on Skins/CTPs and Stableford say "Week 1" / "Week 2", since the tab already says Post Season. PR #139.', 3],
   ]);
   ensureVersion('20261019.2', 'October 19, 2026', [
     ['enhancement', 'Post Season: tab names and season box', 'The Season box at the far right of the Post Season tab bar is gone. Standings, Skins & CTPs and Earned each have their own Season box in their header, and Scores, Skins/CTPs and Stableford pick the season in their own date box. "Scores & Standings" is now just "Standings". PR #138.', 1],
@@ -19841,7 +19843,8 @@ function selfProfilePayload(playerName) {
     player: playerName, sessionToken: localStorage.getItem(`hg_session_${playerName}`) || window._mySessionToken || '',
     email: v('selfEmail').value.trim(), phone: v('selfPhone').value.trim(), carrier: v('selfCarrier').value,
     emailStats: v('selfEmailStats').checked ? 'Y' : 'N', textStats: v('selfTextStats').checked ? 'Y' : 'N',
-    contact: choice ? choice.value : ''
+    contact: choice ? choice.value : '',
+    ...(v('selfLoginTexts') ? { loginTexts: v('selfLoginTexts').checked ? 'Y' : 'N' } : {})        // officers only
   };
 }
 async function doSelfProfileSave(overlay, playerName) {
@@ -19926,6 +19929,12 @@ async function maybeShowPhotoReminder(name) {
   } catch (e) { /* a reminder is never worth breaking a login */ }
 }
 
+// An officer can choose to be texted when someone logs in: the developer by default, an admin only once they turn it on.
+function isOfficerLoginTexts(p) { return ['developer', 'admin', 'president', 'secretary'].includes(String(p?.Officer || '').trim().toLowerCase()); }
+function loginTextsOn(p) {
+  const officer = String(p?.Officer || '').trim().toLowerCase(), s = String(p?.LoginTexts || '').toUpperCase();
+  return officer === 'developer' ? s !== 'N' : s === 'Y';
+}
 function showPlayerSelfEditModal(playerName) {
   const p = query(`SELECT * FROM Players WHERE Player=?`, [playerName])[0];
   if (!p) return;
@@ -19955,6 +19964,9 @@ function showPlayerSelfEditModal(playerName) {
       <div style="margin-bottom:16px"><label style="${lab}">SEND ME LEAGUE STATS</label>
         <label style="display:block;font-size:13px;margin-bottom:4px;cursor:pointer"><input type="checkbox" id="selfEmailStats" ${p.EmailStats === 'Y' ? 'checked' : ''}> By email</label>
         <label style="display:block;font-size:13px;cursor:pointer"><input type="checkbox" id="selfTextStats" ${p.TextStats === 'Y' ? 'checked' : ''}> By text</label></div>
+      ${isOfficerLoginTexts(p) ? `<div style="margin-bottom:16px"><label style="${lab}">LOGIN TEXTS</label>
+        <label style="display:block;font-size:13px;cursor:pointer"><input type="checkbox" id="selfLoginTexts" ${loginTextsOn(p) ? 'checked' : ''}> 📲 Text me when someone logs in</label>
+        <div style="font-size:11px;color:#777;margin-top:3px">Needs your cell number and carrier above. Not for your own logins, and at most one text per person every 30 minutes. Uncheck to stop them.</div></div>` : ''}
       ${regular ? '<div style="margin-bottom:20px"></div>' : `<div style="margin-bottom:20px"><label style="${lab}">MAY WE CONTACT YOU WHEN A SUB IS NEEDED?</label>
         ${radio('email', 'Yes, by email')}${radio('text', 'Yes, by text')}${radio('both', 'Yes, by email and text')}${radio('none', "No, don't ask me to sub")}</div>`}
       <div style="display:flex;gap:10px">
