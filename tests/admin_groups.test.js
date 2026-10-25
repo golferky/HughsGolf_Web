@@ -9,8 +9,9 @@ assert.strictEqual(new Set(grouped).size, grouped.length, 'a screen is in one gr
 sections.forEach(s => assert(s === 'gallus' || grouped.includes(s), s + ' is reachable (grouped, or Gallus Queue on its own)'));
 grouped.forEach(s => assert(sections.includes(s), s + ' is a real section'));
 const PV_DEV_ONLY = eval(src.match(/const PV_DEV_ONLY_SECTIONS = (\[[^\]]*\])/)[1]);
-PV_DEV_ONLY.forEach(s => assert(groups.developer.includes(s), s + ' (developer only) is in the Developer group'));
-assert.deepStrictEqual(groups.developer.filter(s => !PV_DEV_ONLY.includes(s)), ['compare'], 'Developer holds the developer-only screens (and Compare Live)');
+PV_DEV_ONLY.filter(s => s !== 'leaguesettings').forEach(s => assert(groups.developer.includes(s), s + ' (developer only) is in the Developer group'));
+assert(groups.tables.includes('leaguesettings') && !groups.developer.includes('leaguesettings'), 'League Settings sits in Table Maintenance (still developer only)');
+assert.deepStrictEqual(groups.developer.filter(s => !PV_DEV_ONLY.includes(s)), ['compare'], 'Developer holds the other developer-only screens (and Compare Live)');
 // the buttons: one group button each, a pill for every grouped screen inside its group's row, Redeploy beside them
 for (const [g, list] of Object.entries(groups)) {
   const cap = g[0].toUpperCase() + g.slice(1);
