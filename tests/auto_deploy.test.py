@@ -67,6 +67,13 @@ b, sb, f = world(); t0 = 1000.0
 assert run(b, f, conns=2, now=lambda: t0) == 'waiting-for-quiet' and read(sb + '/HughsGolf.html') == 'OLD HTML'
 assert run(b, f, conns=2, now=lambda: t0 + 300) == 'waiting-for-quiet'
 assert run(b, f, conns=2, now=lambda: t0 + 700) == 'deployed' and not os.path.exists(b + '/autodeploy/waiting_since')
+# the hourly 'checked' line: written on the first quiet run, not again within the hour, again after it
+b, sb, f = world(); logp = b + '/autodeploy/autodeploy.log'
+b, sb, f = world(); open(sb + '/DEPLOYED_COMMIT', 'w').write('a1b2c3d x\n'); logp = b + '/autodeploy/autodeploy.log'
+t0 = 5000000.0
+assert run(b, f, now=lambda: t0) == 'up-to-date' and read(logp).count('checked: up-to-date') == 1, 'first quiet run is logged'
+run(b, f, now=lambda: t0 + 600); assert read(logp).count('checked:') == 1, 'not again within the hour'
+run(b, f, now=lambda: t0 + 3700); assert read(logp).count('checked: up-to-date') == 2, 'again after the hour'
 # live is never mentioned in the script's writes
 src = read(os.path.join(here, '..', 'qnap', 'auto_deploy_sandbox.py'))
 assert '8445' not in src and "'live'" not in src
