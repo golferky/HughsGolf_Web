@@ -67,7 +67,8 @@ def extract_commit(tar_bytes, dest):
         for m in t.getmembers():                                     # never write outside dest
             if m.name.startswith('/') or '..' in m.name.split('/'):
                 raise ValueError('unsafe path in archive: ' + m.name)
-        t.extractall(dest)
+        try: t.extractall(dest, filter='data')                     # newer Pythons filter extracted files; older ones do not know the argument
+        except TypeError: t.extractall(dest)
     tops = [d for d in os.listdir(dest) if os.path.isdir(os.path.join(dest, d))]
     if len(tops) != 1:
         raise ValueError('unexpected archive layout')

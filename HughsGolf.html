@@ -732,7 +732,7 @@
       <div class="tab" data-tab="ps_scores">🧾 Standings</div>
       <div class="tab" data-tab="ps_skinsview">📍 Skins/CTPs</div>
       <div class="tab" data-tab="ps_stableford">🏌️ Stableford</div>
-      <div class="tab" data-tab="ps_skins">🎲 Skins &amp; CTPs</div>
+      <div class="tab" data-tab="ps_skins">🎲 Skins &amp; CTP Results</div>
       <div class="tab" data-tab="ps_earned">🎁 Earned</div>
     </div>
     <div class="subtab-group" data-group="money" style="display:none">
@@ -2932,7 +2932,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261021.1';
+const APP_VERSION = '20261114.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4188,6 +4188,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261114.1', 'November 14, 2026', [
+    ['enhancement', 'Post Season: the summary tab is now "Skins & CTP Results"', 'It had nearly the same name as the Skins/CTPs working screen. Skins/CTPs is where skins are calculated and CTP winners entered; Skins & CTP Results is the read-only summary of pots, winners and payouts. PR #140.', 1],
   ]);
   ensureVersion('20261021.1', 'October 21, 2026', [
     ['enhancement', 'Text me when someone logs in (with an off switch)', 'The developer now gets a text whenever someone logs in, not only on a first login; an admin can turn it on for themselves. My Profile has a "Text me when someone logs in" box for officers (on by default for the developer). The person logging in is never texted about themselves, a person who keeps reloading triggers at most one text every 30 minutes, and the sandbox marks its texts "[sandbox]". PR #139.', 1],
@@ -24914,7 +24917,7 @@ function loadPsSkins() {
   const el = document.getElementById('tab-ps_skins'); if (!el) return;
   const season = psTabSeason(), d = psTabGather(season);
   psAutoOnView(season);
-  const head = psTabHeader('Skins & CTPs', season, 'Each week is its own contest: $10 = Skins + CTP per player who is paid and has scored that week. Whole dollars only; any leftover goes to the Skins kitty.');
+  const head = psTabHeader('Skins & CTP Results', season, 'Each week is its own contest: $10 = Skins + CTP per player who is paid and has scored that week. Whole dollars only; any leftover goes to the Skins kitty.');
   if (!d.ps) { el.innerHTML = head + psTabNoPs + PS_TAB_END; return; }
   const winRows = (rows, color) => rows.length ? rows.map(r => `<div style="display:grid;grid-template-columns:48px 1fr auto auto;gap:8px;align-items:center;padding:4px 10px;border-radius:4px;font-size:13px;margin-bottom:2px;background:${color}"><span style="font-weight:700">Hole ${String(r.t).replace('#', '')}</span><span style="font-weight:600">${escapeHtml(r.Player)}</span><span style="${psTabNum};font-weight:700">${psTabMoney(r.e)}</span><span style="font-size:11px;color:${r.dp ? '#2e7d32' : '#e65100'}">${r.dp ? '✓ paid' : 'owed'}</span></div>`).join('') : '<div style="color:#aaa;font-size:13px">None yet</div>';
   const weeks = [1, 2].map(w => {
