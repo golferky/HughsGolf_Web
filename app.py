@@ -48,7 +48,7 @@ BACKUP_COOLDOWN_MINUTES = 30    # sandbox: 30 min; live: 60 min (set below)
 BACKUP_ROLLING_KEEP    = 20     # sandbox: 20; live: 30 (set below)
 SAVE_TOKEN = 'HughsGolf2026Save'
 PORT       = int(os.environ.get('HUGHSGOLF_PORT', '8446'))
-VERSION    = '20261021.1-sandbox'
+VERSION    = '20261114.1-sandbox'
 LOG_PATH   = os.environ.get('HUGHSGOLF_LOG', os.path.join(BASE_DIR, 'flask_garyadmin.log'))
 DB_TIMEOUT_SECONDS = 15
 DB_WRITE_LOCK = threading.RLock()
@@ -4416,6 +4416,15 @@ def whos_on():
             presence = [dict(r) for r in cur.fetchall()]
         except Exception:
             presence = []
+        # Players whose login session is still valid (Players.ActiveSession set). Officers/developers stay signed in; players are cleared ~2h after their last login.
+        signed = {}
+        try:
+            if 'ActiveSession' in {c[1] for c in cur.execute("PRAGMA table_info(Players)")}:
+                cur.execute("SELECT Player, Officer, COALESCE(Participates,'Y') AS Participates, COALESCE(IsTest,'N') AS IsTest FROM Players "
+                            "WHERE ActiveSession IS NOT NULL AND ActiveSession != ''")
+                signed = {r['Player']: dict(r) for r in cur.fetchall()}
+        except Exception:
+            signed = {}
         people = []
         for r in presence:
             try:
@@ -4427,7 +4436,13 @@ def whos_on():
             cur.execute("SELECT COUNT(*) FROM PlayerSeen WHERE Player=?", (r['Player'],))
             people.append({'player': r['Player'], 'role': _role_from_officer(r['Officer']), 'participates': r['Participates'] != 'N',
                            'isTest': r['IsTest'] == 'Y', 'lastSeen': r['LastSeen'], 'secondsAgo': age, 'online': age is not None and age <= PRESENCE_ONLINE_SECONDS,
-                           'tab': r['Tab'] or '', 'device': r['Device'] or '', 'ip': r['IP'] or '', 'otherPlayersOnIp': others, 'knownIps': cur.fetchone()[0]})
+                           'tab': r['Tab'] or '', 'device': r['Device'] or '', 'ip': r['IP'] or '', 'otherPlayersOnIp': others, 'knownIps': cur.fetchone()[0],
+                           'signedIn': r['Player'] in signed})
+        seen_players = {p['player'] for p in people}
+        for name, r in signed.items():                       # signed in but never checked in (no presence row yet)
+            if name not in seen_players:
+                people.append({'player': name, 'role': _role_from_officer(r['Officer']), 'participates': r['Participates'] != 'N', 'isTest': r['IsTest'] == 'Y',
+                               'lastSeen': None, 'secondsAgo': None, 'online': False, 'tab': '', 'device': '', 'ip': '', 'otherPlayersOnIp': [], 'knownIps': 0, 'signedIn': True})
         counts = {}
         for ip in open_connection_ips():
             counts[ip] = counts.get(ip, 0) + 1
