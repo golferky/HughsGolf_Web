@@ -29,6 +29,15 @@ assert(!/<b>Evil/.test(out.people) && /&lt;b&gt;Evil/.test(out.people) && !/<i>x
 assert(/>3<\/div><div[^>]*>On now/.test(out.summary.replace(/\s+/g, ' ')), 'on now = Alice, Adam, Evil (not the test account)');
 assert(/>3<\/div><div[^>]*>Open connections/.test(out.summary) && /Unknown IPs/.test(out.summary) && />1<\/div><div[^>]*>Unknown IPs/.test(out.summary));
 assert(/unknown/.test(out.connections) && /Alice Player, Bob Player/.test(out.connections) && /45\.33\.14\.197/.test(out.connections));
+// still signed in: those with a valid session, with officers noted; counted in the summary
+const sdata = { people: [{ player: 'Alice Player', role: 'player', online: true, secondsAgo: 20, signedIn: true }, { player: 'Bob Player', role: 'player', online: false, secondsAgo: 5000, signedIn: false },
+  { player: 'Adam Admin', role: 'admin', online: false, secondsAgo: 1700000, signedIn: true }, { player: 'Never Beat', role: 'player', online: false, secondsAgo: null, signedIn: true }], connections: [] };
+const so = c.whosonRender(sdata);
+assert(/Alice Player/.test(so.sessions) && /Adam Admin/.test(so.sessions) && /Never Beat/.test(so.sessions) && !/Bob Player/.test(so.sessions), 'only people with a valid session');
+assert(/officers stay signed in/.test(so.sessions) && /session open, app not in use/.test(so.sessions) && /unknown/.test(so.sessions));
+assert(so.sessions.indexOf('Alice Player') < so.sessions.indexOf('Adam Admin'), 'most recently seen first');
+assert(/>3<\/div><div[^>]*>Signed in/.test(so.summary.replace(/\s+/g, ' ')), 'Signed in count');
+assert(/Nobody has a valid login session/.test(c.whosonRender({ people: [], connections: [] }).sessions));
 // empty states
 const empty = c.whosonRender({ people: [], connections: [] });
 assert(/Nobody has checked in yet/.test(empty.people) && /No open connections reported/.test(empty.connections));

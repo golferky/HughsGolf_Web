@@ -84,3 +84,10 @@ assert app.parse_proc_tcp('', 8445) == [] and app.parse_proc_tcp(hdr + 'garbage 
 html = open(os.path.join(here, '..', 'HughsGolf.html')).read()
 assert "'/heartbeat', '/whos-on'" in html
 print('ok')
+
+# signed in = Players.ActiveSession set; shown even when the person never checked in
+c = sqlite3.connect(dbp); c.execute("UPDATE Players SET ActiveSession='tok1' WHERE Player='Alice Player'"); c.execute("INSERT INTO Players (Player, Officer, ActiveSession) VALUES ('Nora Nobeat','Admin','tok2')"); c.commit(); c.close()
+j = cl.get('/whos-on', headers=H).get_json(); by = {p['player']: p for p in j['people']}
+assert by['Alice Player']['signedIn'] is True and by['Bob Player']['signedIn'] is False, 'a valid session is flagged'
+assert by['Nora Nobeat']['signedIn'] is True and by['Nora Nobeat']['lastSeen'] is None and by['Nora Nobeat']['role'] == 'admin', 'signed in but never checked in still listed'
+print('whos_on session list OK')

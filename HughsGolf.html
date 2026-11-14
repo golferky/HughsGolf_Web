@@ -2108,6 +2108,8 @@
           <div id="whosonSummary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
           <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">People</div>
           <div id="whosonPeople" style="overflow-x:auto"></div>
+          <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px">Still signed in <span style="font-weight:400;text-transform:none;letter-spacing:0">(login session still valid, whether or not the app is open)</span></div>
+          <div id="whosonSessions" style="overflow-x:auto"></div>
           <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px">Open connections right now <span style="font-weight:400;text-transform:none;color:#999">(matched to the IPs players have used; an IP nobody has used is "unknown")</span></div>
           <div id="whosonConnections" style="overflow-x:auto"></div>
           <div style="font-size:11px;color:#999;margin-top:12px">An IP is not a person: households and phone carriers share them, and one player uses several. This screen is information for admins; it never blocks anyone from logging in. A person appears here only while they have the app open (it checks in about once a minute).</div>
@@ -4190,6 +4192,7 @@ function ensureAppChangelogTable() {
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
   ]);
   ensureVersion('20261114.1', 'November 14, 2026', [
+    ['enhancement', 'Who\'s On: a "Still signed in" list', 'Shows everyone whose login session is still valid, whether or not the app is open, with when they were last seen. Who\'s On also has a Signed in count. Officers stay signed in; players are signed out about 2 hours after their last login. PR #140.', 2],
     ['enhancement', 'Post Season: the summary tab is now "Skins & CTP Results"', 'It had nearly the same name as the Skins/CTPs working screen. Skins/CTPs is where skins are calculated and CTP winners entered; Skins & CTP Results is the read-only summary of pots, winners and payouts. PR #140.', 1],
   ]);
   ensureVersion('20261021.1', 'October 21, 2026', [
@@ -14612,7 +14615,8 @@ function whosonRender(data, opts) {
   const stat = (label, val) => `<div style="background:#f5f0e8;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--green)">${val}</div><div style="font-size:11px;color:#666">${label}</div></div>`;
   const connections = data?.connections || [];
   const unknown = connections.filter(c => c.unknown);
-  const summary = stat('On now', online.length) + stat('Seen recently', people.length - online.length) + stat('Open connections', connections.reduce((n, c) => n + c.count, 0)) + stat('Unknown IPs', unknown.length);
+  const signedIn = people.filter(p => p.signedIn);
+  const summary = stat('On now', online.length) + stat('Signed in', signedIn.length) + stat('Seen recently', people.length - online.length) + stat('Open connections', connections.reduce((n, c) => n + c.count, 0)) + stat('Unknown IPs', unknown.length);
   const th = t => `<th style="background:var(--green);color:var(--gold);padding:6px 10px;text-align:left;font-size:12px">${t}</th>`;
   const td = (t, st = '') => `<td style="padding:5px 10px;font-size:12px;border-bottom:1px solid #eee;${st}">${t}</td>`;
   const peopleHtml = people.length ? `<table style="border-collapse:collapse;width:100%"><thead><tr>${th('Player')}${th('Status')}${th('Viewing')}${th('Device')}${th('IP')}${th('Also seen on this IP')}</tr></thead><tbody>${
@@ -14624,7 +14628,12 @@ function whosonRender(data, opts) {
   const connHtml = connections.length ? `<table style="border-collapse:collapse;width:100%"><thead><tr>${th('IP')}${th('Connections')}${th('Matches')}</tr></thead><tbody>${
     connections.map(c => `<tr>${td(`<span style="font-family:'DM Mono',monospace">${e(c.ip)}</span>`)}${td(c.count)}${td(c.unknown ? '<span style="color:#e65100;font-weight:600">unknown</span>' : e(c.players.join(', ')))}</tr>`).join('')}</tbody></table>`
     : '<div style="color:#888;font-size:12px">No open connections reported (this list only works when the server runs on Linux, such as the QNAP).</div>';
-  return { summary, people: peopleHtml, connections: connHtml };
+  const sessionsHtml = signedIn.length ? `<table style="border-collapse:collapse;width:100%"><thead><tr>${th('Player')}${th('Last seen')}${th('Note')}</tr></thead><tbody>${
+    signedIn.slice().sort((a, b) => (a.secondsAgo ?? 1e12) - (b.secondsAgo ?? 1e12)).map(p => `<tr>${td(`<strong>${e(p.player)}</strong> ${roleBadge(p.role)}${p.isTest ? ' <span style="font-size:10px;color:#e65100">(test)</span>' : ''}`)}${
+      td(p.online ? '<span style="color:#2e7d32">● on now</span>' : `<span style="color:#999">○ ${whosonAgeText(p.secondsAgo)}</span>`)}${
+      td(p.role === 'developer' || p.role === 'admin' ? '<span style="color:#777">officers stay signed in</span>' : (p.online ? '' : '<span style="color:#777">session open, app not in use</span>'))}</tr>`).join('')}</tbody></table>`
+    : '<div style="color:#888;font-size:12px">Nobody has a valid login session right now.</div>';
+  return { summary, people: peopleHtml, sessions: sessionsHtml, connections: connHtml };
 }
 async function loadWhoson() {
   stopWhosonRefresh();
@@ -14635,6 +14644,7 @@ async function loadWhoson() {
     const out = whosonRender(data, { showTest: !!document.getElementById('whosonShowTest')?.checked });
     document.getElementById('whosonSummary').innerHTML = out.summary;
     document.getElementById('whosonPeople').innerHTML = out.people;
+    document.getElementById('whosonSessions').innerHTML = out.sessions;
     document.getElementById('whosonConnections').innerHTML = out.connections;
     const ts = document.getElementById('whosonUpdated');
     if (ts) ts.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;

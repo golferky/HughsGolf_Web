@@ -4416,6 +4416,15 @@ def whos_on():
             presence = [dict(r) for r in cur.fetchall()]
         except Exception:
             presence = []
+        # Players whose login session is still valid (Players.ActiveSession set). Officers/developers stay signed in; players are cleared ~2h after their last login.
+        signed = {}
+        try:
+            if 'ActiveSession' in {c[1] for c in cur.execute("PRAGMA table_info(Players)")}:
+                cur.execute("SELECT Player, Officer, COALESCE(Participates,'Y') AS Participates, COALESCE(IsTest,'N') AS IsTest FROM Players "
+                            "WHERE ActiveSession IS NOT NULL AND ActiveSession != ''")
+                signed = {r['Player']: dict(r) for r in cur.fetchall()}
+        except Exception:
+            signed = {}
         people = []
         for r in presence:
             try:
@@ -4427,7 +4436,13 @@ def whos_on():
             cur.execute("SELECT COUNT(*) FROM PlayerSeen WHERE Player=?", (r['Player'],))
             people.append({'player': r['Player'], 'role': _role_from_officer(r['Officer']), 'participates': r['Participates'] != 'N',
                            'isTest': r['IsTest'] == 'Y', 'lastSeen': r['LastSeen'], 'secondsAgo': age, 'online': age is not None and age <= PRESENCE_ONLINE_SECONDS,
-                           'tab': r['Tab'] or '', 'device': r['Device'] or '', 'ip': r['IP'] or '', 'otherPlayersOnIp': others, 'knownIps': cur.fetchone()[0]})
+                           'tab': r['Tab'] or '', 'device': r['Device'] or '', 'ip': r['IP'] or '', 'otherPlayersOnIp': others, 'knownIps': cur.fetchone()[0],
+                           'signedIn': r['Player'] in signed})
+        seen_players = {p['player'] for p in people}
+        for name, r in signed.items():                       # signed in but never checked in (no presence row yet)
+            if name not in seen_players:
+                people.append({'player': name, 'role': _role_from_officer(r['Officer']), 'participates': r['Participates'] != 'N', 'isTest': r['IsTest'] == 'Y',
+                               'lastSeen': None, 'secondsAgo': None, 'online': False, 'tab': '', 'device': '', 'ip': '', 'otherPlayersOnIp': [], 'knownIps': 0, 'signedIn': True})
         counts = {}
         for ip in open_connection_ips():
             counts[ip] = counts.get(ip, 0) + 1
