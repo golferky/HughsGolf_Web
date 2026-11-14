@@ -2934,7 +2934,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261114.1';
+const APP_VERSION = '20261114.2';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -4190,6 +4190,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261114.2', 'November 14, 2026', [
+    ['admin', 'Auto-deploy writes a "checked" line to its log once an hour', 'So a silent schedule is visible: autodeploy.log shows "checked: up-to-date" about hourly when nothing was merged. Copy qnap/auto_deploy_sandbox.py to the QNAP to use it. PR #141.', 1],
   ]);
   ensureVersion('20261114.1', 'November 14, 2026', [
     ['enhancement', 'Who\'s On: a "Still signed in" list', 'Shows everyone whose login session is still valid, whether or not the app is open, with when they were last seen. Who\'s On also has a Signed in count. Officers stay signed in; players are signed out about 2 hours after their last login. PR #140.', 2],

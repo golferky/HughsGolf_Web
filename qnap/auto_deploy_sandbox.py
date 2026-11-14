@@ -123,7 +123,7 @@ def wait_for_version(port, want, seconds=30, _get=None):
     return False
 
 
-def run_once(base=None, fetch=http_get, restart=restart_sandbox, version_ok=None, connections=active_connections, now=time.time, sleep_fn=None):
+def _run_once(base=None, fetch=http_get, restart=restart_sandbox, version_ok=None, connections=active_connections, now=time.time, sleep_fn=None):
     """One pass. Returns a short word for what happened (used by the tests)."""
     base = base or BASE
     sandbox_dir = os.path.join(base, 'sandbox'); sd = state_dir(base)
@@ -169,6 +169,25 @@ def run_once(base=None, fetch=http_get, restart=restart_sandbox, version_ok=None
         open(failed, 'w').write(sha); return 'refused'
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+HEARTBEAT_MINUTES = 60
+QUIET_RESULTS = ('up-to-date', 'paused', 'not-a-merged-pr', 'already-failed', 'waiting-for-quiet')
+
+def run_once(base=None, fetch=http_get, **kw):
+    """One pass, plus a 'checked: ...' line in the log about once an hour when nothing else was worth logging, so a silent schedule is visible."""
+    base = base or BASE
+    result = _run_once(base, fetch, **kw)
+    if result in QUIET_RESULTS:
+        now = kw.get('now', time.time)
+        beat = os.path.join(state_dir(base), 'last_check_logged')
+        try: last = float(open(beat).read())
+        except (OSError, ValueError): last = 0
+        if now() - last >= HEARTBEAT_MINUTES * 60:
+            log(f'checked: {result}', base)
+            try: open(beat, 'w').write(str(now()))
+            except OSError: pass
+    return result
 
 
 if __name__ == '__main__':
