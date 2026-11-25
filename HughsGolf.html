@@ -95,6 +95,25 @@
   .hscroll::-webkit-scrollbar-thumb { background: #2d6a4f; border-radius: 7px; border: 2px solid #e8e2d4; }
   .tabs::-webkit-scrollbar { display: none; }
 
+  /* Narrow screens (phones, folding phones, small tablets): the header has more than fits on one line, so it wraps into rows and scrolls away
+     with the page; only the tab bar stays pinned. Above 1180px nothing changes. */
+  @media (max-width: 1180px) {
+    header { position: static; height: auto; min-height: 52px; padding: 8px 14px; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: 6px 12px; }
+    .logo { font-size: 24px; white-space: nowrap; }
+    .logo span { font-size: 14px; }
+    .header-ver { flex-wrap: wrap; font-size: 11px !important; row-gap: 2px; min-width: 0; }
+    #weeksLeftBanner, #profileAlertBadge, #syncFailBadge { margin-left: 0 !important; padding: 4px 10px !important; }
+    .header-right { flex: 1 1 100%; flex-wrap: wrap; gap: 6px; justify-content: flex-start; }
+    .header-right > * { margin: 0 !important; }
+    #viewModeGroup { white-space: normal !important; }
+    #dbStatus { font-size: 11px; }
+    .tabwrap { top: 0; }
+    .tabs { padding: 8px 12px 0; }
+  }
+  @media (max-width: 600px) {
+    .header-ver { flex: 1 1 100%; }
+  }
+
   .gtab {
     padding: 10px 18px;
     color: #cfdccf;
@@ -574,7 +593,7 @@
 
 <header>
   <div class="logo">Hugh's <span>Golf League</span></div>
-  <div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#d6ead2;font-family:'DM Mono',monospace;font-weight:700">
+  <div class="header-ver" style="display:flex;gap:8px;align-items:center;font-size:13px;color:#d6ead2;font-family:'DM Mono',monospace;font-weight:700">
     <span id="appVersionDisplay">v—</span>
     <span style="color:#9bc59a">|</span>
     <span id="dbVersionDisplay" title="Server database timestamp">DB --</span>
@@ -887,7 +906,7 @@
       <div style="font-size:16px;font-weight:700;color:var(--green);margin:0 0 10px;padding-top:14px;border-top:2px solid var(--border)">📊 Stats</div>
 
     <!-- Sub-nav -->
-    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:8px">
+    <div style="display:flex;flex-wrap:wrap;gap:6px 8px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:8px">
       <button id="statsNavIndividual" onclick="switchStatsView('individual')" style="padding:6px 18px;border:none;border-radius:6px 6px 0 0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:var(--green);color:white">👤 Individual</button>
       <button id="statsNavRankings"   onclick="switchStatsView('rankings')"   style="padding:6px 18px;border:none;border-radius:6px 6px 0 0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:#e8e0d0;color:var(--green)">🏆 Rankings</button>
       <button id="statsNavLeaders"    onclick="switchStatsView('leaders')"    style="padding:6px 18px;border:none;border-radius:6px 6px 0 0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:#e8e0d0;color:var(--green)">🎖 Leaders</button>
@@ -2934,7 +2953,7 @@ let db = null;
 // as a base for 2018 handicap calculations. Exclude from date-picker dropdowns app-wide.
 const EXCLUDE_2017_SQL = "(Date < 20170101 OR Date >= 20180101)";
 // ── App version — bump .N with each change; reset to .0 on git commit ───────
-const APP_VERSION = '20261114.2';
+const APP_VERSION = '20261125.1';
 // ── Per-admin test DB mode ───────────────────────────────────────────────────
 // Stored in localStorage as { mode: 'sandbox'|'test', user: 'gary' }
 // TEST_DB_MODE kept for legacy ?testdb URL compat
@@ -3171,7 +3190,7 @@ function refreshTestModeUi() {
     if (!sbBanner) {
       sbBanner = document.createElement('div');
       sbBanner.id = sbBannerId;
-      sbBanner.style.cssText = 'background:#b71c1c;color:white;padding:10px 18px;font-family:"Bebas Neue",cursive;font-size:28px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,.25);border-top:4px solid #f4c542;border-bottom:4px solid #f4c542';
+      sbBanner.style.cssText = 'background:#b71c1c;color:white;padding:10px 18px;font-family:"Bebas Neue",cursive;font-size:clamp(20px,5vw,28px);font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,.25);border-top:4px solid #f4c542;border-bottom:4px solid #f4c542';
       const content = document.querySelector('.content');
       content?.parentNode.insertBefore(sbBanner, content);
     }
@@ -4190,6 +4209,9 @@ function ensureAppChangelogTable() {
     ['admin', 'Gallus: auto-reconcile', 'Rounds that already match the scorecard are marked reconciled; others go to the queue flagged "Differs from the scorecard" so the scorekeeper can be asked. PR #81.', 3],
     ['admin', 'Gallus: fewer screens', 'The Confirm Player Names screen is skipped when every name matches a league player, and the Collect Payments pop-up when every player was already on the scorecard. PR #82.', 4],
     ['bugfix', 'Post-season scorecard: Week 2 CTP badges missing', 'CTP badges and CTP holes now cover both weeks. PR #79.', 1],
+  ]);
+  ensureVersion('20261125.1', 'November 25, 2026', [
+    ['bugfix', 'Header no longer jumbled on phones and folding phones', 'On narrow screens the header wraps into rows (title, version and refresh, weeks left, then your name and buttons) instead of squeezing into columns, and the page no longer scrolls sideways. The header scrolls away; the tab bar stays pinned. The Stats buttons on Home wrap too. Wide screens are unchanged. PR #142.', 1],
   ]);
   ensureVersion('20261114.2', 'November 14, 2026', [
     ['admin', 'Auto-deploy writes a "checked" line to its log once an hour', 'So a silent schedule is visible: autodeploy.log shows "checked: up-to-date" about hourly when nothing was merged. Copy qnap/auto_deploy_sandbox.py to the QNAP to use it. PR #141.', 1],
